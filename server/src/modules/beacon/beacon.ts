@@ -42,7 +42,33 @@ export class Beacon {
     });
   }
 
-  async search(query: SearchQuery, signal?: AbortSignal): Promise<SearchPage> {
+  /**
+   * `canRead` is applied to every result. A search scope is authorised before
+   * the query runs, but a scope may legitimately contain subtrees the user is
+   * denied — without this, searching from the root would list paths the user
+   * cannot open, which is a disclosure in itself.
+   */
+  async search(
+    query: SearchQuery,
+    canRead: (relativePath: string) => boolean,
+    signal?: AbortSignal,
+  ): Promise<SearchPage> {
+    const page = await this.searchWithProvider(query, signal);
+
+    const permitted = page.items.filter(item => canRead(item.path));
+    const denied = page.items.length - permitted.length;
+    if (denied === 0) return page;
+
+    return {
+      ...page,
+      items: permitted,
+      total: Math.max(permitted.length, page.total - denied),
+      // Only this page's denials are known, so the total is now a bound.
+      approximate: true,
+    };
+  }
+
+  private async searchWithProvider(query: SearchQuery, signal?: AbortSignal): Promise<SearchPage> {
     const provider = await this.selectProvider(signal);
     if (provider.name === 'walk') return provider.search(query, signal);
 

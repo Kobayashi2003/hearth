@@ -39,6 +39,7 @@ import { wardenRoutes } from './modules/warden/routes.js';
 import { createSessionStore } from './modules/warden/session-store.js';
 import { Warden } from './modules/warden/warden.js';
 import { systemRoutes } from './modules/system/routes.js';
+import { createAdminRoutes } from './modules/system/admin.routes.js';
 
 export interface BuildOptions {
   config: AppConfig;
@@ -116,6 +117,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
     async api => {
       await api.register(wardenRoutes);
       await api.register(systemRoutes);
+      await api.register(createAdminRoutes(warden));
       await api.register(createVaultRoutes(listing));
       await api.register(createFileOpsRoutes(fileOps, listing, trash));
       await api.register(createTransferRoutes(uploads, chunked, downloads, listing, streams));

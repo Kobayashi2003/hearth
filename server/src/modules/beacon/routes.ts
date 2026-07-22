@@ -48,6 +48,11 @@ function abortSignalOf(request: FastifyRequest): AbortSignal {
 export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
+    const { warden } = app.hearth;
+
+    /** Per-result read check, so a search cannot list a denied subtree. */
+    const readFilterFor = (request: FastifyRequest) => (relativePath: string) =>
+      request.session !== null && warden.can(request.session, 'read', relativePath);
 
     app.get<{ Querystring: SearchQueryString }>(
       '/search',
@@ -73,7 +78,7 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
           limit: clampLimit(request.query.limit),
         };
 
-        const result = await beacon.search(query, abortSignalOf(request));
+        const result = await beacon.search(query, readFilterFor(request), abortSignalOf(request));
         const body: SearchResponse = result;
         return body;
       },
@@ -104,6 +109,7 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
             page: request.query.page ?? 1,
             limit: clampLimit(request.query.limit),
           },
+          readFilterFor(request),
           abortSignalOf(request),
         );
 
@@ -132,11 +138,12 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
 
         // One request to learn the size of the collection, a second to fetch a
         // single entry at a random offset — the whole set is never materialised.
-        const probe = await beacon.search(baseQuery, signal);
+        const canRead = readFilterFor(request);
+        const probe = await beacon.search(baseQuery, canRead, signal);
         if (probe.total === 0) throw HearthError.notFound(`No ${kind} files here`);
 
         const offset = Math.floor(Math.random() * probe.total);
-        const picked = await beacon.search({ ...baseQuery, page: offset + 1 }, signal);
+        const picked = await beacon.search({ ...baseQuery, page: offset + 1 }, canRead, signal);
         const entry = picked.items[0] ?? probe.items[0];
         if (!entry) throw HearthError.notFound(`No ${kind} files here`);
         return entry;
