@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Runtime state — machine-specific, never committed
+server/data/
+server/temp/
+server/logs/
+.env
+.env.local
+
+# Test artefacts
+coverage/
+test-results/
+playwright-report/

@@ -1,0 +1,45 @@
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  { ignores: ['**/dist/**', '**/node_modules/**', 'web/dist/**'] },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    rules: {
+      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+    },
+  },
+  {
+    // Layering: routes orchestrate, services own logic, adapters own I/O.
+    // A route that reaches for the filesystem or spawns a process has skipped a layer.
+    files: ['server/src/**/routes.ts', 'server/src/**/*.routes.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'node:fs', message: 'Routes must go through a service, not touch the filesystem.' },
+            { name: 'node:fs/promises', message: 'Routes must go through a service, not touch the filesystem.' },
+            { name: 'node:child_process', message: 'Routes must not spawn processes; use an adapter.' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Adapters wrap the outside world and must not depend on business logic.
+    files: ['server/src/adapters/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['**/modules/**'], message: 'Adapters must not import services.' }] },
+      ],
+    },
+  },
+);
