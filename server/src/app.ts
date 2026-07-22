@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 import Fastify from 'fastify';
 import fp from 'fastify-plugin';
+import multipart from '@fastify/multipart';
 import type { Logger } from 'pino';
 
 import './context.js';
@@ -15,8 +16,16 @@ import rateLimitPlugin from './plugins/rate-limit.js';
 import securityPlugin from './plugins/security.js';
 import { Beacon } from './modules/beacon/beacon.js';
 import { createBeaconRoutes } from './modules/beacon/routes.js';
+import { TrashService } from './modules/ember/trash.service.js';
+import { createEmberRoutes } from './modules/ember/routes.js';
+import { ChunkedUploadService } from './modules/vault/chunked-upload.service.js';
+import { DownloadService } from './modules/vault/download.service.js';
+import { FileOpsService } from './modules/vault/fileops.service.js';
+import { createFileOpsRoutes } from './modules/vault/fileops.routes.js';
 import { ListingService } from './modules/vault/listing.service.js';
 import { createVaultRoutes } from './modules/vault/routes.js';
+import { createTransferRoutes } from './modules/vault/transfer.routes.js';
+import { UploadService } from './modules/vault/upload.service.js';
 import { StreamService } from './modules/kiln/stream.service.js';
 import { createKilnRoutes } from './modules/kiln/routes.js';
 import { wardenRoutes } from './modules/warden/routes.js';
@@ -64,19 +73,40 @@ export async function buildApp({ config, logger }: BuildOptions) {
   const listing = new ListingService(vault);
   const streams = new StreamService(config);
   const beacon = new Beacon(config, runtime, vault, logger);
+  const fileOps = new FileOpsService(vault);
+  const trash = new TrashService(config, runtime, vault, logger);
+  const uploads = new UploadService(config, vault);
+  const chunked = new ChunkedUploadService(config, vault, uploads, logger);
+  const downloads = new DownloadService(vault);
+
+  await app.register(multipart, {
+    limits: {
+      fileSize: Number.isFinite(config.upload.maxFileSizeBytes)
+        ? config.upload.maxFileSizeBytes
+        : Infinity,
+    },
+  });
 
   await app.register(
     async api => {
       await api.register(wardenRoutes);
       await api.register(systemRoutes);
       await api.register(createVaultRoutes(listing));
+      await api.register(createFileOpsRoutes(fileOps, listing, trash));
+      await api.register(createTransferRoutes(uploads, chunked, downloads, listing, streams));
+      await api.register(createEmberRoutes(trash));
       await api.register(createBeaconRoutes(beacon));
       await api.register(createKilnRoutes(listing, streams));
     },
     { prefix: config.server.apiPrefix },
   );
 
+  trash.startAutoCleanup();
+  chunked.startSweeper();
+
   app.addHook('onClose', async () => {
+    trash.stopAutoCleanup();
+    chunked.stopSweeper();
     await warden.close();
   });
 
