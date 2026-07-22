@@ -8,7 +8,6 @@ import type {
 } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
-import { HearthError } from '../../lib/errors.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { ListingService } from '../vault/listing.service.js';
 import type { BackgroundService } from './background.service.js';
