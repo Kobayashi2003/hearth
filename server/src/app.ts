@@ -26,8 +26,15 @@ import { ListingService } from './modules/vault/listing.service.js';
 import { createVaultRoutes } from './modules/vault/routes.js';
 import { createTransferRoutes } from './modules/vault/transfer.routes.js';
 import { UploadService } from './modules/vault/upload.service.js';
+import { FfmpegAdapter } from './adapters/ffmpeg/ffmpeg.js';
+import { BackgroundService } from './modules/kiln/background.service.js';
+import { ComicService } from './modules/kiln/comic.service.js';
+import { DocumentService } from './modules/kiln/document.service.js';
 import { StreamService } from './modules/kiln/stream.service.js';
+import { TextService } from './modules/kiln/text.service.js';
+import { ThumbnailService } from './modules/kiln/thumbnail.service.js';
 import { createKilnRoutes } from './modules/kiln/routes.js';
+import { CacheCleanupService } from './modules/system/cache-cleanup.service.js';
 import { wardenRoutes } from './modules/warden/routes.js';
 import { createSessionStore } from './modules/warden/session-store.js';
 import { Warden } from './modules/warden/warden.js';
@@ -79,6 +86,24 @@ export async function buildApp({ config, logger }: BuildOptions) {
   const chunked = new ChunkedUploadService(config, vault, uploads, logger);
   const downloads = new DownloadService(vault);
 
+  const ffmpeg = new FfmpegAdapter({
+    ffmpegPath: config.media.ffmpegPath,
+    ffprobePath: config.media.ffprobePath,
+    crf: config.media.transcodeCrf,
+    preset: config.media.transcodePreset,
+  });
+  const kiln = {
+    listing,
+    streams,
+    ffmpeg,
+    text: new TextService(config),
+    thumbnails: new ThumbnailService(config, ffmpeg),
+    comics: new ComicService(config),
+    documents: new DocumentService(runtime),
+    backgrounds: new BackgroundService(config),
+  };
+  const caches = new CacheCleanupService(config, logger);
+
   await app.register(multipart, {
     limits: {
       fileSize: Number.isFinite(config.upload.maxFileSizeBytes)
@@ -96,17 +121,19 @@ export async function buildApp({ config, logger }: BuildOptions) {
       await api.register(createTransferRoutes(uploads, chunked, downloads, listing, streams));
       await api.register(createEmberRoutes(trash));
       await api.register(createBeaconRoutes(beacon));
-      await api.register(createKilnRoutes(listing, streams));
+      await api.register(createKilnRoutes(kiln));
     },
     { prefix: config.server.apiPrefix },
   );
 
   trash.startAutoCleanup();
   chunked.startSweeper();
+  caches.start();
 
   app.addHook('onClose', async () => {
     trash.stopAutoCleanup();
     chunked.stopSweeper();
+    caches.stop();
     await warden.close();
   });
 

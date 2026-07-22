@@ -85,6 +85,8 @@ export interface AppConfig {
     readonly thumbnailForAnimatedGif: boolean;
     readonly comicCacheDirectory: string;
     readonly psdCacheDirectory: string;
+    readonly ffmpegPath: string;
+    readonly ffprobePath: string;
     readonly transcodeCrf: number;
     readonly transcodePreset: string;
     /** Largest file the text viewer will read into memory. */
@@ -254,6 +256,9 @@ export function loadConfig(): AppConfig {
       thumbnailForAnimatedGif: envBool('THUMBNAIL_FOR_GIF', false),
       comicCacheDirectory: envPath('COMIC_CACHE_DIR', './server/temp/comics'),
       psdCacheDirectory: envPath('PSD_CACHE_DIR', './server/temp/psd'),
+      // Bare names resolve on PATH, which is the usual install shape on Windows.
+      ffmpegPath: envString('FFMPEG_PATH', 'ffmpeg'),
+      ffprobePath: envString('FFPROBE_PATH', 'ffprobe'),
       transcodeCrf: envInt('TRANSCODE_CRF', 23),
       transcodePreset: envString('TRANSCODE_PRESET', 'veryfast'),
       maxTextBytes: bytesFromMB('MAX_TEXT_SIZE_MB', 8),

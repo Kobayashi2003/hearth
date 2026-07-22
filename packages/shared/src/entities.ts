@@ -63,6 +63,7 @@ export interface ManagedUser {
 // ── Kiln: media description ─────────────────────────────────────────────────
 
 export interface MediaTrack {
+  /** Ordinal within the track's own kind — the first audio track is always 0. */
   index: number;
   codec: string;
   language: string | null;
