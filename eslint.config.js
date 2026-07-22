@@ -16,6 +16,20 @@ export default tseslint.config(
     },
   },
   {
+    // Development helpers: plain Node scripts that are expected to print.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+      },
+    },
+    rules: { 'no-console': 'off' },
+  },
+  {
     // Layering: routes orchestrate, services own logic, adapters own I/O.
     // A route that reaches for the filesystem or spawns a process has skipped a layer.
     files: ['server/src/**/routes.ts', 'server/src/**/*.routes.ts'],
