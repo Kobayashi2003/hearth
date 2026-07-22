@@ -45,8 +45,23 @@ export class JsonDocument<T> {
   async update(mutate: (current: T) => T): Promise<T> {
     const next = mutate(this.read());
     this.cache = next;
-    this.pending = this.pending.then(() => writeJsonFileAtomic(this.filePath, next));
-    await this.pending;
+
+    // The queue waits for the previous write either way: a transient disk error
+    // must not leave every later update rejecting against a poisoned chain.
+    const write = this.pending.then(
+      () => writeJsonFileAtomic(this.filePath, next),
+      () => writeJsonFileAtomic(this.filePath, next),
+    );
+    this.pending = write.catch(() => undefined);
+
+    try {
+      await write;
+    } catch (error) {
+      // Disk still holds the previous value; drop the optimistic copy rather
+      // than serving reads that disagree with what was persisted.
+      this.invalidate();
+      throw error;
+    }
     return next;
   }
 

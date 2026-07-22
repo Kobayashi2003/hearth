@@ -64,6 +64,8 @@ export async function buildApp({ config, logger }: BuildOptions) {
   });
 
   const runtime = new RuntimeState(config);
+  runtime.onPersistError = error =>
+    logger.warn({ err: error }, 'could not persist runtime settings — they apply until restart');
   const vault = new Vault(runtime);
   const sessions = await createSessionStore(config.auth.redisUrl, config.auth.sessionExpiryMs, reason =>
     logger.warn({ reason }, 'Redis unavailable — falling back to in-memory sessions'),

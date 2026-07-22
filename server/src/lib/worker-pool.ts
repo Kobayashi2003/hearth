@@ -32,31 +32,35 @@ export function runWorker<Request, Response>(
       workerData: request,
     });
 
-    const onAbort = (): void => {
-      void worker.terminate();
-      reject(new HearthError('ABORTED', 'The request was cancelled'));
+    // `terminate()` after a successful message produces a non-zero exit code,
+    // which must not be read as a failure.
+    let settled = false;
+    const settle = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      action();
     };
+
+    function onAbort(): void {
+      settle(() => reject(new HearthError('ABORTED', 'The request was cancelled')));
+      void worker.terminate();
+    }
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    const cleanup = (): void => {
-      signal?.removeEventListener('abort', onAbort);
-    };
-
     worker.once('message', (value: Response) => {
-      cleanup();
-      resolve(value);
+      settle(() => resolve(value));
       void worker.terminate();
     });
 
     worker.once('error', error => {
-      cleanup();
-      reject(error instanceof Error ? error : new Error(String(error)));
+      settle(() => reject(error instanceof Error ? error : new Error(String(error))));
     });
 
     worker.once('exit', code => {
-      cleanup();
-      // A non-zero exit before any message means the job never produced a result.
-      if (code !== 0) reject(HearthError.internal('A background task failed'));
+      // Reaching here unsettled means the job exited without producing a result.
+      if (code !== 0) settle(() => reject(HearthError.internal('A background task failed')));
+      else settle(() => reject(HearthError.internal('A background task produced no result')));
     });
   });
 }

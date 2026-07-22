@@ -63,12 +63,24 @@ export class RuntimeState {
     return this.settings[key];
   }
 
+  /**
+   * The in-memory value is authoritative for this process; persistence only
+   * carries it across a restart. A failed write is therefore reported, not
+   * fatal — the setting still takes effect.
+   */
   set<K extends RuntimeChange>(key: K, value: RuntimeSettings[K]): void {
     if (this.settings[key] === value) return;
     this.settings[key] = value;
-    void writeJsonFileAtomic(this.statePath, this.settings);
+
+    writeJsonFileAtomic(this.statePath, this.settings).catch(error => {
+      this.onPersistError?.(error as Error);
+    });
+
     for (const listener of this.listeners) listener(key, this.snapshot());
   }
+
+  /** Set once at startup, so a failed persist is visible in the log. */
+  onPersistError: ((error: Error) => void) | undefined;
 
   /** Returns an unsubscribe function so callers cannot leak listeners. */
   onChange(listener: Listener): () => void {
