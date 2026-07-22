@@ -13,6 +13,8 @@ import authPlugin from './plugins/auth.js';
 import errorsPlugin from './plugins/errors.js';
 import rateLimitPlugin from './plugins/rate-limit.js';
 import securityPlugin from './plugins/security.js';
+import { Beacon } from './modules/beacon/beacon.js';
+import { createBeaconRoutes } from './modules/beacon/routes.js';
 import { ListingService } from './modules/vault/listing.service.js';
 import { createVaultRoutes } from './modules/vault/routes.js';
 import { StreamService } from './modules/kiln/stream.service.js';
@@ -61,12 +63,14 @@ export async function buildApp({ config, logger }: BuildOptions) {
 
   const listing = new ListingService(vault);
   const streams = new StreamService(config);
+  const beacon = new Beacon(config, runtime, vault, logger);
 
   await app.register(
     async api => {
       await api.register(wardenRoutes);
       await api.register(systemRoutes);
       await api.register(createVaultRoutes(listing));
+      await api.register(createBeaconRoutes(beacon));
       await api.register(createKilnRoutes(listing, streams));
     },
     { prefix: config.server.apiPrefix },
