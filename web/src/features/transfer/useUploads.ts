@@ -21,8 +21,9 @@ const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
 /** Uploading several files at once saturates the link without starving any. */
 const MAX_PARALLEL_FILES = 3;
 
-interface QueuedFile {
+export interface QueuedFile {
   file: File;
+  /** Path relative to the destination, so a folder upload keeps its structure. */
   relativePath: string;
 }
 
