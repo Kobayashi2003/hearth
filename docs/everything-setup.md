@@ -90,10 +90,17 @@ If a future version of Everything reports something not on this list, dates or
 sizes will read as `0` rather than corrupting — fix it in `parse.ts` and add the
 form to the test.
 
-> **Not yet verified against a live instance.** The parser was written against
-> the documented and community-reported shapes; Everything was not installed on
-> the development machine. Run the `curl` in step 5 and compare against the
-> table above before relying on Everything in production.
+> **Partially verified against a live instance (Everything 1.4.1.1032).** The
+> HTTP server was confirmed to answer with `Content-Type: application/json` and
+> the exact envelope `{ "totalResults": <number>, "results": [ … ] }`, and to
+> accept Hearth's full query surface (`s`, `j=1`, `c`, `o`, `sort`, `ascending`,
+> `path_column`, `size_column`, `date_modified_column`) with HTTP 200. The
+> **per-row field names** (`name`, `path`, `size`, `date_modified`, `type`) could
+> not be confirmed live because that instance's index was empty at the time
+> (a fresh database that needs *Tools → Rebuild database*); those fields remain
+> covered by the unit tests against the documented shapes. Run the `curl` in
+> step 5 against a populated index and compare a real row against the table above
+> before relying on Everything in production.
 
 ---
 
