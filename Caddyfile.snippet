@@ -26,10 +26,11 @@ handle /api/* {
 }
 
 # Frontend: static assets served directly by Caddy — there is no frontend server
-# process any more. The prefix is stripped, and any unmatched path under it falls
-# back to index.html so the hash-routed SPA loads. The build uses relative asset
-# URLs and discovers its own prefix at runtime, so this one root works unchanged.
-handle_path /hearth/* {
+# process any more. `handle_path` strips the prefix; any path under it that is not
+# a real file falls back to index.html so the hash-routed SPA loads. Bare /hearth
+# is matched alongside /hearth/* because a user types the former, and the build's
+# relative asset URLs resolve correctly from either.
+handle_path /hearth /hearth/* {
 	root * {$HEARTH_WEB_ROOT:./web/dist}
 	try_files {path} /index.html
 	file_server

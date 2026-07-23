@@ -1,33 +1,23 @@
 /**
- * Where the app is mounted is discovered at runtime rather than baked in at
- * build time. The same bundle therefore serves both deployments: standalone at
- * the origin root, and mounted under a path prefix behind the AppGateway.
+ * The API always lives at the origin root under `/api`, in both development and
+ * production. The Caddy edge routes `/api` and the SPA's own prefix (`/hearth`)
+ * as two independent root-level prefixes — the SPA's mount point does not move
+ * the API — so a request to `/api/...` reaches the backend wherever the bundle
+ * itself is served from.
  *
- * The prefix is derived from the URL the document itself was loaded from, so
- * nothing has to be configured in two places.
+ * The SPA therefore needs no build-time knowledge of its mount prefix: assets
+ * load through Vite's relative `base`, routing is hash-based, and API calls are
+ * root-absolute. One artifact works standalone and under the AppGateway.
+ *
+ * A deployment that genuinely mounts the API elsewhere can override the base
+ * with `<meta name="hearth-api-base" content="/somewhere/api">`.
  */
+export const apiBase = deriveApiBase();
 
-/** Path prefix the app is served under, e.g. '' or '/hearth'. */
-export const basePath = deriveBasePath();
-
-/** Absolute base of the API, on the same origin so cookies and Range both work. */
-export const apiBase = `${basePath}/api`;
-
-function deriveBasePath(): string {
-  const override = document.querySelector<HTMLMetaElement>('meta[name="hearth-base"]')?.content;
-  if (override !== undefined) return normalize(override);
-
-  // The bundle is loaded with a relative `base`, so the document's directory is
-  // the mount point. `/hearth/index.html` and `/hearth/` both yield '/hearth'.
-  const { pathname } = window.location;
-  const directory = pathname.endsWith('/') ? pathname : pathname.replace(/\/[^/]*$/, '/');
-  return normalize(directory);
-}
-
-function normalize(prefix: string): string {
-  const trimmed = prefix.replace(/\/+$/, '');
-  if (trimmed === '' || trimmed === '/') return '';
-  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+function deriveApiBase(): string {
+  const override = document.querySelector<HTMLMetaElement>('meta[name="hearth-api-base"]')?.content;
+  if (override) return override.replace(/\/+$/, '');
+  return '/api';
 }
 
 /** Build an API URL with query parameters, omitting empty ones. */
