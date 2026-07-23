@@ -21,6 +21,7 @@ export function FileGrid({
   onSelect,
   onOpen,
   onContextMenu,
+  onBackgroundClick,
 }: {
   entries: FileEntry[];
   selected: ReadonlySet<string>;
@@ -28,9 +29,18 @@ export function FileGrid({
   onSelect: (path: string, index: number, modifiers: { ctrl?: boolean; shift?: boolean }) => void;
   onOpen: (entry: FileEntry) => void;
   onContextMenu: (entry: FileEntry, event: React.MouseEvent) => void;
+  /** Clicking empty space (not a tile) clears the selection. */
+  onBackgroundClick: () => void;
 }) {
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-3" role="listbox" aria-label="Files">
+    <div
+      className="min-h-0 flex-1 overflow-auto p-3"
+      role="listbox"
+      aria-label="Files"
+      onClick={event => {
+        if (!(event.target as HTMLElement).closest('[role="option"]')) onBackgroundClick();
+      }}
+    >
       <div
         className="grid gap-2"
         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }}

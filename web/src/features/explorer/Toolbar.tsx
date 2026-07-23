@@ -23,6 +23,7 @@ import { cn } from '@/lib/cn';
 import type { Density, ViewMode } from '@/hooks/usePreferences';
 import { Breadcrumb } from './Breadcrumb';
 import { SearchOptions } from './SearchOptions';
+import { ToolbarOverflow } from './ToolbarOverflow';
 import { UserMenu } from './UserMenu';
 
 /**
@@ -111,7 +112,13 @@ export function Toolbar({
             </Button>
           </Tooltip>
           <Tooltip label="Forward (Alt+→)">
-            <Button variant="ghost" size="icon" onClick={onForward} aria-label="Forward">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onForward}
+              aria-label="Forward"
+              className="hidden sm:inline-flex"
+            >
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Tooltip>
@@ -163,12 +170,7 @@ export function Toolbar({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
-          <Tooltip label="Command palette (Ctrl+K)">
-            <Button variant="ghost" size="icon" onClick={onOpenPalette} aria-label="Command palette">
-              <Command className="h-4 w-4" />
-            </Button>
-          </Tooltip>
-
+          {/* View toggle stays reachable at every width. */}
           <Tooltip label={viewMode === 'list' ? 'Switch to grid' : 'Switch to list'}>
             <Button
               variant="ghost"
@@ -184,43 +186,67 @@ export function Toolbar({
             </Button>
           </Tooltip>
 
-          <Tooltip label={density === 'comfortable' ? 'Compact rows' : 'Comfortable rows'}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden sm:inline-flex"
-              onClick={() => onDensityChange(density === 'comfortable' ? 'compact' : 'comfortable')}
-              aria-label="Toggle row density"
-            >
-              {density === 'comfortable' ? (
-                <Rows3 className="h-4 w-4" />
-              ) : (
-                <Rows2 className="h-4 w-4" />
-              )}
-            </Button>
-          </Tooltip>
-
-          {canWrite ? (
-            <Tooltip label="Upload (Ctrl+U)">
-              <Button variant="ghost" size="icon" onClick={onUpload} aria-label="Upload">
-                <Upload className="h-4 w-4" />
+          {/* Secondary actions: inline on a wide screen, folded into the
+              overflow menu on a phone so the search field keeps its width. */}
+          <div className="hidden items-center gap-0.5 md:flex">
+            <Tooltip label="Command palette (Ctrl+K)">
+              <Button variant="ghost" size="icon" onClick={onOpenPalette} aria-label="Command palette">
+                <Command className="h-4 w-4" />
               </Button>
             </Tooltip>
-          ) : null}
 
-          <Tooltip label="Settings">
-            <Button variant="ghost" size="icon" onClick={onOpenSettings} aria-label="Settings">
-              <Settings className="h-4 w-4" />
-            </Button>
-          </Tooltip>
+            <Tooltip label={density === 'comfortable' ? 'Compact rows' : 'Comfortable rows'}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onDensityChange(density === 'comfortable' ? 'compact' : 'comfortable')}
+                aria-label="Toggle row density"
+              >
+                {density === 'comfortable' ? (
+                  <Rows3 className="h-4 w-4" />
+                ) : (
+                  <Rows2 className="h-4 w-4" />
+                )}
+              </Button>
+            </Tooltip>
+
+            {canWrite ? (
+              <Tooltip label="Upload (Ctrl+U)">
+                <Button variant="ghost" size="icon" onClick={onUpload} aria-label="Upload">
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </Tooltip>
+            ) : null}
+
+            <Tooltip label="Settings">
+              <Button variant="ghost" size="icon" onClick={onOpenSettings} aria-label="Settings">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          </div>
+
+          <div className="md:hidden">
+            <ToolbarOverflow
+              density={density}
+              canWrite={canWrite}
+              onOpenPalette={onOpenPalette}
+              onDensityChange={onDensityChange}
+              onUpload={onUpload}
+              onOpenSettings={onOpenSettings}
+            />
+          </div>
 
           <UserMenu />
         </div>
       </div>
 
-      <div className="flex items-center gap-2 px-2 pb-2 lg:hidden">
-        <Breadcrumb path={path} onNavigate={onNavigate} />
-      </div>
+      {/* Location row on narrow screens. Hidden at the root, where it would show
+          only the home crumb and waste a row. */}
+      {path ? (
+        <div className="flex items-center gap-2 px-2 pb-2 lg:hidden">
+          <Breadcrumb path={path} onNavigate={onNavigate} />
+        </div>
+      ) : null}
 
       {query ? (
         <SearchOptions

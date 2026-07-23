@@ -101,6 +101,7 @@ export function ExplorerBody({
           onSelect={selection.select}
           onOpen={onOpen}
           onContextMenu={onContextMenu}
+          onBackgroundClick={selection.clear}
         />
       ) : (
         <FileList
@@ -114,6 +115,7 @@ export function ExplorerBody({
           onSelect={selection.select}
           onOpen={onOpen}
           onContextMenu={onContextMenu}
+          onBackgroundClick={selection.clear}
         />
       )}
     </>

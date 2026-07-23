@@ -35,6 +35,7 @@ export function FileList({
   onSelect,
   onOpen,
   onContextMenu,
+  onBackgroundClick,
 }: {
   entries: FileEntry[];
   selected: ReadonlySet<string>;
@@ -47,6 +48,8 @@ export function FileList({
   onSelect: (path: string, index: number, modifiers: { ctrl?: boolean; shift?: boolean }) => void;
   onOpen: (entry: FileEntry) => void;
   onContextMenu: (entry: FileEntry, event: React.MouseEvent) => void;
+  /** Clicking empty space (not a row) clears the selection. */
+  onBackgroundClick: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const rowHeight = ROW_HEIGHT[density];
@@ -89,7 +92,17 @@ export function FileList({
         ))}
       </div>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto" role="listbox" aria-label="Files">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-auto"
+        role="listbox"
+        aria-label="Files"
+        // A click that misses every row (empty space below the list) clears
+        // the selection — the expected way to dismiss the action bar.
+        onClick={event => {
+          if (!(event.target as HTMLElement).closest('[role="option"]')) onBackgroundClick();
+        }}
+      >
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map(row => {
             const entry = entries[row.index]!;
