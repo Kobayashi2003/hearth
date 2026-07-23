@@ -28,11 +28,15 @@ handle /hearth-api/* {
 }
 
 # Frontend: static assets served directly by Caddy — there is no frontend server
-# process any more. `handle_path` strips the prefix; any path under it that is not
-# a real file falls back to index.html so the hash-routed SPA loads. Bare /hearth
-# is matched alongside /hearth/* because a user types the former, and the build's
-# relative asset URLs resolve correctly from either.
-handle_path /hearth /hearth/* {
+# process any more. A named matcher (app-prefixed, per the gateway's convention)
+# covers both bare /hearth and /hearth/*, so a user can type either; it does not
+# match /hearth-api, whose path does not begin with "/hearth/". The prefix is
+# stripped so paths resolve against web/dist, and any path that is not a real
+# file falls back to index.html for the hash-routed SPA. `handle_path` is not
+# used because it accepts only one matcher argument.
+@hearth_web path /hearth /hearth/*
+handle @hearth_web {
+	uri strip_prefix /hearth
 	root * {$HEARTH_WEB_ROOT:./web/dist}
 	try_files {path} /index.html
 	file_server
