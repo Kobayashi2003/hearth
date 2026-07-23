@@ -13,7 +13,7 @@ backing it up. Two consequences run through everything:
 
 1. **Nothing sits between the browser and a byte range.** Media is streamed, not
    copied to the client, and the stream path is kept as short as possible: a
-   `<video>` element points at `/api/media/raw`, and the Caddy edge proxies it
+   `<video>` element points at `/hearth-api/media/raw`, and the Caddy edge proxies it
    straight to the backend with `flush_interval -1`. There is no frontend server
    process to buffer or drop a long-lived Range connection.
 
@@ -27,7 +27,7 @@ backing it up. Two consequences run through everything:
 ```
         Caddy edge (:30709, public)
         ├─ /hearth/*  → static SPA (web/dist), served directly
-        └─ /api/*     → Fastify backend (127.0.0.1:5111, loopback)
+        └─ /hearth-api/* → Fastify backend (127.0.0.1:5111, loopback)
                           ├─ Everything HTTP server (127.0.0.1, loopback)
                           └─ ffmpeg / ffprobe (child processes)
 ```

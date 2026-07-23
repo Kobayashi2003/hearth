@@ -19,7 +19,7 @@ silently: a non-numeric port, a missing root directory, or a malformed
 | `HEARTH_PORT` | `5111` | Backend listen port. Loopback only. |
 | `HEARTH_HOST` | `127.0.0.1` | Backend bind address. Leave loopback; the Caddy edge is the only public door. |
 | `HEARTH_CORS_ORIGIN` | `http://localhost:5110` | Allowed origins, comma-separated. |
-| `HEARTH_API_PREFIX` | `/api` | Path prefix the API mounts under. |
+| `HEARTH_API_PREFIX` | `/hearth-api` | Path prefix the API mounts under. App-scoped to avoid collision under the AppGateway. |
 
 ## Storage
 
@@ -133,4 +133,4 @@ Requests per window, per IP. A `0` window is a minute.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `HEARTH_DEV_API` | `http://127.0.0.1:5311` | Where the Vite dev server proxies `/api`. Only used by `npm run dev`. |
+| `HEARTH_DEV_API` | `http://127.0.0.1:5311` | Where the Vite dev server proxies the API. Only used by `npm run dev`. |

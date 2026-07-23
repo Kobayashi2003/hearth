@@ -28,7 +28,8 @@ export default defineConfig(({ command, mode }) => {
     server: {
       port: 5110,
       proxy: {
-        '/api': {
+        // App-scoped prefix, matching the backend and the AppGateway edge.
+        '/hearth-api': {
           target: apiTarget,
           changeOrigin: false,
           // Range streams must not be buffered by the dev proxy.

@@ -29,7 +29,11 @@ export interface AppConfig {
     readonly port: number;
     readonly host: string;
     readonly corsOrigins: readonly string[];
-    /** Public path prefix the API is reached under, e.g. '/api'. */
+    /**
+     * Public path prefix the API is reached under. App-scoped (`/hearth-api`)
+     * rather than a generic `/api`, because under the AppGateway every app
+     * shares one origin and a generic prefix would collide.
+     */
     readonly apiPrefix: string;
   };
   readonly storage: {
@@ -201,7 +205,7 @@ export function loadConfig(): AppConfig {
       // Loopback only: every request, media bytes included, arrives via the Caddy edge.
       host: envString('HOST', '127.0.0.1'),
       corsOrigins: envList('CORS_ORIGIN', ['http://localhost:5110']),
-      apiPrefix: envString('API_PREFIX', '/api'),
+      apiPrefix: envString('API_PREFIX', '/hearth-api'),
     },
     storage: {
       roots,

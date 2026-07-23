@@ -60,14 +60,14 @@ The default login for the example config is `admin` / `hearth` — change
 
 ```
 Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → static SPA (web/dist)
-                                             └─► /api/*     → backend :5111 (loopback)
+                                             └─► /hearth-api/* → backend :5111 (loopback)
 ```
 
 - The backend binds **loopback only**. Every request, media byte streams
   included, arrives through the Caddy edge on a single public port.
 - The frontend is **static assets** served directly by Caddy — there is no
   frontend server process, and nothing sits between the browser and a byte range.
-  A `<video>` points at `/api/media/raw?…` and Caddy streams it straight through.
+  A `<video>` points at `/hearth-api/media/raw?…` and Caddy streams it straight through.
 - The SPA is served under a **path prefix** (`/hearth`), because the same public
   port may also front sibling apps via a shared AppGateway. Standalone,
   `start.ps1` runs its own Caddy; under the gateway, `start.ps1 -NoCaddy` lets the
@@ -84,7 +84,7 @@ Hearth/
 ├── start.ps1                 # launcher — backend + Caddy edge
 ├── caddy-env.ps1             # derives Caddy upstreams from .env
 ├── Caddyfile                 # standalone edge site block
-├── Caddyfile.snippet         # routes: /api → backend, /hearth → static SPA
+├── Caddyfile.snippet         # routes: /hearth-api → backend, /hearth → static SPA
 ├── .env.example              # every configuration variable, documented
 ├── docs/
 │   ├── architecture.md       # how the pieces fit together
@@ -93,7 +93,7 @@ Hearth/
 ├── packages/shared/          # @hearth/shared — types both tiers compile against
 │   └── src/
 │       ├── entities.ts       #   domain types (FileEntry, MediaProbe, …)
-│       ├── api.ts            #   request/response contracts for /api
+│       ├── api.ts            #   request/response contracts for the API
 │       └── constants.ts      #   MIME overrides, extension sets, sort keys
 ├── server/                   # @hearth/server — Fastify backend
 │   └── src/

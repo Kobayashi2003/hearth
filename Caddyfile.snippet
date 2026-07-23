@@ -11,15 +11,17 @@
 #   - Prefix named matchers with the app (@hearth_*). Under the AppGateway every
 #     app's snippet is imported into one site block, and matcher names are scoped.
 
-# Backend API, plus the /api/ws WebSocket (reverse_proxy upgrades natively).
-# Binds loopback and is reachable only through here. The prefix is NOT stripped —
-# the backend mounts its routes under /api.
+# Backend API. Binds loopback and is reachable only through here. The prefix is
+# app-scoped (/hearth-api) rather than a generic /api because under the
+# AppGateway every app's snippet is imported into one site block on one origin,
+# and a generic prefix would collide. It is NOT stripped — the backend mounts
+# its routes under /hearth-api.
 #
-# Media streams (/api/media/raw, /api/media/transcode, /api/download/*) go through
+# Media streams (/hearth-api/media/raw, /media/transcode, /download/*) go through
 # here too. flush_interval -1 streams rather than buffers, so long-lived Range
 # connections are not dropped under backpressure — the whole reason the frontend
 # is a static SPA with nothing of its own in the byte path.
-handle /api/* {
+handle /hearth-api/* {
 	reverse_proxy {$HEARTH_BACKEND_UPSTREAM:127.0.0.1:5111} {
 		flush_interval -1
 	}

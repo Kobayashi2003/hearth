@@ -67,7 +67,7 @@ loopback address.
    ```
 
    A JSON body with `totalResults` and a `results` array means it is working.
-   Hearth's own view of this is at `GET /api/system/search-status`, and in the
+   Hearth's own view of this is at `GET /hearth-api/system/search-status`, and in the
    UI under *Settings → Search*.
 
 ---
