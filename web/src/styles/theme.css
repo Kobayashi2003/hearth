@@ -1,0 +1,205 @@
+@import 'tailwindcss';
+
+/**
+ * Hearth's design tokens. Everything visual is defined once here and used
+ * through Tailwind utilities — no component should introduce a raw colour.
+ *
+ * The palette is warm-neutral rather than blue-grey, with a single ember accent
+ * reserved for the primary action, the active state, and the focus ring. Both
+ * themes are designed rather than inverted: the dark theme's surfaces carry the
+ * same warm cast, and its accent is lightened to hold contrast against them.
+ */
+@theme {
+  /* Warm neutrals — the room. */
+  --color-hearth-50: #faf8f5;
+  --color-hearth-100: #f2eee8;
+  --color-hearth-200: #e6e0d6;
+  --color-hearth-300: #d3cabc;
+  --color-hearth-400: #a89d8d;
+  --color-hearth-500: #7d7367;
+  --color-hearth-600: #5c544a;
+  --color-hearth-700: #423c35;
+  --color-hearth-800: #2b2724;
+  --color-hearth-900: #1c1917;
+  --color-hearth-950: #121010;
+
+  /* Ember — the fire. Used sparingly, never as a background for long text. */
+  --color-ember-300: #fdba74;
+  --color-ember-400: #fb923c;
+  --color-ember-500: #f27127;
+  --color-ember-600: #d2570f;
+  --color-ember-700: #a8410c;
+
+  /* Status. Warm-shifted so they sit in the same room as the neutrals. */
+  --color-success: #4d7c3f;
+  --color-warning: #b45309;
+  --color-danger: #b4331f;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  /* Paths, sizes and timestamps are data; they are set in mono so columns align
+     and a filename is visually distinct from the path that contains it. */
+  --font-mono:
+    ui-monospace, 'Cascadia Code', 'SF Mono', 'JetBrains Mono', Consolas, 'Noto Sans Mono',
+    monospace;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+
+  /* Fast and functional: state changes read as instant, not animated. */
+  --ease-out-quick: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
+  --duration-quick: 180ms;
+}
+
+/**
+ * Semantic surface variables. Components reference these rather than palette
+ * steps, so the two themes stay genuinely separate designs rather than one
+ * being derived from the other by inversion.
+ */
+:root {
+  --surface-base: var(--color-hearth-50);
+  --surface-raised: #ffffff;
+  --surface-sunken: var(--color-hearth-100);
+  --surface-overlay: #ffffff;
+  --border-subtle: var(--color-hearth-200);
+  --border-strong: var(--color-hearth-300);
+  --text-primary: var(--color-hearth-900);
+  --text-secondary: var(--color-hearth-600);
+  --text-muted: var(--color-hearth-500);
+  --accent: var(--color-ember-600);
+  --accent-hover: var(--color-ember-700);
+  --accent-contrast: #ffffff;
+  --accent-wash: color-mix(in oklab, var(--color-ember-500) 12%, transparent);
+  --scrim: color-mix(in oklab, var(--color-hearth-950) 55%, transparent);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --surface-base: var(--color-hearth-950);
+  --surface-raised: var(--color-hearth-900);
+  --surface-sunken: #0d0c0b;
+  --surface-overlay: var(--color-hearth-800);
+  --border-subtle: #2f2b27;
+  --border-strong: #423c35;
+  --text-primary: var(--color-hearth-50);
+  --text-secondary: var(--color-hearth-300);
+  --text-muted: var(--color-hearth-400);
+  --accent: var(--color-ember-400);
+  --accent-hover: var(--color-ember-300);
+  --accent-contrast: var(--color-hearth-950);
+  --accent-wash: color-mix(in oklab, var(--color-ember-400) 16%, transparent);
+  --scrim: color-mix(in oklab, #000000 72%, transparent);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-base: var(--color-hearth-950);
+    --surface-raised: var(--color-hearth-900);
+    --surface-sunken: #0d0c0b;
+    --surface-overlay: var(--color-hearth-800);
+    --border-subtle: #2f2b27;
+    --border-strong: #423c35;
+    --text-primary: var(--color-hearth-50);
+    --text-secondary: var(--color-hearth-300);
+    --text-muted: var(--color-hearth-400);
+    --accent: var(--color-ember-400);
+    --accent-hover: var(--color-ember-300);
+    --accent-contrast: var(--color-hearth-950);
+    --accent-wash: color-mix(in oklab, var(--color-ember-400) 16%, transparent);
+    --scrim: color-mix(in oklab, #000000 72%, transparent);
+
+    color-scheme: dark;
+  }
+}
+
+/* Expose the semantic variables as Tailwind colour utilities. */
+@theme inline {
+  --color-surface: var(--surface-base);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-overlay: var(--surface-overlay);
+  --color-subtle: var(--border-subtle);
+  --color-strong: var(--border-strong);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-wash: var(--accent-wash);
+}
+
+@layer base {
+  * {
+    border-color: var(--border-subtle);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--surface-base);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    /* Ligatures off: a filename is read character by character. */
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  /* One focus treatment everywhere, always visible, never removed. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Sizes, dates and counts line up column to column. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+
+  /* Section labels: the one place small-caps treatment is used. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
