@@ -1,11 +1,11 @@
-import { Suspense, useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Spinner } from '@/components/ui/primitives';
 import { cn } from '@/lib/cn';
 import { PreviewDock } from './PreviewDock';
 import { usePlayback } from './PlaybackProvider';
 import { usePreview, type PreviewItem } from './PreviewProvider';
-import { viewerComponentFor, viewerKindFor } from './viewerFor';
+import { viewerComponentFor, viewerKindFor, viewerLayoutFor } from './viewerFor';
 
 /**
  * The preview surface: one overlay for the active preview, plus the dock of
@@ -15,6 +15,14 @@ import { viewerComponentFor, viewerKindFor } from './viewerFor';
 export function PreviewLayer() {
   const { items, active, open, close, minimize, restore, togglePin, step } = usePreview();
   const playback = usePlayback();
+
+  // A compact `panel` viewer can be grown to full; reset when the preview changes.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => setExpanded(false), [active?.id]);
+
+  const kind = active ? viewerKindFor(active.entry) : null;
+  const layout = kind ? viewerLayoutFor(kind) : 'full';
+  const isPanel = layout === 'panel' && !expanded;
 
   /**
    * The dock holds every minimised preview, plus whatever audio is playing even
@@ -52,24 +60,37 @@ export function PreviewLayer() {
           aria-modal="true"
           aria-label={`Preview of ${active.entry.name}`}
           className={cn(
-            'fixed inset-0 z-50 flex items-center justify-center',
+            'fixed inset-0 z-50 flex justify-center',
+            // A panel sits at the bottom on a phone (a sheet) and centred on a
+            // wider screen; a full viewer is always centred.
+            isPanel ? 'items-end sm:items-center' : 'items-center',
             'bg-[--scrim] backdrop-blur-[2px]',
             'motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150',
           )}
           onPointerDown={event => {
-            // Only a click on the scrim itself dismisses the preview.
             if (event.target === event.currentTarget) close(active.id);
           }}
         >
           <div
             className={cn(
-              'flex h-full w-full flex-col overflow-hidden bg-overlay shadow-2xl',
-              'sm:h-[calc(100%-3rem)] sm:w-[calc(100%-3rem)] sm:rounded-xl sm:border sm:border-subtle',
+              'flex flex-col overflow-hidden bg-overlay shadow-2xl',
+              isPanel
+                ? [
+                    // Phone: full-width bottom sheet. Wider: a compact card whose
+                    // height fits its content rather than filling the screen.
+                    'h-[80vh] max-h-[34rem] w-full rounded-t-2xl border-t border-subtle',
+                    'sm:h-auto sm:max-h-[85vh] sm:w-[26rem] sm:rounded-xl sm:border',
+                    'motion-safe:animate-in motion-safe:slide-in-from-bottom-4 sm:motion-safe:zoom-in-95',
+                  ]
+                : [
+                    'h-full w-full',
+                    'sm:h-[calc(100%-3rem)] sm:w-[calc(100%-3rem)] sm:rounded-xl sm:border sm:border-subtle',
+                  ],
             )}
           >
             <Suspense
               fallback={
-                <div className="flex h-full items-center justify-center">
+                <div className="flex min-h-[12rem] flex-1 items-center justify-center">
                   <Spinner className="h-6 w-6" />
                 </div>
               }
@@ -107,6 +128,9 @@ export function PreviewLayer() {
         onMinimize={() => minimize(active.id)}
         onTogglePin={() => togglePin(active.id)}
         onStep={step}
+        {...(layout === 'panel'
+          ? { isExpanded: expanded, onToggleExpand: () => setExpanded(value => !value) }
+          : {})}
       />
     );
   }

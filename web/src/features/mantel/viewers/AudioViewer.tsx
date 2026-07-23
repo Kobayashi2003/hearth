@@ -33,6 +33,10 @@ const PLAYLIST_ROW_HEIGHT = 40;
 export default function AudioViewer({ item, onStep, ...chrome }: ViewerProps) {
   const playback = usePlayback();
 
+  // Compact when shown as a panel and not expanded: the layout stacks and the
+  // playlist scrolls within a bounded height rather than filling the screen.
+  const compact = chrome.onToggleExpand != null && !chrome.isExpanded;
+
   const playlist = useMemo(
     () => item.gallery.filter(entry => entry.mimeType.startsWith('audio/')),
     [item.gallery],
@@ -54,16 +58,27 @@ export default function AudioViewer({ item, onStep, ...chrome }: ViewerProps) {
 
   return (
     <ViewerChrome item={item} onStep={onStep} {...chrome}>
-      <div className="flex h-full min-h-0 flex-col bg-surface md:flex-row">
-        <section className="flex flex-col items-center justify-center gap-6 p-6 md:flex-1">
+      <div
+        className={cn(
+          'flex min-h-0 flex-col bg-surface',
+          compact ? 'h-full' : 'h-full md:flex-row',
+        )}
+      >
+        <section
+          className={cn(
+            'flex flex-col items-center justify-center gap-6 p-6',
+            compact ? 'shrink-0' : 'md:flex-1',
+          )}
+        >
           <div
             className={cn(
-              'flex h-40 w-40 items-center justify-center rounded-xl border border-subtle',
+              'flex items-center justify-center rounded-xl border border-subtle',
               'bg-sunken text-muted transition-shadow duration-[--duration-quick]',
+              compact ? 'h-28 w-28' : 'h-40 w-40',
               playback.isPlaying && isCurrent && 'border-accent/40 shadow-[0_0_28px_var(--accent-wash)]',
             )}
           >
-            <Music className="h-14 w-14" />
+            <Music className={compact ? 'h-10 w-10' : 'h-14 w-14'} />
           </div>
 
           <div className="w-full max-w-md text-center">
@@ -147,14 +162,14 @@ export default function AudioViewer({ item, onStep, ...chrome }: ViewerProps) {
           </div>
         </section>
 
-        {playlist.length > 1 ? <Playlist entries={playlist} /> : null}
+        {playlist.length > 1 ? <Playlist entries={playlist} compact={compact} /> : null}
       </div>
     </ViewerChrome>
   );
 }
 
 /** Virtualised, because a music folder can hold thousands of tracks. */
-function Playlist({ entries }: { entries: FileEntry[] }) {
+function Playlist({ entries, compact }: { entries: FileEntry[]; compact: boolean }) {
   const playback = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -166,11 +181,21 @@ function Playlist({ entries }: { entries: FileEntry[] }) {
   });
 
   return (
-    <aside className="flex min-h-0 w-full flex-col border-t border-subtle md:w-80 md:border-l md:border-t-0">
+    <aside
+      className={cn(
+        'flex min-h-0 flex-col border-t border-subtle',
+        // A compact panel may be auto-height, so the list is bounded here to
+        // scroll internally; the full layout puts it in a side column.
+        compact ? 'w-full' : 'w-full md:w-80 md:border-l md:border-t-0',
+      )}
+    >
       <h3 className="eyebrow border-b border-subtle px-3 py-2">
         Playlist · {entries.length} tracks
       </h3>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className={cn('min-h-0 overflow-y-auto', compact ? 'max-h-56' : 'flex-1')}
+      >
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map(row => {
             const entry = entries[row.index]!;

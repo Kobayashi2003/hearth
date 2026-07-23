@@ -29,14 +29,20 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   },
 );
 
+/**
+ * The native select arrow sits hard against the right border and varies by
+ * platform, so it is hidden (`appearance-none`) and drawn as a background
+ * chevron inset from the edge (`bg-select-chevron` in theme.css). Keeping it a
+ * single element preserves the full-width click target and natural sizing.
+ */
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
   function Select({ className, ...props }, ref) {
     return (
       <select
         ref={ref}
         className={cn(
-          'h-9 rounded-md border border-subtle bg-raised px-2.5 text-sm text-primary',
-          'focus:border-accent focus-visible:outline-none',
+          'select-chevron h-9 appearance-none rounded-md border border-subtle bg-raised',
+          'pl-2.5 pr-9 text-sm text-primary focus:border-accent focus-visible:outline-none',
           className,
         )}
         {...props}

@@ -75,6 +75,23 @@ export function viewerComponentFor(kind: ViewerKind): LazyExoticComponent<Compon
   return VIEWERS[kind];
 }
 
+/**
+ * How much of the screen a viewer wants.
+ *
+ * - `full` — the content benefits from the whole surface (images, video, text,
+ *   documents, readers).
+ * - `panel` — the content is small and fixed, so it sits in a compact card
+ *   rather than a full-page overlay that would strand a little UI in a sea of
+ *   empty space. The user can still expand a panel to full.
+ */
+export type ViewerLayout = 'full' | 'panel';
+
+const PANEL_KINDS: ReadonlySet<ViewerKind> = new Set(['audio', 'unsupported']);
+
+export function viewerLayoutFor(kind: ViewerKind): ViewerLayout {
+  return PANEL_KINDS.has(kind) ? 'panel' : 'full';
+}
+
 /** True when a file has a viewer, so the explorer can offer preview on it. */
 export function isPreviewable(entry: FileEntry): boolean {
   return !entry.isDirectory && viewerKindFor(entry) !== 'unsupported';

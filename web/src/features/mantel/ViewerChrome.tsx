@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Download, Minus, Pin, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Maximize2, Minimize2, Minus, Pin, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { Tooltip } from '@/components/ui/primitives';
@@ -21,6 +21,8 @@ export function ViewerChrome({
   onMinimize,
   onTogglePin,
   onStep,
+  isExpanded,
+  onToggleExpand,
   children,
   contentClassName,
 }: {
@@ -31,6 +33,9 @@ export function ViewerChrome({
   onMinimize: () => void;
   onTogglePin: () => void;
   onStep?: (delta: number) => void;
+  /** Present only for compact `panel` viewers; adds an expand/collapse control. */
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   children: ReactNode;
   contentClassName?: string;
 }) {
@@ -62,6 +67,20 @@ export function ViewerChrome({
               <Download className="h-4 w-4" />
             </a>
           </Tooltip>
+
+          {onToggleExpand ? (
+            <Tooltip label={isExpanded ? 'Shrink to a panel' : 'Expand to full screen'}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleExpand}
+                aria-pressed={isExpanded}
+                aria-label={isExpanded ? 'Shrink to a panel' : 'Expand to full screen'}
+              >
+                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
+            </Tooltip>
+          ) : null}
 
           <Tooltip label={item.pinned ? 'Unpin — close when leaving the folder' : 'Pin — keep open while browsing'}>
             <Button
