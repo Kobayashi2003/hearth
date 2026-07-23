@@ -1,0 +1,36 @@
+# Route definitions for Hearth — the single source of truth, imported by every
+# edge that fronts it: ./Caddyfile (standalone) and the AppGateway (several apps
+# sharing one public port).
+#
+# 127.0.0.1, not localhost: on Windows localhost resolves to ::1 first, and each
+# cold connection to an IPv4-only listener would eat a ~20 s IPv6 timeout.
+#
+# Rules for anything added here:
+#   - No matcher-less `handle`. Under the AppGateway the catch-all is the landing
+#     page, and one here would swallow the other apps' traffic.
+#   - Prefix named matchers with the app (@hearth_*). Under the AppGateway every
+#     app's snippet is imported into one site block, and matcher names are scoped.
+
+# Backend API, plus the /api/ws WebSocket (reverse_proxy upgrades natively).
+# Binds loopback and is reachable only through here. The prefix is NOT stripped —
+# the backend mounts its routes under /api.
+#
+# Media streams (/api/media/raw, /api/media/transcode, /api/download/*) go through
+# here too. flush_interval -1 streams rather than buffers, so long-lived Range
+# connections are not dropped under backpressure — the whole reason the frontend
+# is a static SPA with nothing of its own in the byte path.
+handle /api/* {
+	reverse_proxy {$HEARTH_BACKEND_UPSTREAM:127.0.0.1:5111} {
+		flush_interval -1
+	}
+}
+
+# Frontend: static assets served directly by Caddy — there is no frontend server
+# process any more. The prefix is stripped, and any unmatched path under it falls
+# back to index.html so the hash-routed SPA loads. The build uses relative asset
+# URLs and discovers its own prefix at runtime, so this one root works unchanged.
+handle_path /hearth/* {
+	root * {$HEARTH_WEB_ROOT:./web/dist}
+	try_files {path} /index.html
+	file_server
+}

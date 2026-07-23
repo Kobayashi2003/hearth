@@ -1,0 +1,29 @@
+# Standalone edge — Hearth alone behind frp on :30709.
+#
+# Routes live in ./Caddyfile.snippet; this file is just the site block around
+# them. Started by start.ps1, and skipped under `start.ps1 -NoCaddy`, when the
+# AppGateway owns the port instead.
+{
+	auto_https off
+
+	# Never used, and leaving it on binds 127.0.0.1:2019 — which collides with any
+	# second Caddy on the box.
+	admin off
+}
+
+{$CADDY_BIND::30709} {
+	import Caddyfile.snippet
+
+	# The frontend lives under its prefix, so the bare root serves nothing.
+	# Standalone, Hearth is the whole site. (Under the AppGateway the root is the
+	# landing page — hence this lives here, not in the snippet.)
+	handle / {
+		redir * /hearth permanent
+	}
+
+	# Anything the snippet did not claim. Without this Caddy answers an empty 200,
+	# which looks like a working page.
+	handle {
+		respond "Not found" 404
+	}
+}
