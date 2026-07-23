@@ -46,6 +46,7 @@ export function LoginScreen({ reason }: { reason?: string }) {
 
           <Field label="Username">
             <Input
+              name="username"
               value={username}
               onChange={event => setUsername(event.target.value)}
               autoComplete="username"
@@ -56,6 +57,7 @@ export function LoginScreen({ reason }: { reason?: string }) {
 
           <Field label="Password">
             <Input
+              name="password"
               type="password"
               value={password}
               onChange={event => setPassword(event.target.value)}
