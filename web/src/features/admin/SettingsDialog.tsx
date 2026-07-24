@@ -8,8 +8,10 @@ import {
   Shield,
   Trash2,
   Users,
+  X,
 } from 'lucide-react';
 
+import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { useSession } from '@/features/auth/SessionProvider';
 import { AboutSection } from './sections/AboutSection';
@@ -70,6 +72,17 @@ export function SettingsDialog({
         >
           <Dialog.Title className="sr-only">Settings</Dialog.Title>
 
+          {/* A full-screen dialog on a phone has no scrim to tap and no Escape
+              key, so a visible close control is essential, not optional. */}
+          <div className="flex shrink-0 items-center justify-between border-b border-subtle px-3 py-2.5 sm:hidden">
+            <span className="text-base font-semibold text-primary">Settings</span>
+            <Dialog.Close asChild>
+              <Button variant="ghost" size="icon" aria-label="Close settings">
+                <X className="h-4 w-4" />
+              </Button>
+            </Dialog.Close>
+          </div>
+
           <nav
             aria-label="Settings sections"
             className="flex shrink-0 gap-1 overflow-x-auto border-b border-subtle p-2 sm:w-52 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r"
@@ -98,7 +111,15 @@ export function SettingsDialog({
           </nav>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            <h2 className="mb-4 text-base font-semibold text-primary">{active.label}</h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-primary">{active.label}</h2>
+              {/* Desktop close; the phone layout has its own in the top bar. */}
+              <Dialog.Close asChild>
+                <Button variant="ghost" size="icon" aria-label="Close settings" className="hidden sm:flex">
+                  <X className="h-4 w-4" />
+                </Button>
+              </Dialog.Close>
+            </div>
             {active.render()}
           </div>
         </Dialog.Content>
