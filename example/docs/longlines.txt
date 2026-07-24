@@ -1,0 +1,2 @@
+This is a single very long line without any newlines that should either wrap or scroll horizontally: word  END
+Second short line.

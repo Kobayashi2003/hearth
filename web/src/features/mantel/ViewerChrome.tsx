@@ -123,7 +123,11 @@ export function ViewerChrome({
   );
 }
 
-/** Gallery arrows: large touch targets, faded until the pointer is near. */
+/**
+ * Gallery arrows. On a pointer device they stay out of the way and appear on
+ * hover; on a touch device — where there is no hover — they are always shown,
+ * since otherwise there would be no way to step through the gallery.
+ */
 function GalleryStep({
   direction,
   onClick,
@@ -139,9 +143,10 @@ function GalleryStep({
       aria-label={`${direction === 'previous' ? 'Previous' : 'Next'} file`}
       className={cn(
         'absolute top-1/2 z-10 flex h-14 w-11 -translate-y-1/2 items-center justify-center',
-        'rounded-md bg-black/35 text-white/90 opacity-0 backdrop-blur-sm transition-opacity',
+        'rounded-md bg-black/35 text-white/90 backdrop-blur-sm transition-opacity',
         'duration-[--duration-quick] hover:bg-black/55 focus-visible:opacity-100',
-        'group-hover/viewer:opacity-100',
+        // Hidden until hover on fine pointers; always visible on touch.
+        'opacity-0 group-hover/viewer:opacity-100 [@media(pointer:coarse)]:opacity-100',
         direction === 'previous' ? 'left-2' : 'right-2',
       )}
     >

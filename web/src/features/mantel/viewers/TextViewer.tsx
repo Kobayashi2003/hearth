@@ -15,6 +15,8 @@ import type { ViewerProps } from './types';
 /** Encodings worth offering directly; anything iconv knows can be typed in. */
 const ENCODINGS = ['utf8', 'utf16le', 'gb18030', 'big5', 'shift_jis', 'euc-kr', 'win1252', 'latin1'];
 
+const WRAP_PREFERENCE_KEY = 'hearth.text-wrap';
+
 type Mode = 'read' | 'edit';
 
 export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
@@ -22,8 +24,17 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
   const [encoding, setEncoding] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<Mode>('read');
   const [draft, setDraft] = useState('');
-  const [wrap, setWrap] = useState(true);
+  // One wrap setting for both reading and editing, remembered across files.
+  const [wrap, setWrap] = useState(() => localStorage.getItem(WRAP_PREFERENCE_KEY) !== 'off');
   const [isSaving, setSaving] = useState(false);
+
+  const toggleWrap = useCallback(() => {
+    setWrap(current => {
+      const next = !current;
+      localStorage.setItem(WRAP_PREFERENCE_KEY, next ? 'on' : 'off');
+      return next;
+    });
+  }, []);
 
   const { data, isPending, error, refetch } = useQuery({
     queryKey: ['content', path, encoding],
@@ -95,7 +106,7 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setWrap(current => !current)}
+              onClick={toggleWrap}
               aria-pressed={wrap}
               aria-label="Wrap lines"
               className={cn(wrap && 'text-accent')}
@@ -139,17 +150,21 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
           value={draft}
           onChange={event => setDraft(event.target.value)}
           spellCheck={false}
+          // The `wrap` attribute — not just CSS — is what actually stops a
+          // textarea soft-wrapping, so it must track the toggle for editing to
+          // match the read view. `off` also enables native horizontal scroll.
+          wrap={wrap ? 'soft' : 'off'}
           aria-label={`Editing ${item.entry.name}`}
           className={cn(
             'h-full w-full resize-none bg-surface p-4 font-mono text-[0.8125rem] leading-relaxed',
             'text-primary outline-none',
-            wrap ? 'whitespace-pre-wrap' : 'overflow-x-auto whitespace-pre',
+            wrap ? 'whitespace-pre-wrap break-words' : 'overflow-auto whitespace-pre',
           )}
         />
       ) : (
         <div className="h-full overflow-auto bg-surface">
           {data?.truncated ? (
-            <p className="border-b border-subtle bg-sunken px-4 py-2 text-xs text-muted">
+            <p className="sticky top-0 z-10 border-b border-subtle bg-sunken px-4 py-2 text-xs text-muted">
               Showing the first part of this file — it is too large to load whole.
             </p>
           ) : null}
@@ -161,10 +176,15 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
               dangerouslySetInnerHTML={{ __html: html }}
             />
           ) : highlighted ? (
+            // The same toggle drives the read view. Off leaves the pre at
+            // white-space: pre so long lines overflow and the container scrolls
+            // horizontally; on wraps and breaks so nothing runs off-screen.
             <div
               className={cn(
                 'shiki-host p-4 text-[0.8125rem] leading-relaxed',
-                wrap && '[&_pre]:whitespace-pre-wrap',
+                wrap
+                  ? '[&_pre]:whitespace-pre-wrap [&_pre]:break-words'
+                  : '[&_pre]:whitespace-pre',
               )}
               dangerouslySetInnerHTML={{ __html: highlighted }}
             />
@@ -172,7 +192,7 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
             <pre
               className={cn(
                 'p-4 font-mono text-[0.8125rem] leading-relaxed text-primary',
-                wrap ? 'whitespace-pre-wrap' : 'whitespace-pre',
+                wrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre',
               )}
             >
               {data?.content}

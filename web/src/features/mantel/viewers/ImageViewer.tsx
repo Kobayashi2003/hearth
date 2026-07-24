@@ -74,14 +74,16 @@ export default function ImageViewer({ item, onStep, ...chrome }: ViewerProps) {
   }
 
   function handlePointerDown(event: React.PointerEvent) {
-    if (transform.zoom === 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    // Record the start either way: a drag pans a zoomed image, a swipe steps
+    // the gallery on a fitted one.
     dragOrigin.current = {
       x: transform.x,
       y: transform.y,
       pointerX: event.clientX,
       pointerY: event.clientY,
     };
+    if (transform.zoom === 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
     setDragging(true);
   }
 
@@ -93,6 +95,20 @@ export default function ImageViewer({ item, onStep, ...chrome }: ViewerProps) {
       x: origin.x + (event.clientX - origin.pointerX),
       y: origin.y + (event.clientY - origin.pointerY),
     }));
+  }
+
+  const SWIPE_THRESHOLD = 60;
+
+  function handlePointerUp(event: React.PointerEvent) {
+    setDragging(false);
+    // A horizontal swipe over a fitted image steps the gallery — the gesture a
+    // phone user reaches for.
+    if (transform.zoom !== 0) return;
+    const dx = event.clientX - dragOrigin.current.pointerX;
+    const dy = event.clientY - dragOrigin.current.pointerY;
+    if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+      onStep(dx < 0 ? 1 : -1);
+    }
   }
 
   const isFitted = transform.zoom === 0;
@@ -139,7 +155,7 @@ export default function ImageViewer({ item, onStep, ...chrome }: ViewerProps) {
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={() => setDragging(false)}
+        onPointerUp={handlePointerUp}
         onDoubleClick={() => setTransform(isFitted ? { ...FIT, zoom: 1 } : FIT)}
       >
         <img
