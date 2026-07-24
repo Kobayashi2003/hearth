@@ -30,16 +30,34 @@ export default function ImageViewer({ item, onStep, ...chrome }: ViewerProps) {
   const [transform, setTransform] = useState<Transform>(FIT);
   const [isDragging, setDragging] = useState(false);
   const dragOrigin = useRef({ x: 0, y: 0, pointerX: 0, pointerY: 0 });
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const naturalSize = useRef({ width: 0, height: 0 });
 
   // A new image starts fitted rather than inheriting the previous one's zoom.
   useEffect(() => setTransform(FIT), [item.entry.path]);
 
-  const zoomBy = useCallback((factor: number) => {
-    setTransform(current => {
-      const base = current.zoom === 0 ? 1 : current.zoom;
-      return { ...current, zoom: clamp(base * factor, MIN_ZOOM, MAX_ZOOM) };
-    });
+  /**
+   * The scale at which the image fits the frame — natural size mapped into the
+   * container, never upscaled. `zoom` is measured against natural size (1 =
+   * actual pixels), so this is where a zoom out of the fitted state must begin;
+   * starting from 1 instead would jump a phone-fitted image up to full size.
+   */
+  const fitScale = useCallback(() => {
+    const container = containerRef.current;
+    const { width, height } = naturalSize.current;
+    if (!container || !width || !height) return 1;
+    return Math.min(1, container.clientWidth / width, container.clientHeight / height);
   }, []);
+
+  const zoomBy = useCallback(
+    (factor: number) => {
+      setTransform(current => {
+        const base = current.zoom === 0 ? fitScale() : current.zoom;
+        return { ...current, zoom: clamp(base * factor, MIN_ZOOM, MAX_ZOOM) };
+      });
+    },
+    [fitScale],
+  );
 
   const rotate = useCallback(() => {
     setTransform(current => ({ ...current, rotation: (current.rotation + 90) % 360 }));
@@ -148,6 +166,7 @@ export default function ImageViewer({ item, onStep, ...chrome }: ViewerProps) {
       {...chrome}
     >
       <div
+        ref={containerRef}
         className={cn(
           'flex h-full w-full items-center justify-center overflow-hidden',
           isFitted ? 'cursor-default' : isDragging ? 'cursor-grabbing' : 'cursor-grab',
@@ -162,6 +181,12 @@ export default function ImageViewer({ item, onStep, ...chrome }: ViewerProps) {
           src={mediaUrls.raw(item.entry.path)}
           alt={item.entry.name}
           draggable={false}
+          onLoad={event => {
+            naturalSize.current = {
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            };
+          }}
           className={cn(
             'select-none',
             isFitted ? 'max-h-full max-w-full object-contain' : 'max-w-none',
