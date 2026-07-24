@@ -1,10 +1,11 @@
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Spinner } from '@/components/ui/primitives';
 import { cn } from '@/lib/cn';
 import { PreviewDock } from './PreviewDock';
 import { usePlayback } from './PlaybackProvider';
 import { usePreview, type PreviewItem } from './PreviewProvider';
+import { useBackToClose } from './useBackToClose';
 import { viewerComponentFor, viewerKindFor, viewerLayoutFor } from './viewerFor';
 
 /**
@@ -39,18 +40,25 @@ export function PreviewLayer() {
     return minimized;
   }, [items, playback.track]);
 
+  const closeActive = useCallback(() => {
+    if (active) close(active.id);
+  }, [active, close]);
+
+  // The browser Back button closes the overlay instead of leaving the page.
+  useBackToClose(active !== null, closeActive);
+
   // Escape closes the top preview — the single most-used way out.
   useEffect(() => {
     if (!active) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && active) {
+      if (event.key === 'Escape') {
         event.preventDefault();
-        close(active.id);
+        closeActive();
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, close]);
+  }, [active, closeActive]);
 
   return (
     <>
