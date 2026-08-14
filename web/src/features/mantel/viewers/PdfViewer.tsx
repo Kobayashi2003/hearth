@@ -9,7 +9,7 @@ import type { ViewerProps } from './types';
  */
 export default function PdfViewer({ item, onStep, ...chrome }: ViewerProps) {
   return (
-    <ViewerChrome item={item} onStep={onStep} contentClassName="bg-hearth-950" {...chrome}>
+    <ViewerChrome item={item} onStep={onStep} contentClassName="bg-hearth-950" flow="document" {...chrome}>
       <iframe
         title={item.entry.name}
         src={mediaUrls.raw(item.entry.path)}

@@ -2,8 +2,7 @@ import type { FastifyError, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import type { ApiErrorBody } from '@hearth/shared';
 
-import { HearthError } from '../lib/errors.js';
-import { isAbortError } from '../lib/abort.js';
+import { HearthError, isAbortError } from '../lib/errors.js';
 
 /**
  * The one place an error becomes a response. Unknown errors are logged in full

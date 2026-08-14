@@ -3,10 +3,11 @@ import { createContext, use, useMemo, type ReactNode } from 'react';
 import { Spinner } from '@/components/ui/primitives';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { useSession } from '@/features/auth/SessionProvider';
-import { usePreferences, type Preferences } from '@/hooks/usePreferences';
+import { usePreferences, type Preferences } from '@/features/hob/usePreferences';
 import { mediaUrls } from '@/lib/api';
 import { PreviewProvider } from '@/features/mantel/PreviewProvider';
 import { PreviewLayer } from '@/features/mantel/PreviewLayer';
+import { BottomTrayProvider } from './BottomTray';
 
 interface ShellValue {
   preferences: Preferences;
@@ -56,8 +57,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           data-density={preferences.density}
         >
           <Wallpaper preferences={preferences} />
-          <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
-          <PreviewLayer />
+          {/* The tray owns the bottom edge for everyone who wants to float
+              something there; see BottomTray. */}
+          <BottomTrayProvider>
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
+            <PreviewLayer />
+          </BottomTrayProvider>
         </div>
       </PreviewProvider>
     </ShellContext>

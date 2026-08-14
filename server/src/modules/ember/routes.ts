@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { TrashListResponse, TrashRestoreRequest, TrashSettings } from '@hearth/shared';
 
 import { buildRateLimits } from '../../plugins/rate-limit.js';
+import type { LedgerService } from '../ledger/ledger.service.js';
 import type { TrashService } from './trash.service.js';
 
 const restoreSchema = {
@@ -16,7 +17,10 @@ const settingsSchema = {
   body: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' } } },
 } as const;
 
-export function createEmberRoutes(trash: TrashService): FastifyPluginAsync {
+export function createEmberRoutes(
+  trash: TrashService,
+  ledger: LedgerService,
+): FastifyPluginAsync {
   return async app => {
     const { runtime } = app.hearth;
     const rateLimits = buildRateLimits(app.hearth.config);
@@ -34,7 +38,11 @@ export function createEmberRoutes(trash: TrashService): FastifyPluginAsync {
         const results = [];
         for (const id of request.body.ids) {
           try {
-            results.push({ path: id, ok: true, resultPath: await trash.restore(id) });
+            const { path, originalPath } = await trash.restore(id);
+            // An item that came back under a collision-resolved name takes its
+            // reading position with it. See ADR 0001.
+            await ledger.reprefix(originalPath, path);
+            results.push({ path: id, ok: true, resultPath: path });
           } catch (error) {
             results.push({
               path: id,

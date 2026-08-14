@@ -18,7 +18,7 @@ export default function OfficeViewer({ item, onStep, ...chrome }: ViewerProps) {
   });
 
   return (
-    <ViewerChrome item={item} onStep={onStep} {...chrome}>
+    <ViewerChrome item={item} onStep={onStep} flow="document" {...chrome}>
       {isPending ? (
         <div className="flex h-full items-center justify-center">
           <Spinner className="h-6 w-6" />

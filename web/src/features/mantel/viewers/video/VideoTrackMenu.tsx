@@ -4,7 +4,7 @@ import type { MediaTrack } from '@hearth/shared';
 
 import { Button } from '@/components/ui/Button';
 import { Tooltip } from '@/components/ui/primitives';
-import { cn } from '@/lib/cn';
+import { menuContentClass, menuItemClass } from '@/components/ui/Menu';
 
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -14,16 +14,6 @@ function trackLabel(track: MediaTrack, index: number): string {
   if (track.language) return track.language.toUpperCase();
   return `Track ${index + 1}`;
 }
-
-const menuContentClass = cn(
-  'z-50 min-w-44 rounded-lg border border-subtle bg-overlay p-1 shadow-lg',
-  'text-sm text-primary',
-);
-
-const menuItemClass = cn(
-  'flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5',
-  'outline-none data-[highlighted]:bg-sunken',
-);
 
 /**
  * Audio and subtitle selection. Previously buried behind an unlabelled icon;

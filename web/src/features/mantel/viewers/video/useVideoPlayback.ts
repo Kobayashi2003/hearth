@@ -75,11 +75,6 @@ export function useVideoPlayback() {
     if (video) video.playbackRate = rate;
   }, []);
 
-  const toggleFullscreen = useCallback(async (container: HTMLElement | null) => {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else if (container) await container.requestFullscreen().catch(() => undefined);
-  }, []);
-
   const togglePictureInPicture = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
@@ -124,7 +119,6 @@ export function useVideoPlayback() {
     setVolume,
     toggleMute,
     setRate,
-    toggleFullscreen,
     togglePictureInPicture,
   };
 }

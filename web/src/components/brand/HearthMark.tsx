@@ -1,11 +1,21 @@
 /**
- * The Hearth mark: an arched fireplace opening with an ember burning inside.
+ * The Hearth mark: an arched fireplace opening with a fire burning inside.
  *
  * Drawn on a 32-unit grid with heavy strokes so it stays legible at 16 px in a
- * browser tab, where the arch reads as a container and the ember as a warm dot.
+ * browser tab, where the arch reads as a container and the fire as a warm shape.
  * The surround inherits `currentColor` so the mark sits correctly on either
- * theme; only the ember is coloured.
+ * theme; only the fire is coloured.
  */
+/**
+ * The flame outline, shared with the favicon so the tab and the header cannot
+ * drift apart. Sits inside the arch with clearance on the mantel line at y=27.
+ */
+const FLAME =
+  'M17.4 9.6C18.2 12.6 19.6 14.2 20.6 15.8C21.6 17.4 21.8 19.3 20.9 21' +
+  'C19.8 23.2 17.6 24.4 15.6 24.2C12.6 23.9 10.6 21.8 10.6 19.2' +
+  'C10.6 17.4 11.5 15.8 13 14.4C13 16 13.6 17 14.7 17.4' +
+  'C14 14.4 14.9 11.6 17.4 9.6Z';
+
 export function HearthMark({
   className,
   title = 'Hearth',
@@ -31,21 +41,13 @@ export function HearthMark({
       />
       {/* The mantel — the shelf the room is arranged around. */}
       <path d="M2 27h28" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-      {/* The ember, banked at the base of the opening. */}
-      <path
-        d="M16 12c2.6 1.9 3.9 3.9 3.9 6a3.9 3.9 0 1 1-7.8 0c0-2.1 1.3-4.1 3.9-6Z"
-        fill="var(--accent)"
-      />
+      {/*
+        The fire. A flame, not a drop: the tip leans off centre, the right flank
+        swells where the heat is, and a notch is cut out of the left so a second
+        tongue curls up inside it. A symmetrical teardrop — which is what this
+        was — reads as water however warm its colour.
+      */}
+      <path d={FLAME} fill="var(--accent)" />
     </svg>
-  );
-}
-
-/** Wordmark: the mark beside the lowercase name, for the header and login. */
-export function HearthWordmark({ className }: { className?: string }) {
-  return (
-    <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
-      <HearthMark className="h-6 w-6 text-primary" />
-      <span className="text-[1.0625rem] font-semibold tracking-tight lowercase">hearth</span>
-    </span>
   );
 }

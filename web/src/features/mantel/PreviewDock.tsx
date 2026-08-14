@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/Button';
 import { Tooltip } from '@/components/ui/primitives';
 import { cn } from '@/lib/cn';
 import { formatDuration } from '@/lib/format';
-import { FileGlyph } from '@/features/explorer/FileGlyph';
+import { FileGlyph } from '@/components/FileGlyph';
+import { TrayBar, useTrayIsShared } from '@/features/shell/BottomTray';
 import { usePlayback } from './PlaybackProvider';
 import type { PreviewItem } from './PreviewProvider';
 
 /**
- * The dock: minimised previews as a labelled strip along the bottom edge.
+ * The dock: minimised previews as a labelled strip in the shell's bottom tray,
+ * where it stacks with the selection bar rather than landing on top of it.
  *
  * This is the spatial model that makes several open previews comprehensible —
  * a minimised preview is *somewhere*, not gone. Anything playing keeps a live
@@ -25,16 +27,11 @@ export function PreviewDock({
   onRestore: (id: string) => void;
   onClose: (id: string) => void;
 }) {
-  if (items.length === 0) return null;
-
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 flex justify-center p-3">
+    <TrayBar slot="dock" show={items.length > 0}>
       <ul
         aria-label="Minimised previews"
-        className={cn(
-          'pointer-events-auto flex max-w-full gap-1.5 overflow-x-auto rounded-xl border',
-          'border-subtle bg-overlay/95 p-1.5 shadow-lg backdrop-blur-md',
-        )}
+        className="flex max-w-full gap-1.5 overflow-x-auto p-1.5"
       >
         {items.map(item => (
           <DockItem
@@ -45,7 +42,7 @@ export function PreviewDock({
           />
         ))}
       </ul>
-    </div>
+    </TrayBar>
   );
 }
 
@@ -59,6 +56,7 @@ function DockItem({
   onClose: () => void;
 }) {
   const playback = usePlayback();
+  const isShared = useTrayIsShared();
   const isSounding = playback.track?.path === item.id;
 
   return (
@@ -66,7 +64,7 @@ function DockItem({
       <div
         className={cn(
           'group flex items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
-          'duration-[--duration-instant]',
+          'duration-[var(--duration-instant)]',
           isSounding
             ? 'border-accent/45 bg-accent-wash'
             : 'border-transparent hover:border-subtle hover:bg-sunken',
@@ -83,7 +81,14 @@ function DockItem({
           </span>
 
           <span className="min-w-0">
-            <span className="block max-w-[10rem] truncate text-[0.8125rem] text-primary">
+            {/* Dropped first when the tray is shared: what is playing is
+                already audible, and the time beneath says which part of it. */}
+            <span
+              className={cn(
+                'block max-w-[10rem] truncate text-[0.8125rem] text-primary',
+                isShared && 'hidden xl:block',
+              )}
+            >
               {item.entry.name}
             </span>
             {isSounding ? (
@@ -108,10 +113,14 @@ function DockItem({
           </Tooltip>
         ) : null}
 
+        {/* Always visible, never on hover: this is the only way to stop a track
+            that is playing with no window of its own, and a control you have to
+            discover by waving the mouse at it is one that does not exist on a
+            touch screen at all. */}
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          className="h-7 w-7 text-muted hover:text-primary"
           onClick={onClose}
           aria-label={`Close preview of ${item.entry.name}`}
         >

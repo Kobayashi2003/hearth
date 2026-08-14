@@ -1,26 +1,12 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Makes the browser Back button close an open overlay instead of navigating the
- * page away — and back again once the overlay is gone.
+ * Back closes an open overlay instead of leaving the page.
  *
- * How it works, and the traps it sidesteps (this is easy to get subtly wrong):
- *
- * - When `isOpen` becomes true, one history entry is pushed. It carries the
- *   *same* URL and preserves the router's own `history.state` fields, so the
- *   hash router — which keys off the hash and its state key — does not treat it
- *   as a navigation. Back then pops that entry, and the popstate handler closes
- *   the overlay rather than leaving the page.
- *
- * - When the overlay closes by any *other* means (a button, Escape, the scrim),
- *   the pushed entry has to be removed, so `history.back()` is called. That
- *   itself emits a popstate; a one-shot guard makes the handler ignore that
- *   echo, so it neither closes an already-closed overlay nor pops a second
- *   entry.
- *
- * - Exactly one guard entry ever exists (`pushedRef`). Stepping through a
- *   gallery or swapping which file is previewed keeps `isOpen` true, so entries
- *   never pile up.
+ * One history entry guards the overlay, pushed with the router's own state
+ * fields intact so the hash router does not read it as a navigation. Closing by
+ * any other means pops that entry, and a one-shot guard ignores the popstate
+ * that pop emits.
  */
 export function useBackToClose(isOpen: boolean, onClose: () => void) {
   const pushedRef = useRef(false);
@@ -54,14 +40,12 @@ export function useBackToClose(isOpen: boolean, onClose: () => void) {
   useEffect(() => {
     function onPopState() {
       if (ignoreNextPopRef.current) {
-        // The echo from our own history.back() after a manual close.
-        ignoreNextPopRef.current = false;
+          ignoreNextPopRef.current = false;
         return;
       }
       if (pushedRef.current) {
-        // A real Back press while the overlay is open. The browser has already
-        // popped our entry; clear the flag first so the effect above does not
-        // then pop a second time.
+        // A real Back press: the entry is already gone, so clear the flag before
+        // closing or the effect above pops a second time.
         pushedRef.current = false;
         onCloseRef.current();
       }

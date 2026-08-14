@@ -89,3 +89,11 @@ export function fromNodeError(error: unknown, fallbackMessage: string): HearthEr
       return HearthError.internal(fallbackMessage);
   }
 }
+
+/** Thrown when the client goes away mid-operation; never logged as an error. */
+export function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof HearthError && error.code === 'ABORTED') ||
+    (error as { name?: string } | undefined)?.name === 'AbortError'
+  );
+}

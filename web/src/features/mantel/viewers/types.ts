@@ -11,11 +11,25 @@ export interface ViewerProps {
   onMinimize: () => void;
   onTogglePin: () => void;
   onStep: (delta: number) => void;
+  /** True while the window has taken the whole screen, or the whole browser. */
+  isFull: boolean;
+  onToggleFull: () => void;
   /**
-   * Present only for compact `panel` viewers: whether the panel is expanded to
-   * full size, and a toggle for it. Full viewers leave both undefined and the
-   * chrome shows no expand control.
+   * Which mechanism the toggle uses. Only the label depends on it — "fullscreen"
+   * promises the tab strip will go away, and it should only be promised when it
+   * is true.
    */
-  isExpanded?: boolean;
-  onToggleExpand?: () => void;
+  fullscreenMode: 'browser' | 'window';
+  /**
+   * True while the window is the compact content-sized card rather than a sized
+   * window — the audio panel's two-column layout does not fit in one.
+   */
+  isCompact: boolean;
+  /**
+   * True when this viewer has no window and is mounted only to keep something
+   * outside the page alive — today, a video that went to picture-in-picture when
+   * its pinned preview was closed. A viewer in this state must not claim the
+   * keyboard or the media session: the visible preview owns both.
+   */
+  isBackground: boolean;
 }

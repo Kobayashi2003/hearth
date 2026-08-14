@@ -1,9 +1,14 @@
 import type {
   ApiErrorBody,
+  ArchiveListing,
   ChunkedUploadSession,
   ComicManifest,
   CreateUserRequest,
   FileEntry,
+  HobDocument,
+  HobPatch,
+  LedgerDocument,
+  LedgerPatch,
   ListResponse,
   LockdownSettings,
   MediaKind,
@@ -119,6 +124,10 @@ export const api = {
   search: (params: SearchParams, signal?: AbortSignal) =>
     request<SearchResponse>(query('/search', params), signal ? { signal } : {}),
 
+  /** One entry by path — Ledger stores paths, and resuming needs the entry. */
+  entry: (path: string, signal?: AbortSignal) =>
+    request<FileEntry>(query('/files/entry', { path }), signal ? { signal } : {}),
+
   mediaCollection: (kind: MediaKind, params: ListParams, signal?: AbortSignal) =>
     request<SearchResponse>(query(`/media/${kind}`, params), signal ? { signal } : {}),
 
@@ -174,6 +183,9 @@ export const api = {
   openComic: (path: string, signal?: AbortSignal) =>
     request<ComicManifest>(query('/comic', { path }), signal ? { signal } : {}),
 
+  openArchive: (path: string, signal?: AbortSignal) =>
+    request<ArchiveListing>(query('/archive', { path }), signal ? { signal } : {}),
+
   readOffice: (path: string, signal?: AbortSignal) =>
     request<OfficeContentResponse>(query('/office', { path }), signal ? { signal } : {}),
 
@@ -218,6 +230,15 @@ export const api = {
   viewerSettings: () => request<ViewerSettings>('/admin/viewers'),
   saveViewerSettings: (body: Partial<ViewerSettings>) =>
     request<ViewerSettings>('/admin/viewers', { method: 'PUT', body }),
+
+  // ── Ledger — where you were ───────────────────────────────────────────────
+  ledger: () => request<LedgerDocument>('/ledger'),
+  patchLedger: (body: LedgerPatch) => request<LedgerDocument>('/ledger', { method: 'PATCH', body }),
+
+  // ── Hob — how you like things set ─────────────────────────────────────────
+  preferences: () => request<HobDocument>('/preferences'),
+  patchPreferences: (body: HobPatch) =>
+    request<HobDocument>('/preferences', { method: 'PATCH', body }),
 };
 
 /** Build a path with query parameters, relative to the API base. */
@@ -240,5 +261,6 @@ export const mediaUrls = {
   download: (path: string) => apiUrl('/download', { path }),
   zip: (token: string) => apiUrl(`/download/zip/${token}`),
   comicPage: (key: string, page: string) => apiUrl(`/comic/${key}/${encodeURIComponent(page)}`),
+  archiveEntry: (path: string, entry: string) => apiUrl('/archive/entry', { path, entry }),
   background: (name?: string) => apiUrl('/background', { name }),
 };

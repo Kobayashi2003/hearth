@@ -9,8 +9,20 @@ export interface PreviewItem {
   entry: FileEntry;
   /** Collapsed into the dock rather than closed. */
   minimized: boolean;
-  /** Kept open across navigation instead of closing with the folder. */
+  /**
+   * Pinned: this preview does not close when you click away from it, and what it
+   * is playing outlives its window. Pinning is the promise that a preview is
+   * something you are keeping, not something you glanced at — which is why it is
+   * also the condition for keeping the sound going after a close.
+   */
   pinned: boolean;
+  /**
+   * Kept mounted with nothing on screen, because something outside the page is
+   * still showing it — a video that went to picture-in-picture on close. The
+   * element has to stay in the document for that window to live, so the item
+   * stays in the stack until the picture-in-picture window is dismissed.
+   */
+  background: boolean;
   /** The sibling files this preview can step through, for gallery navigation. */
   gallery: FileEntry[];
 }
@@ -24,6 +36,8 @@ interface PreviewValue {
   minimize: (id: string) => void;
   restore: (id: string) => void;
   togglePin: (id: string) => void;
+  /** Take the window away but keep the viewer alive — see `background`. */
+  sendToBackground: (id: string) => void;
   /** Move to the previous or next entry in the active preview's gallery. */
   step: (delta: number) => void;
 }
@@ -44,10 +58,15 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       const existing = current.find(item => item.id === entry.path);
       if (existing) {
         return current.map(item =>
-          item.id === entry.path ? { ...item, minimized: false, gallery } : item,
+          item.id === entry.path
+            ? { ...item, minimized: false, background: false, gallery }
+            : item,
         );
       }
-      return [...current, { id: entry.path, entry, minimized: false, pinned: false, gallery }];
+      return [
+        ...current,
+        { id: entry.path, entry, minimized: false, pinned: false, background: false, gallery },
+      ];
     });
     setActiveId(entry.path);
   }, []);
@@ -66,9 +85,16 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
 
   const restore = useCallback((id: string) => {
     setItems(current =>
-      current.map(item => (item.id === id ? { ...item, minimized: false } : item)),
+      current.map(item => (item.id === id ? { ...item, minimized: false, background: false } : item)),
     );
     setActiveId(id);
+  }, []);
+
+  const sendToBackground = useCallback((id: string) => {
+    setItems(current =>
+      current.map(item => (item.id === id ? { ...item, background: true } : item)),
+    );
+    setActiveId(current => (current === id ? null : current));
   }, []);
 
   const togglePin = useCallback((id: string) => {
@@ -102,15 +128,17 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
   const value = useMemo<PreviewValue>(
     () => ({
       items,
-      active: items.find(item => item.id === activeId && !item.minimized) ?? null,
+      active:
+        items.find(item => item.id === activeId && !item.minimized && !item.background) ?? null,
       open,
       close,
       minimize,
       restore,
       togglePin,
+      sendToBackground,
       step,
     }),
-    [items, activeId, open, close, minimize, restore, togglePin, step],
+    [items, activeId, open, close, minimize, restore, togglePin, sendToBackground, step],
   );
 
   return (

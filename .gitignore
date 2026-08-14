@@ -13,3 +13,14 @@ server/logs/
 coverage/
 test-results/
 playwright-report/
+
+# Editor and OS droppings
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Agent and tooling scratch
+.claude/
+*.local.json

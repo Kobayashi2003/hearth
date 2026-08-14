@@ -1,21 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { marked } from 'marked';
 import { Eye, Pencil, Save, WrapText } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
-import { Select, Spinner, Tooltip } from '@/components/ui/primitives';
+import { Spinner, Tooltip } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { useLedger } from '@/features/ledger/useLedger';
 import { ViewerChrome } from '../ViewerChrome';
 import { useHighlighted } from './text/useHighlighted';
+import { TextSettings } from './text/TextSettings';
+import { MEASURE_CLASS, TYPEFACE_CLASS, useReadingStyle } from './text/useReadingStyle';
 import type { ViewerProps } from './types';
 
 /** Encodings worth offering directly; anything iconv knows can be typed in. */
 const ENCODINGS = ['utf8', 'utf16le', 'gb18030', 'big5', 'shift_jis', 'euc-kr', 'win1252', 'latin1'];
 
 const WRAP_PREFERENCE_KEY = 'hearth.text-wrap';
+
+/** The size text is read at when the scale is 1 — 14px, not the 13px of a list. */
+const BASE_TEXT_REM = 0.875;
+
+/** A scroll position is written at most this often, however fast you scroll. */
+const SAVE_AFTER_IDLE_MS = 600;
 
 type Mode = 'read' | 'edit';
 
@@ -55,6 +64,63 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
     item.entry.name,
   );
 
+  const { style, update } = useReadingStyle();
+
+  /**
+   * Where you had got to.
+   *
+   * A long text file is read over several sittings, so it belongs in Ledger like
+   * any other reading position. It is stored as a fraction of the scroll height
+   * rather than a line or an offset: nothing else survives a change of text size,
+   * of window width, or of the wrap setting, all of which reflow the whole file.
+   */
+  const { progressFor, saveProgress, markOpened } = useLedger();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** The path whose position has been applied, so it is only applied once. */
+  const restored = useRef<string | null>(null);
+  const saveTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    restored.current = null;
+    markOpened(path);
+  }, [markOpened, path]);
+
+  // Runs again as the content lands — highlighting arrives a beat after the text,
+  // and a fraction of a page that has not been laid out yet is meaningless.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !data || restored.current === path) return;
+
+    const scrollable = element.scrollHeight - element.clientHeight;
+    if (scrollable <= 0) return;
+
+    restored.current = path;
+    const saved = progressFor(path);
+    const fraction = saved?.kind === 'locator' ? Number(saved.at) : Number.NaN;
+    if (Number.isFinite(fraction) && fraction > 0) element.scrollTop = fraction * scrollable;
+  }, [data, highlighted, html, path, progressFor]);
+
+  useEffect(() => () => window.clearTimeout(saveTimer.current), []);
+
+  const rememberPosition = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element || restored.current !== path) return;
+
+    const scrollable = element.scrollHeight - element.clientHeight;
+    if (scrollable <= 0) return;
+    const fraction = Math.min(1, Math.max(0, element.scrollTop / scrollable));
+
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveProgress(path, {
+        kind: 'locator',
+        at: fraction.toFixed(4),
+        percent: Math.round(fraction * 100),
+        savedAt: Date.now(),
+      });
+    }, SAVE_AFTER_IDLE_MS);
+  }, [path, saveProgress]);
+
   const save = useCallback(async () => {
     setSaving(true);
     try {
@@ -85,22 +151,16 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
       item={item}
       onStep={onStep}
       contentClassName="group/viewer"
+      flow="document"
       controls={
         <div className="flex items-center gap-1">
-          <Tooltip label="Text encoding — change it if characters look wrong">
-            <Select
-              value={data?.encoding ?? 'utf8'}
-              onChange={event => setEncoding(event.target.value)}
-              aria-label="Text encoding"
-              className="h-8 text-xs"
-            >
-              {ENCODINGS.map(candidate => (
-                <option key={candidate} value={candidate}>
-                  {candidate}
-                </option>
-              ))}
-            </Select>
-          </Tooltip>
+          <TextSettings
+            style={style}
+            onChange={update}
+            encoding={data?.encoding ?? 'utf8'}
+            encodings={ENCODINGS}
+            onEncoding={setEncoding}
+          />
 
           <Tooltip label={wrap ? 'Wrap lines: on' : 'Wrap lines: off'}>
             <Button
@@ -162,7 +222,14 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
           )}
         />
       ) : (
-        <div className="h-full overflow-auto bg-surface">
+        <div
+          ref={scrollRef}
+          onScroll={rememberPosition}
+          className="h-full overflow-auto bg-surface"
+          // Size and spacing are set here and inherited, so one setting reaches
+          // the markdown, the highlighted code and the plain pre alike.
+          style={{ fontSize: `${BASE_TEXT_REM * style.scale}rem`, lineHeight: style.lineHeight }}
+        >
           {data?.truncated ? (
             <p className="sticky top-0 z-10 border-b border-subtle bg-sunken px-4 py-2 text-xs text-muted">
               Showing the first part of this file — it is too large to load whole.
@@ -171,17 +238,20 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
 
           {html ? (
             <article
-              className="prose-hearth mx-auto max-w-3xl px-6 py-6"
+              className={cn('prose-hearth px-6 py-6', MEASURE_CLASS[style.measure])}
               // Markdown is authored by the file's owner and rendered for them alone.
               dangerouslySetInnerHTML={{ __html: html }}
             />
           ) : highlighted ? (
-            // The same toggle drives the read view. Off leaves the pre at
+            // Code keeps its monospace whatever the typeface says — the typeface
+            // is for prose, and alignment is part of what code means.
+            //
+            // The wrap toggle drives the read view too. Off leaves the pre at
             // white-space: pre so long lines overflow and the container scrolls
             // horizontally; on wraps and breaks so nothing runs off-screen.
             <div
               className={cn(
-                'shiki-host p-4 text-[0.8125rem] leading-relaxed',
+                'shiki-host p-4',
                 wrap
                   ? '[&_pre]:whitespace-pre-wrap [&_pre]:break-words'
                   : '[&_pre]:whitespace-pre',
@@ -191,7 +261,9 @@ export default function TextViewer({ item, onStep, ...chrome }: ViewerProps) {
           ) : (
             <pre
               className={cn(
-                'p-4 font-mono text-[0.8125rem] leading-relaxed text-primary',
+                'px-4 py-4 text-primary',
+                TYPEFACE_CLASS[style.typeface],
+                MEASURE_CLASS[style.measure],
                 wrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre',
               )}
             >

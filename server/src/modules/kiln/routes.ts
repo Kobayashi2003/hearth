@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
+  ArchiveListing,
   ComicManifest,
   MediaProbe,
   OfficeContentResponse,
@@ -8,21 +9,27 @@ import type {
 } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
+import { mimeForPath } from '../../lib/mime.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { ListingService } from '../vault/listing.service.js';
+import type { ArchiveService } from './archive.service.js';
 import type { BackgroundService } from './background.service.js';
 import type { ComicService } from './comic.service.js';
+import { contentDisposition } from './stream.service.js';
 import type { DocumentService } from './document.service.js';
 import type { StreamService } from './stream.service.js';
 import type { TextService } from './text.service.js';
 import type { ThumbnailService } from './thumbnail.service.js';
+import type { FolderCoverService } from './folder-cover.service.js';
 
 export interface KilnServices {
   listing: ListingService;
   streams: StreamService;
   text: TextService;
   thumbnails: ThumbnailService;
+  folderCovers: FolderCoverService;
   comics: ComicService;
+  archives: ArchiveService;
   documents: DocumentService;
   backgrounds: BackgroundService;
   ffmpeg: FfmpegAdapter;
@@ -47,7 +54,10 @@ function abortSignalOf(request: FastifyRequest): AbortSignal {
 }
 
 export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
-  const { listing, streams, text, thumbnails, comics, documents, backgrounds, ffmpeg } = services;
+  const {
+    listing, streams, text, thumbnails, folderCovers, comics, archives, documents, backgrounds,
+    ffmpeg,
+  } = services;
 
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
@@ -168,13 +178,28 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
       async (request, reply) => {
         const target = request.resolvePath(request.query.path, 'read');
-        await listing.assertFile(target);
+        const entry = await listing.require(target);
+
+        // A folder borrows the cover of the first coverable thing inside it,
+        // so a shelf of series folders is not a wall of identical icons.
+        const source = entry.isDirectory
+          ? await folderCovers.sourceFor(target, abortSignalOf(request))
+          : target;
+
+        // "This folder has nothing to show" is an answer, not a failure. A 404
+        // per iconless folder filled the console with red and buried the errors
+        // that actually matter.
+        if (!source) return reply.code(204).send();
 
         const thumbnail = await thumbnails.render(
-          target,
+          source,
           { width: request.query.width ?? 320, quality: request.query.quality ?? 72 },
           abortSignalOf(request),
         );
+
+        // Same as an iconless folder: "there is no picture in this" is an
+        // answer. The client falls back to its glyph without logging an error.
+        if (!thumbnail) return reply.code(204).send();
 
         // Keyed by content identity, so it can be cached hard.
         return reply
@@ -257,6 +282,52 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       { config: streamConfig },
       async (request, reply) =>
         streams.sendGenerated(reply, await comics.pagePath(request.params.key, request.params.page)),
+    );
+
+    // ── Archives ────────────────────────────────────────────────────────────
+
+    app.get<{ Querystring: { path: string } }>(
+      '/archive',
+      { schema: { querystring: pathQuerySchema }, config: readConfig },
+      async request => {
+        const target = request.resolvePath(request.query.path, 'read');
+        await listing.assertFile(target);
+        const body: ArchiveListing = await archives.list(target, abortSignalOf(request));
+        return body;
+      },
+    );
+
+    /**
+     * One member, extracted on demand. Served inline so an image or a text file
+     * can be looked at without saving it first; the member name is resolved
+     * against the archive rather than trusted, so it cannot escape it.
+     */
+    app.get<{ Querystring: { path: string; entry: string; token?: string } }>(
+      '/archive/entry',
+      {
+        schema: {
+          querystring: {
+            ...pathQuerySchema,
+            required: ['path', 'entry'],
+            properties: {
+              ...pathQuerySchema.properties,
+              entry: { type: 'string', maxLength: 4096 },
+            },
+          },
+        },
+        config: streamConfig,
+      },
+      async (request, reply) => {
+        const target = request.resolvePath(request.query.path, 'read');
+        await listing.assertFile(target);
+
+        const member = await archives.read(target, request.query.entry, abortSignalOf(request));
+        return reply
+          .header('Content-Type', mimeForPath(member.name))
+          .header('Content-Disposition', contentDisposition(member.name, 'inline'))
+          .header('Cache-Control', 'private, max-age=3600')
+          .send(member.content);
+      },
     );
 
     // ── Documents ───────────────────────────────────────────────────────────

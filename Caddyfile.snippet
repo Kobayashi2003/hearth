@@ -43,6 +43,21 @@ redir /hearth /hearth/ 308
 # does not begin with "/hearth/".
 handle_path /hearth/* {
 	root * {$HEARTH_WEB_ROOT:./web/dist}
+
+	# Asset filenames carry a content hash, so a given URL never changes meaning:
+	# cache it for a year and let a new build produce a new name.
+	@hearth_assets path /assets/*
+	header @hearth_assets Cache-Control "public, max-age=31536000, immutable"
+
+	# index.html is the one file whose name never changes, and it is what names
+	# the hashed assets. Without an explicit header a browser is free to guess a
+	# freshness lifetime for it — and a browser that guesses keeps loading the
+	# previous build after a deploy, asking for asset files that are no longer
+	# there. `no-cache` means "keep it, but ask every time", so a revalidation is
+	# a 304 when nothing changed and the new document when something did.
+	@hearth_document not path /assets/*
+	header @hearth_document Cache-Control "no-cache"
+
 	try_files {path} /index.html
 	file_server
 }

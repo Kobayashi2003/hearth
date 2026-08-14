@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { ListResponse, SortDirection, SortField } from '@hearth/shared';
-import { SORT_DIRECTIONS, SORT_FIELDS } from '@hearth/shared';
+import { MAX_PAGE_SIZE, SORT_DIRECTIONS, SORT_FIELDS } from '@hearth/shared';
 
 import { paginate, sortEntries } from '../../lib/listing.js';
 import type { ListingService } from './listing.service.js';
@@ -21,7 +21,7 @@ export const listingQuerySchema = {
     sort: { type: 'string', enum: SORT_FIELDS as unknown as string[] },
     direction: { type: 'string', enum: SORT_DIRECTIONS as unknown as string[] },
     page: { type: 'integer', minimum: 1 },
-    limit: { type: 'integer', minimum: 1, maximum: 1000 },
+    limit: { type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE },
   },
 } as const;
 
@@ -44,6 +44,29 @@ export function createVaultRoutes(listing: ListingService): FastifyPluginAsync {
 
         const body: ListResponse = { ...page, path: request.relativePath(directory) };
         return body;
+      },
+    );
+
+    /**
+     * One entry by path. Ledger records only paths, so anything resuming from
+     * it — the continue-reading rail — needs a way back to a full entry without
+     * listing the whole containing folder.
+     */
+    app.get<{ Querystring: { path?: string } }>(
+      '/files/entry',
+      {
+        schema: {
+          querystring: {
+            type: 'object',
+            required: ['path'],
+            properties: { path: { type: 'string', maxLength: 4096 } },
+          },
+        },
+        config: { permission: 'read' },
+      },
+      async request => {
+        const target = request.resolvePath(request.query.path, 'read');
+        return listing.require(target);
       },
     );
   };

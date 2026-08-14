@@ -4,7 +4,12 @@ import { Field, Select } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { useShell } from '@/features/shell/AppShell';
 
-/** Personal display settings — stored in the browser, not on the server. */
+/**
+ * Personal display settings — Hob, kept per user on the server so a choice made
+ * at the desk is in force on the phone. The one exception is the size each kind
+ * of preview window opens at, which is measured in percentages of *this*
+ * browser's window and so is stored in it.
+ */
 export function AppearanceSection() {
   const { preferences, updatePreference } = useShell();
   const { data } = useQuery({ queryKey: ['backgrounds'], queryFn: () => api.backgrounds() });
@@ -29,6 +34,51 @@ export function AppearanceSection() {
         >
           <option value="comfortable">Comfortable</option>
           <option value="compact">Compact</option>
+        </Select>
+      </Field>
+
+      <Field
+        label="Home shelves"
+        hint="Pinned and Continue, above the file list on the home folder."
+      >
+        <Select
+          value={preferences.showShelves ? 'on' : 'off'}
+          onChange={event => updatePreference('showShelves', event.target.value === 'on')}
+        >
+          <option value="on">Show</option>
+          <option value="off">Hide</option>
+        </Select>
+      </Field>
+
+      <Field
+        label="Folder covers"
+        hint="Show a folder using the first picture inside it. Costs a scan per folder, and in a folder of documents it says less than a plain icon."
+      >
+        <Select
+          value={preferences.folderCovers ? 'on' : 'off'}
+          onChange={event => updatePreference('folderCovers', event.target.value === 'on')}
+        >
+          <option value="off">Plain folder icons</option>
+          <option value="on">Borrow a cover from inside</option>
+        </Select>
+      </Field>
+
+      <Field
+        label="Preview fullscreen"
+        hint="The browser's own fullscreen hides the tab strip but swallows the page's shortcuts; filling the window keeps them. By default films, comics and books get the first and everything else the second."
+      >
+        <Select
+          value={preferences.previewFullscreen}
+          onChange={event =>
+            updatePreference(
+              'previewFullscreen',
+              event.target.value as typeof preferences.previewFullscreen,
+            )
+          }
+        >
+          <option value="auto">Whichever suits the file</option>
+          <option value="browser">Always the browser's fullscreen</option>
+          <option value="window">Always fill the window</option>
         </Select>
       </Field>
 

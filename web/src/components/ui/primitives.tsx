@@ -20,7 +20,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
         className={cn(
           'h-9 w-full rounded-md border border-subtle bg-raised px-3 text-sm text-primary',
           'placeholder:text-muted focus:border-accent focus-visible:outline-none',
-          'transition-colors duration-[--duration-instant]',
+          'transition-colors duration-[var(--duration-instant)]',
           className,
         )}
         {...props}
@@ -92,14 +92,14 @@ export function Toggle({
         aria-label={label}
         className={cn(
           'relative h-5 w-9 shrink-0 rounded-full border border-subtle transition-colors',
-          'duration-[--duration-instant] data-[state=checked]:border-accent',
+          'duration-[var(--duration-instant)] data-[state=checked]:border-accent',
           'data-[state=checked]:bg-accent data-[state=unchecked]:bg-sunken',
         )}
       >
         <SwitchPrimitive.Thumb
           className={cn(
             'block h-3.5 w-3.5 translate-x-0.5 rounded-full bg-white shadow-sm transition-transform',
-            'duration-[--duration-instant] data-[state=checked]:translate-x-4',
+            'duration-[var(--duration-instant)] data-[state=checked]:translate-x-4',
           )}
         />
       </SwitchPrimitive.Root>

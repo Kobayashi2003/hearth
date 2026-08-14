@@ -1,31 +1,42 @@
 import { FolderOpen, FolderPlus, Upload } from 'lucide-react';
-import type { FileEntry } from '@hearth/shared';
+import type { FileEntry, Progress } from '@hearth/shared';
 
 import { Button } from '@/components/ui/Button';
 import { Skeleton, StatusPanel } from '@/components/ui/primitives';
 import { type useShell } from '@/features/shell/AppShell';
-import { FileGrid } from './FileGrid';
-import { FileList } from './FileList';
+import { FileGrid } from './listing/FileGrid';
+import { FileList } from './listing/FileList';
+import type { useExplorerFocus } from './listing/useExplorerFocus';
 import type { useExplorerState } from './useExplorerState';
-import type { useSelection } from './useSelection';
 
 /** The listing region: loading, empty, error, or content, chosen in that order. */
 export function ExplorerBody({
   explorer,
-  selection,
+  focus,
   preferences,
   canWrite,
+  bottomInset,
+  progressFor,
+  peekHandlersFor,
+  onSelect,
+  onColumnsChange,
   onOpen,
   onContextMenu,
   onNewFolder,
   onUpload,
 }: {
   explorer: ReturnType<typeof useExplorerState>;
-  selection: ReturnType<typeof useSelection>;
+  focus: ReturnType<typeof useExplorerFocus>;
   preferences: ReturnType<typeof useShell>['preferences'];
   canWrite: boolean;
+  /** Room to leave at the end of the listing for the floating selection bar. */
+  bottomInset: number;
+  progressFor: (path: string) => Progress | undefined;
+  peekHandlersFor: (entry: FileEntry, index: number) => Record<string, unknown>;
+  onSelect: (index: number, modifiers: { ctrl?: boolean; shift?: boolean }) => void;
+  onColumnsChange: (columns: number) => void;
   onOpen: (entry: FileEntry) => void;
-  onContextMenu: (entry: FileEntry, event: React.MouseEvent) => void;
+  onContextMenu: (entry: FileEntry, index: number, event: React.MouseEvent) => void;
   onNewFolder: () => void;
   onUpload: () => void;
 }) {
@@ -33,7 +44,7 @@ export function ExplorerBody({
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-1 p-3">
         {Array.from({ length: 12 }, (_, index) => (
-          <Skeleton key={index} className="h-9 w-full" />
+          <Skeleton key={index} className="h-row w-full" />
         ))}
       </div>
     );
@@ -84,6 +95,22 @@ export function ExplorerBody({
     );
   }
 
+  /** Both views take the same focus/selection contract; only layout differs. */
+  const shared = {
+    entries: explorer.entries,
+    selectedPaths: focus.selectedPaths,
+    focusedIndex: focus.focused,
+    bottomInset,
+    progressFor,
+    peekHandlersFor,
+    tabIndexFor: focus.tabIndexFor,
+    onSelect,
+    onOpen,
+    onContextMenu,
+    onKeyDown: focus.handleKeyDown,
+    onBackgroundClick: focus.clear,
+  };
+
   return (
     <>
       {explorer.isSearching ? (
@@ -93,29 +120,31 @@ export function ExplorerBody({
         </p>
       ) : null}
 
+      {/* A folder past the cap is shown as a prefix. Saying so is the whole
+          point: the previous build silently dropped everything past 500. */}
+      {explorer.isTruncated ? (
+        <p className="shrink-0 border-b border-subtle bg-accent-wash px-3 py-1.5 text-xs text-secondary">
+          Showing the first {explorer.entries.length.toLocaleString()} of{' '}
+          {explorer.total.toLocaleString()} items. Search to narrow this folder down.
+        </p>
+      ) : null}
+
       {preferences.viewMode === 'grid' ? (
         <FileGrid
-          entries={explorer.entries}
-          selected={selection.selected}
+          {...shared}
           tileSize={preferences.gridSize}
-          onSelect={selection.select}
-          onOpen={onOpen}
-          onContextMenu={onContextMenu}
-          onBackgroundClick={selection.clear}
+          showFolderCovers={preferences.folderCovers}
+          density={preferences.density}
+          onColumnsChange={onColumnsChange}
         />
       ) : (
         <FileList
-          entries={explorer.entries}
-          selected={selection.selected}
-          density={preferences.density}
+          {...shared}
           sort={explorer.search.sort}
           direction={explorer.search.direction}
           showContainingFolder={explorer.isSearching && explorer.search.recursive}
+          density={preferences.density}
           onSort={explorer.sortBy}
-          onSelect={selection.select}
-          onOpen={onOpen}
-          onContextMenu={onContextMenu}
-          onBackgroundClick={selection.clear}
         />
       )}
     </>

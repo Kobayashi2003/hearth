@@ -13,7 +13,7 @@ const VARIANT_CLASSES: Record<Variant, string> = {
   primary: 'bg-accent text-accent-contrast hover:bg-accent-hover shadow-sm',
   secondary: 'bg-raised text-primary border border-subtle hover:border-strong hover:bg-sunken',
   ghost: 'text-secondary hover:bg-sunken hover:text-primary',
-  danger: 'bg-[--color-danger] text-white hover:brightness-110',
+  danger: 'bg-[var(--color-danger)] text-white hover:brightness-110',
 };
 
 const SIZE_CLASSES: Record<Size, string> = {
@@ -38,7 +38,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       className={cn(
         'inline-flex items-center justify-center rounded-md font-medium whitespace-nowrap',
-        'transition-colors duration-[--duration-instant] ease-[--ease-out-quick]',
+        'transition-colors duration-[var(--duration-instant)] ease-[var(--ease-out-quick)]',
         'disabled:pointer-events-none disabled:opacity-45',
         VARIANT_CLASSES[variant],
         SIZE_CLASSES[size],

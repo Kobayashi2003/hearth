@@ -105,7 +105,7 @@ export function PermissionsSection() {
                   size="icon"
                   onClick={() => setRules(current => current.filter((_, i) => i !== index))}
                   aria-label="Remove this rule"
-                  className="text-[--color-danger]"
+                  className="text-[var(--color-danger)]"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

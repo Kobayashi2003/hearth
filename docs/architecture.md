@@ -105,18 +105,37 @@ before it leaves the server. See [`everything-setup.md`](everything-setup.md).
 The frontend is React on Vite, routed by TanStack Router. Explorer state — the
 current path, sort, search, and open preview — lives in the URL, so browser
 back/forward behave the way they do in a file manager and any view is linkable.
-Personal preferences (theme, density, wallpaper) live in local storage instead.
+Personal preferences are **Hob**, kept per user on the server so a choice made at
+the desk is in force on the phone. The exception is the size each kind of preview
+window opens at, which is measured in percentages of a browser window and so
+belongs to that browser.
 
 **Mantel** is the preview system. Its defining move is that playback state and the
 `<audio>` element live in a provider *above* the preview overlay, so closing or
 minimising the preview that started a track does not unmount the element — a
 pinned album keeps playing while you browse. Several previews coexist: one fills
 the overlay, the rest sit in a labelled dock along the bottom edge, and whatever
-is playing keeps a live position readout there even after its preview is closed.
+is playing keeps a live position readout there.
+
+Sound outliving its window is opt-in: closing an unpinned preview stops it, and
+closing a pinned one leaves audio in the dock and sends video to
+picture-in-picture — which is why a backgrounded video viewer stays mounted in a
+one-pixel box, since that window dies with its element.
+
+The preview is a window rather than a fixed overlay. It opens at four fifths of
+the browser, can be dragged to a size by its edges, and remembers that size per
+kind of file. "Full" therefore means two different things, and which one a viewer
+gets is a preference: the browser's own fullscreen for film, comics and books,
+filling the browser window for everything else.
 
 Viewers are lazily loaded — the EPUB, comic, Office, and Ruffle bundles are large
 and most sessions open none of them — and each renders a shared `ViewerChrome`, so
-the window controls (pin, minimise, close) sit in the same place everywhere. The
-video player is decomposed into hooks (`useVideoPlayback`, `useResumePosition`)
-and small components (controls, track menu) rather than one monolith; no component
-file exceeds 300 lines.
+the window controls (pin, fullscreen, minimise, close) sit in the same place
+everywhere. The video player is decomposed into hooks (`useVideoPlayback`,
+`useVideoResume`) and small components (controls, track menu) rather than one
+monolith.
+
+`web/src` is arranged by subsystem: a folder per feature, with the explorer's own
+files grouped by the job they do (`listing`, `toolbar`, `commands`, `dialogs`,
+`peek`). Only genuinely cross-cutting hooks — the two adaptation axes of ADR 0002 —
+sit in `hooks`; a hook that belongs to Ledger or Hob lives with it.

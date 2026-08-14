@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { Check, HardDrive } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -13,11 +14,28 @@ import { cn } from '@/lib/cn';
  */
 export function RootsSection() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const roots = useQuery({ queryKey: ['roots'], queryFn: () => api.roots() });
 
   const switchRoot = useMutation({
     mutationFn: (id: string) => api.switchRoot(id),
     onSuccess: async () => {
+      // The path in the URL belongs to the root we just left. Keeping it means
+      // landing on "that file or folder no longer exists" in a drive where it
+      // never existed — so go to the new root's top, and drop the search and any
+      // open preview with it.
+      await navigate({
+        to: '/',
+        search: {
+          path: '',
+          q: '',
+          sort: 'name',
+          direction: 'asc',
+          recursive: false,
+          type: undefined,
+          preview: undefined,
+        },
+      });
       toast.success('Root switched');
       await queryClient.invalidateQueries();
     },

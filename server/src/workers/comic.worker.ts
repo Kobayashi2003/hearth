@@ -5,6 +5,8 @@ import { parentPort, workerData } from 'node:worker_threads';
 import AdmZip from 'adm-zip';
 import { createExtractorFromData } from 'node-unrar-js';
 
+import { collator, isPage, RAR_EXTENSIONS } from './comic-pages.js';
+
 /**
  * Comic archive extraction. Runs off the event loop because decompressing a few
  * hundred megabytes of JPEGs blocks for seconds.
@@ -21,18 +23,6 @@ export interface ComicRequest {
 export interface ComicResponse {
   /** Page filenames in reading order, relative to `cacheDirectory`. */
   pages: string[];
-}
-
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif']);
-
-/** Natural order, so page 10 follows page 9 rather than page 1. */
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-
-function isPage(entryName: string): boolean {
-  const base = path.basename(entryName);
-  // Skip macOS resource forks, which otherwise appear as duplicate pages.
-  if (base.startsWith('.') || entryName.includes('__MACOSX/')) return false;
-  return IMAGE_EXTENSIONS.has(path.extname(base).toLowerCase());
 }
 
 /**
@@ -85,8 +75,6 @@ async function readRar(archivePath: string): Promise<Array<{ name: string; conte
     .filter(name => contentByName.has(name))
     .map(name => ({ name, content: contentByName.get(name)! }));
 }
-
-const RAR_EXTENSIONS = new Set(['.rar', '.cbr']);
 
 async function run(request: ComicRequest): Promise<ComicResponse> {
   fs.mkdirSync(request.cacheDirectory, { recursive: true });

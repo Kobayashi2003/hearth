@@ -61,7 +61,7 @@ export function SettingsDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[--scrim]" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--scrim)]" />
         <Dialog.Content
           className={cn(
             'fixed inset-0 z-50 flex flex-col overflow-hidden border-subtle bg-overlay shadow-2xl',
@@ -97,7 +97,7 @@ export function SettingsDialog({
                   aria-current={active.id === section.id ? 'page' : undefined}
                   className={cn(
                     'flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-sm',
-                    'transition-colors duration-[--duration-instant]',
+                    'transition-colors duration-[var(--duration-instant)]',
                     active.id === section.id
                       ? 'bg-accent-wash font-medium text-accent'
                       : 'text-secondary hover:bg-sunken hover:text-primary',

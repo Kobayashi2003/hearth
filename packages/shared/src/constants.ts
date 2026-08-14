@@ -5,7 +5,17 @@ export const SORT_DIRECTIONS: readonly SortDirection[] = ['asc', 'desc'];
 export const MEDIA_KINDS: readonly MediaKind[] = ['image', 'audio', 'video'];
 
 export const DEFAULT_PAGE_SIZE = 100;
-export const MAX_PAGE_SIZE = 1000;
+/**
+ * A folder is delivered whole — the explorer virtualises it, and paginating a
+ * file listing makes "select all", "sort", and End mean "…of this page", which
+ * is not what any of them should mean.
+ *
+ * The ceiling is a safety valve rather than a page size: an entry is ~225 bytes
+ * of JSON, so 20 000 is about 4.3 MB. Past that the response says `hasMore` and
+ * the explorer tells the user it is showing a prefix, instead of silently
+ * pretending the rest of the folder does not exist.
+ */
+export const MAX_PAGE_SIZE = 20_000;
 
 /** Windows volume-level entries that are never useful to show. */
 export const HIDDEN_SYSTEM_NAMES: ReadonlySet<string> = new Set([
@@ -53,7 +63,35 @@ export const EXTENSION_MIME_OVERRIDES: Readonly<Record<string, string>> = {
 };
 
 /** File classes that get a dedicated viewer rather than a generic download. */
+
+/**
+ * Archives whose first image can stand as a cover — a comic's page one.
+ *
+ * Wider than [[COMIC_BOOK_EXTENSIONS]] on purpose: plenty of manga arrives as a
+ * plain `.zip`, and asking for its cover costs nothing when there is none.
+ */
 export const COMIC_EXTENSIONS: ReadonlySet<string> = new Set(['.zip', '.cbz', '.rar', '.cbr']);
+
+/**
+ * Archives that *declare* themselves comics. Only these open in the comic reader
+ * unasked; a `.zip` opens as an archive, because a zip of tax documents paged
+ * through as a comic is worse than useless, and the reader is one click away for
+ * the ones that are comics after all.
+ */
+export const COMIC_BOOK_EXTENSIONS: ReadonlySet<string> = new Set(['.cbz', '.cbr']);
+
+/** Everything treated as an archive, whether or not the contents can be read. */
+export const ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.zip', '.rar', '.7z', '.tar', '.gz', '.tgz', '.bz2', '.tbz2', '.xz', '.txz', '.zst',
+]);
+
+/**
+ * The archives Hearth can actually look inside. The rest are still recognised as
+ * archives — they get an honest "download it to open it" rather than an error.
+ */
+export const READABLE_ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.zip', '.cbz', '.rar', '.cbr',
+]);
 export const OFFICE_EXTENSIONS: ReadonlySet<string> = new Set(['.docx', '.doc', '.xlsx', '.xls']);
 export const EPUB_EXTENSIONS: ReadonlySet<string> = new Set(['.epub']);
 export const PSD_EXTENSIONS: ReadonlySet<string> = new Set(['.psd']);

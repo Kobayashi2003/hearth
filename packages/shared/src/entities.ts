@@ -90,6 +90,28 @@ export interface ComicManifest {
   pages: string[];
 }
 
+/** One member of an archive, as listed without extracting anything. */
+export interface ArchiveEntry {
+  /** Path inside the archive, always with forward slashes. */
+  name: string;
+  /** Uncompressed size in bytes; 0 for a directory. */
+  size: number;
+  compressedSize: number;
+  isDirectory: boolean;
+  /** Epoch milliseconds, or 0 when the archive does not record one. */
+  mtime: number;
+}
+
+export interface ArchiveListing {
+  entries: ArchiveEntry[];
+  /** Members in the archive, which may exceed the number listed. */
+  total: number;
+  /** True when `entries` is only a prefix — a huge archive is capped. */
+  hasMore: boolean;
+  /** True when every file inside is an image, so it can be read as a comic. */
+  looksLikeComic: boolean;
+}
+
 // ── Ember: recycle bin ──────────────────────────────────────────────────────
 
 export interface TrashItem {

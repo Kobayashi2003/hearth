@@ -67,7 +67,7 @@ export function LoginScreen({ reason }: { reason?: string }) {
           </Field>
 
           {error ? (
-            <p role="alert" className="text-sm text-[--color-danger]">
+            <p role="alert" className="text-sm text-[var(--color-danger)]">
               {error}
             </p>
           ) : null}

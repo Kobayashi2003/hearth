@@ -2,20 +2,17 @@
 
 *Your files, at home.*
 
-Hearth is a self-hosted file server for one person and one machine. Your
-files — photos, videos, music, comics, e-books, documents — stay on hardware you
-own, and Hearth is the window you reach them through from any browser: read a
-comic page by page, watch a video with subtitle and audio-track selection, listen
-to an album, page through an EPUB, edit a text file. Nothing is copied to the
-device you are viewing from.
+Hearth is a self-hosted file server for one person and one machine. Photos,
+videos, music, comics, e-books and documents stay on hardware you own, and Hearth
+is the window you reach them through from any browser — read a comic page by page,
+watch a video with subtitle and audio-track selection, listen to an album, page
+through an EPUB, edit a text file. Nothing is copied to the device you view from.
 
 It is deliberately **not** a sync service, a backup product, or a multi-tenant
-SaaS. The storage is physically yours and physically local; what the network
-carries is *access*, not custody.
+SaaS: what the network carries is *access*, not custody.
 
-Hearth is a rewrite of SimpleFileServer: the same capabilities, on a leaner stack
-(Fastify + a static React SPA), with search delegated to
-[Everything](https://www.voidtools.com/) instead of a bespoke index.
+A rewrite of SimpleFileServer on a leaner stack — Fastify plus a static React
+SPA, with search delegated to [Everything](https://www.voidtools.com/).
 
 ---
 
@@ -80,58 +77,36 @@ Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → 
 
 ```
 Hearth/
-├── package.json              # npm workspace root
-├── start.ps1                 # launcher — backend + Caddy edge
-├── caddy-env.ps1             # derives Caddy upstreams from .env
-├── Caddyfile                 # standalone edge site block
-├── Caddyfile.snippet         # routes: /hearth-api → backend, /hearth → static SPA
-├── .env.example              # every configuration variable, documented
-├── docs/
-│   ├── architecture.md       # how the pieces fit together
-│   ├── configuration.md      # every env var, its default and effect
-│   └── everything-setup.md   # installing and securing the search backend
-├── packages/shared/          # @hearth/shared — types both tiers compile against
-│   └── src/
-│       ├── entities.ts       #   domain types (FileEntry, MediaProbe, …)
-│       ├── api.ts            #   request/response contracts for the API
-│       └── constants.ts      #   MIME overrides, extension sets, sort keys
-├── server/                   # @hearth/server — Fastify backend
-│   └── src/
-│       ├── main.ts           #   entrypoint: load config → build app → listen
-│       ├── app.ts            #   Fastify assembly and plugin registration
-│       ├── context.ts        #   request decorators (session, resolvePath)
-│       ├── config/           #   env → one frozen typed object + RuntimeState
-│       ├── plugins/          #   auth, errors, security, rate-limit
-│       ├── lib/              #   Vault (path safety), errors, mime, listing, workers
-│       ├── adapters/         #   outward integrations: everything, ffmpeg
-│       ├── modules/          #   one folder per subsystem (see below)
-│       │   ├── warden/       #     auth, sessions, users, permissions, media tokens
-│       │   ├── vault/        #     listing, file ops, upload, download
-│       │   ├── beacon/       #     search — Everything adapter + walk fallback
-│       │   ├── kiln/         #     stream, transcode, thumbnail, comic, office, html
-│       │   ├── ember/        #     recycle bin
-│       │   └── system/       #     roots, health, admin toggles, cache cleanup
-│       └── workers/          #   worker_threads: walk, comic, office, psd
-└── web/                      # @hearth/web — Vite + React SPA
-    └── src/
-        ├── main.tsx          #   React root, providers, router
-        ├── router.tsx        #   TanStack Router; explorer state in the URL
-        ├── lib/              #   typed API client, runtime config, formatters
-        ├── components/       #   design-system primitives + brand mark
-        ├── hooks/            #   preferences (theme, density, wallpaper)
-        └── features/
-            ├── auth/         #     login, session provider
-            ├── shell/        #     app frame, wallpaper, preview layer mount
-            ├── explorer/     #     list, grid, toolbar, search, selection, palette
-            ├── mantel/       #     preview overlay, dock, playback, viewers
-            ├── transfer/     #     upload queue and progress
-            └── admin/        #     settings surface and its sections
+├── start.ps1 · caddy-env.ps1     # launcher; Caddy upstreams from .env
+├── Caddyfile · Caddyfile.snippet  # standalone edge; routes shared with the gateway
+├── .env.example                   # every configuration variable, documented
+├── docs/                          # architecture, configuration, Everything setup, ADRs
+├── packages/shared/src/           # @hearth/shared — types both tiers compile against
+│   ├── entities.ts · api.ts       #   domain types and request/response contracts
+│   ├── constants.ts · media.ts    #   MIME overrides, extension sets, cover rules
+│   └── ledger.ts                  #   Ledger (positions) and Hob (preferences)
+├── server/src/                    # @hearth/server — Fastify, loopback only
+│   ├── main.ts · app.ts           #   entrypoint; Fastify assembly
+│   ├── config/ · plugins/ · lib/  #   env, auth/errors/security, Vault and helpers
+│   ├── adapters/                  #   Everything, ffmpeg
+│   ├── modules/                   #   warden, vault, beacon, kiln, ember, ledger, hob, system
+│   └── workers/                   #   worker_threads: walk, comic, archive, cover, office, psd
+└── web/src/                       # @hearth/web — Vite + React SPA
+    ├── lib/ · components/         #   API client, formatters; primitives and menus
+    ├── hooks/                     #   the two adaptation axes (width, input) — ADR 0002
+    └── features/
+        ├── shell/ · auth/         #     app frame and bottom tray; login
+        ├── explorer/              #     listing/, toolbar/, commands/, dialogs/, peek/
+        ├── mantel/                #     preview window, dock, playback, viewers/
+        ├── ledger/ · hob/         #     reading positions; preferences
+        └── transfer/ · admin/     #     uploads; settings
 ```
 
 **Subsystem names** (used throughout the code and logs): **Vault** — the root
 tree, path resolution, containment; **Beacon** — name search; **Kiln** —
 transcode, thumbnails, document rendering; **Warden** — auth and permissions;
-**Ember** — the recycle bin; **Mantel** — the frontend preview system.
+**Ember** — the recycle bin; **Mantel** — the preview system; **Ledger** — where
+you were; **Hob** — how you like things set.
 
 ---
 

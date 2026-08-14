@@ -58,7 +58,7 @@ export function UploadPanel({
         className="h-0.5 bg-sunken"
       >
         <div
-          className="h-full bg-accent transition-[width] duration-[--duration-quick]"
+          className="h-full bg-accent transition-[width] duration-[var(--duration-quick)]"
           style={{ width: `${overallProgress * 100}%` }}
         />
       </div>
@@ -96,8 +96,8 @@ export function UploadPanel({
 }
 
 function StatusIcon({ status }: { status: UploadJob['status'] }) {
-  if (status === 'done') return <Check className="h-3.5 w-3.5 shrink-0 text-[--color-success]" />;
-  if (status === 'failed') return <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[--color-danger]" />;
+  if (status === 'done') return <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-success)]" />;
+  if (status === 'failed') return <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[var(--color-danger)]" />;
   if (status === 'cancelled') return <X className="h-3.5 w-3.5 shrink-0 text-muted" />;
   return (
     <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-strong border-t-accent" />
@@ -109,7 +109,7 @@ export function DropOverlay({ isActive }: { isActive: boolean }) {
   if (!isActive) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[--scrim] p-8">
+    <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[var(--scrim)] p-8">
       <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-accent bg-overlay px-10 py-8">
         <Upload className="h-8 w-8 text-accent" />
         <p className="text-sm font-medium text-primary">Drop to upload here</p>

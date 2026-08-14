@@ -89,7 +89,7 @@ export function UsersSection() {
                     onClick={() => remove.mutate(user.username)}
                     disabled={user.username === identity?.username}
                     aria-label={`Remove ${user.username}`}
-                    className="text-[--color-danger]"
+                    className="text-[var(--color-danger)]"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

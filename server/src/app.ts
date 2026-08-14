@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 
 import Fastify from 'fastify';
 import fp from 'fastify-plugin';
@@ -18,6 +19,10 @@ import { Beacon } from './modules/beacon/beacon.js';
 import { createBeaconRoutes } from './modules/beacon/routes.js';
 import { TrashService } from './modules/ember/trash.service.js';
 import { createEmberRoutes } from './modules/ember/routes.js';
+import { LedgerService } from './modules/ledger/ledger.service.js';
+import { createLedgerRoutes } from './modules/ledger/routes.js';
+import { HobService } from './modules/hob/hob.service.js';
+import { createHobRoutes } from './modules/hob/routes.js';
 import { ChunkedUploadService } from './modules/vault/chunked-upload.service.js';
 import { DownloadService } from './modules/vault/download.service.js';
 import { FileOpsService } from './modules/vault/fileops.service.js';
@@ -28,11 +33,13 @@ import { createTransferRoutes } from './modules/vault/transfer.routes.js';
 import { UploadService } from './modules/vault/upload.service.js';
 import { FfmpegAdapter } from './adapters/ffmpeg/ffmpeg.js';
 import { BackgroundService } from './modules/kiln/background.service.js';
+import { ArchiveService } from './modules/kiln/archive.service.js';
 import { ComicService } from './modules/kiln/comic.service.js';
 import { DocumentService } from './modules/kiln/document.service.js';
 import { StreamService } from './modules/kiln/stream.service.js';
 import { TextService } from './modules/kiln/text.service.js';
 import { ThumbnailService } from './modules/kiln/thumbnail.service.js';
+import { FolderCoverService } from './modules/kiln/folder-cover.service.js';
 import { createKilnRoutes } from './modules/kiln/routes.js';
 import { CacheCleanupService } from './modules/system/cache-cleanup.service.js';
 import { wardenRoutes } from './modules/warden/routes.js';
@@ -82,6 +89,8 @@ export async function buildApp({ config, logger }: BuildOptions) {
 
   const listing = new ListingService(vault);
   const streams = new StreamService(config);
+  const ledger = new LedgerService(path.join(config.storage.dataDirectory, 'ledger'));
+  const hob = new HobService(path.join(config.storage.dataDirectory, 'preferences'));
   const beacon = new Beacon(config, runtime, vault, logger);
   const fileOps = new FileOpsService(vault);
   const trash = new TrashService(config, runtime, vault, logger);
@@ -101,7 +110,9 @@ export async function buildApp({ config, logger }: BuildOptions) {
     ffmpeg,
     text: new TextService(config),
     thumbnails: new ThumbnailService(config, ffmpeg),
+    folderCovers: new FolderCoverService(),
     comics: new ComicService(config),
+    archives: new ArchiveService(),
     documents: new DocumentService(runtime),
     backgrounds: new BackgroundService(config),
   };
@@ -121,9 +132,11 @@ export async function buildApp({ config, logger }: BuildOptions) {
       await api.register(systemRoutes);
       await api.register(createAdminRoutes(warden));
       await api.register(createVaultRoutes(listing));
-      await api.register(createFileOpsRoutes(fileOps, listing, trash));
+      await api.register(createFileOpsRoutes(fileOps, listing, trash, ledger));
       await api.register(createTransferRoutes(uploads, chunked, downloads, listing, streams));
-      await api.register(createEmberRoutes(trash));
+      await api.register(createEmberRoutes(trash, ledger));
+      await api.register(createLedgerRoutes(ledger));
+      await api.register(createHobRoutes(hob));
       await api.register(createBeaconRoutes(beacon));
       await api.register(createKilnRoutes(kiln));
     },
@@ -166,6 +179,8 @@ const requestLogging = fp(async app => {
 function ensureDirectories(config: AppConfig): void {
   for (const directory of [
     config.storage.dataDirectory,
+    path.join(config.storage.dataDirectory, 'ledger'),
+    path.join(config.storage.dataDirectory, 'preferences'),
     config.storage.tempDirectory,
     config.upload.chunkDirectory,
     config.media.thumbnailCacheDirectory,

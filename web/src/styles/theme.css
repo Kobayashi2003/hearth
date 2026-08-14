@@ -56,6 +56,66 @@
 }
 
 /**
+ * Density is an interval, not a value (ADR 0002). The input axis sets which
+ * range applies; the person's Hob preference picks an end of it. In a list a
+ * row's hit area and its height are the same pixel, so the coarse-pointer floor
+ * of 44px is a hard limit that "compact" is not allowed to breach.
+ *
+ * Corner radius rides along because it is geometrically bound to row height —
+ * a 16px radius on a 28px row renders as a pill.
+ */
+/**
+ * Selectors are written so the tokens resolve on `:root` *and* on any element
+ * carrying `data-density` itself. React sets the root attribute from an effect,
+ * which runs after a child's layout effect — so a component measuring its own
+ * row height would read the previous value. Marking the component's own
+ * container lets it read the value it just rendered with.
+ */
+:root,
+[data-density='comfortable'] {
+  --row-height: 36px;
+  --tap-target: 32px;
+  --density-radius: 0.5rem;
+  --density-gap: 0.5rem;
+  --density-pad: 0.875rem;
+}
+:root[data-density='compact'],
+[data-density='compact'] {
+  --row-height: 28px;
+  --tap-target: 28px;
+  --density-radius: 0.375rem;
+  --density-gap: 0.25rem;
+  --density-pad: 0.625rem;
+}
+
+@media (pointer: coarse) {
+  :root,
+  [data-density='comfortable'] {
+    --row-height: 52px;
+    --tap-target: 48px;
+    --density-radius: 0.75rem;
+    --density-gap: 0.625rem;
+    --density-pad: 1rem;
+  }
+  :root[data-density='compact'],
+  [data-density='compact'] {
+    --row-height: 44px;
+    --tap-target: 44px;
+    --density-radius: 0.625rem;
+    --density-gap: 0.5rem;
+    --density-pad: 0.875rem;
+  }
+}
+
+@theme inline {
+  --spacing-row: var(--row-height);
+  --spacing-tap: var(--tap-target);
+  --radius-density: var(--density-radius);
+  --spacing-density: var(--density-gap);
+  --spacing-densitypad: var(--density-pad);
+}
+
+/**
  * Semantic surface variables. Components reference these rather than palette
  * steps, so the two themes stay genuinely separate designs rather than one
  * being derived from the other by inversion.

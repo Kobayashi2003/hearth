@@ -86,7 +86,6 @@ export interface AppConfig {
   };
   readonly media: {
     readonly thumbnailCacheDirectory: string;
-    readonly thumbnailForAnimatedGif: boolean;
     readonly comicCacheDirectory: string;
     readonly psdCacheDirectory: string;
     readonly ffmpegPath: string;
@@ -257,7 +256,6 @@ export function loadConfig(): AppConfig {
     },
     media: {
       thumbnailCacheDirectory: envPath('THUMBNAIL_CACHE_DIR', './server/temp/thumbnails'),
-      thumbnailForAnimatedGif: envBool('THUMBNAIL_FOR_GIF', false),
       comicCacheDirectory: envPath('COMIC_CACHE_DIR', './server/temp/comics'),
       psdCacheDirectory: envPath('PSD_CACHE_DIR', './server/temp/psd'),
       // Bare names resolve on PATH, which is the usual install shape on Windows.

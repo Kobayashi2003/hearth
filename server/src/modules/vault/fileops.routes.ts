@@ -10,6 +10,7 @@ import type {
 import { HearthError } from '../../lib/errors.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { TrashService } from '../ember/trash.service.js';
+import type { LedgerService } from '../ledger/ledger.service.js';
 import type { FileOpsService } from './fileops.service.js';
 import type { ListingService } from './listing.service.js';
 
@@ -50,6 +51,7 @@ export function createFileOpsRoutes(
   fileOps: FileOpsService,
   listing: ListingService,
   trash: TrashService,
+  ledger: LedgerService,
 ): FastifyPluginAsync {
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
@@ -70,7 +72,11 @@ export function createFileOpsRoutes(
       async request => {
         const target = request.resolvePath(request.body.path, 'write');
         await listing.require(target);
-        return { path: await fileOps.rename(target, request.body.name) };
+        const renamed = await fileOps.rename(target, request.body.name);
+        // Reading positions follow a file renamed through Hearth — including
+        // every file beneath a renamed folder. See ADR 0001.
+        await ledger.reprefix(request.body.path, renamed);
+        return { path: renamed };
       },
     );
 
@@ -87,9 +93,19 @@ export function createFileOpsRoutes(
           const destination = request.resolvePath(request.body.destination, 'write');
           await listing.assertDirectory(destination);
 
-          const body: OperationResponse = {
-            results: await fileOps.transfer(sources, destination, mode),
-          };
+          const results = await fileOps.transfer(sources, destination, mode);
+
+          // Only a move relocates the original; a copy leaves it where it was,
+          // and the new copy legitimately starts with no position of its own.
+          if (mode === 'move') {
+            for (const result of results) {
+              if (result.ok && result.resultPath) {
+                await ledger.reprefix(result.path, result.resultPath);
+              }
+            }
+          }
+
+          const body: OperationResponse = { results };
           return body;
         },
       );
@@ -107,9 +123,12 @@ export function createFileOpsRoutes(
           try {
             const entry = await listing.require(target);
             if (useTrash) {
+              // Positions are kept: the item can still come back from Ember,
+              // and restoring to the same path should restore where you were.
               await trash.accept(target, entry.isDirectory, entry.size);
             } else {
               await fileOps.remove(target);
+              await ledger.forget(relative);
             }
             results.push({ path: relative, ok: true });
           } catch (error) {

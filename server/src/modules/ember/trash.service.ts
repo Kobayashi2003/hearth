@@ -139,7 +139,12 @@ export class TrashService {
     };
   }
 
-  async restore(id: string): Promise<string> {
+  /**
+   * Returns both paths: a name collision at the original location means the
+   * item comes back as "name (2)", and Ledger needs to know that to carry the
+   * reading position across.
+   */
+  async restore(id: string): Promise<{ path: string; originalPath: string }> {
     const record = this.requireRecord(id);
     if (record.rootId !== this.runtime.get('activeRootId')) {
       throw HearthError.badRequest('That item belongs to a different root');
@@ -165,7 +170,10 @@ export class TrashService {
     }
 
     await this.forget(id);
-    return this.vault.relativize(destination as SafePath);
+    return {
+      path: this.vault.relativize(destination as SafePath),
+      originalPath: record.originalPath,
+    };
   }
 
   async purge(id: string): Promise<void> {

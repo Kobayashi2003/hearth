@@ -40,7 +40,7 @@ export function SearchSection() {
       <div className="rounded-lg border border-subtle p-3">
         <div className="flex items-center gap-2">
           <span
-            className={cn('h-2 w-2 rounded-full', health?.healthy ? 'bg-[--color-success]' : 'bg-[--color-danger]')}
+            className={cn('h-2 w-2 rounded-full', health?.healthy ? 'bg-[var(--color-success)]' : 'bg-[var(--color-danger)]')}
             aria-hidden
           />
           <span className="text-sm font-medium text-primary">

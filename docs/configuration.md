@@ -97,7 +97,6 @@ See [`everything-setup.md`](everything-setup.md) for the full picture.
 | `HEARTH_FFMPEG_PATH` | `ffmpeg` | ffmpeg binary. A bare name resolves on `PATH`. |
 | `HEARTH_FFPROBE_PATH` | `ffprobe` | ffprobe binary. |
 | `HEARTH_THUMBNAIL_CACHE_DIR` | `./server/temp/thumbnails` | Thumbnail cache. |
-| `HEARTH_THUMBNAIL_FOR_GIF` | `false` | Generate thumbnails for animated GIFs (expensive). |
 | `HEARTH_COMIC_CACHE_DIR` | `./server/temp/comics` | Extracted comic pages. |
 | `HEARTH_PSD_CACHE_DIR` | `./server/temp/psd` | Rendered PSD composites. |
 | `HEARTH_TRANSCODE_CRF` | `23` | x264 quality for on-the-fly transcode (lower = better, larger). |

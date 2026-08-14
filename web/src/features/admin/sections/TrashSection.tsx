@@ -115,7 +115,7 @@ export function TrashSection() {
                   size="icon"
                   onClick={() => purge.mutate(item.id)}
                   aria-label={`Permanently delete ${item.name}`}
-                  className="text-[--color-danger]"
+                  className="text-[var(--color-danger)]"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

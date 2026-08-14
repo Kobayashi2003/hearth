@@ -1,18 +1,11 @@
 /**
- * The API always lives at the origin root under `/hearth-api`, in both
- * development and production. The Caddy edge routes `/hearth-api` (the backend)
- * and `/hearth` (this SPA) as two independent root-level prefixes — the SPA's
- * mount point does not move the API — so a request to `/hearth-api/...` reaches
- * the backend wherever the bundle itself is served from. The prefix is
- * app-scoped rather than a generic `/api` because under the AppGateway every
- * app shares one origin.
+ * The API is always root-absolute at `/hearth-api`, so the SPA needs no
+ * build-time knowledge of its own mount prefix: relative assets, hash routing,
+ * root-absolute calls. The prefix is app-scoped rather than `/api` because under
+ * the AppGateway every app shares one origin.
  *
- * The SPA therefore needs no build-time knowledge of its mount prefix: assets
- * load through Vite's relative `base`, routing is hash-based, and API calls are
- * root-absolute. One artifact works standalone and under the AppGateway.
- *
- * A deployment that mounts the API elsewhere can override the base with
- * `<meta name="hearth-api-base" content="/somewhere/hearth-api">`.
+ * A deployment that mounts the API elsewhere overrides it with
+ * `<meta name="hearth-api-base" content="…">`.
  */
 export const apiBase = deriveApiBase();
 

@@ -10,7 +10,7 @@ import type { ViewerProps } from './types';
 /** No viewer handles this type — offer the action that does work. */
 export default function UnsupportedViewer({ item, onStep, ...chrome }: ViewerProps) {
   return (
-    <ViewerChrome item={item} onStep={onStep} {...chrome}>
+    <ViewerChrome item={item} onStep={onStep} flow="document" {...chrome}>
       <StatusPanel
         icon={<FileQuestion className="h-10 w-10" />}
         title="No preview for this file type"

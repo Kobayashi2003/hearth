@@ -71,11 +71,3 @@ export function useSession(): SessionValue {
   if (!value) throw new Error('useSession must be used inside SessionProvider');
   return value;
 }
-
-/** Invalidate the session after a 401, so the shell shows the login form. */
-export function useSessionExpiry(): () => void {
-  const queryClient = useQueryClient();
-  return useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
-  }, [queryClient]);
-}
