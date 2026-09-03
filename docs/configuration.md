@@ -4,6 +4,11 @@ Every setting is an environment variable read from `.env` at the repository root
 All are optional; the value shown is the default, chosen so a fresh clone runs
 against the bundled `./example` tree with no setup.
 
+A variable already present in the environment **outranks `.env`**, which is how a
+launcher places Hearth: app-gateway assigns `HEARTH_PORT` so no two apps behind
+its shared port collide, and `caddy-env.ps1` reads it back so the edge and the
+backend cannot end up pointing at different ports.
+
 Names are prefixed `HEARTH_`. The un-prefixed name from SimpleFileServer is still
 accepted for one release and logs a deprecation warning at startup — rename it to
 the prefixed form when convenient.
@@ -19,7 +24,7 @@ silently: a non-numeric port, a missing root directory, or a malformed
 | `HEARTH_PORT` | `5111` | Backend listen port. Loopback only. |
 | `HEARTH_HOST` | `127.0.0.1` | Backend bind address. Leave loopback; the Caddy edge is the only public door. |
 | `HEARTH_CORS_ORIGIN` | `http://localhost:5110` | Allowed origins, comma-separated. |
-| `HEARTH_API_PREFIX` | `/hearth-api` | Path prefix the API mounts under. App-scoped to avoid collision under the AppGateway. |
+| `HEARTH_API_PREFIX` | `/hearth-api` | Path prefix the API mounts under. App-scoped to avoid collision under app-gateway. |
 
 ## Storage
 

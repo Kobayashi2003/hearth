@@ -31,7 +31,7 @@ export interface AppConfig {
     readonly corsOrigins: readonly string[];
     /**
      * Public path prefix the API is reached under. App-scoped (`/hearth-api`)
-     * rather than a generic `/api`, because under the AppGateway every app
+     * rather than a generic `/api`, because under app-gateway every app
      * shares one origin and a generic prefix would collide.
      */
     readonly apiPrefix: string;

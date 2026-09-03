@@ -22,13 +22,13 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     // Built assets use relative URLs, so one bundle works both standalone and
-    // mounted under the AppGateway prefix — the prefix is discovered at
+    // mounted under an app-gateway prefix — the prefix is discovered at
     // runtime. The dev server always serves from the origin root.
     base: command === 'build' ? './' : '/',
     server: {
       port: 5110,
       proxy: {
-        // App-scoped prefix, matching the backend and the AppGateway edge.
+        // App-scoped prefix, matching the backend and the app-gateway edge.
         '/hearth-api': {
           target: apiTarget,
           changeOrigin: false,

@@ -2,7 +2,7 @@
  * The API is always root-absolute at `/hearth-api`, so the SPA needs no
  * build-time knowledge of its own mount prefix: relative assets, hash routing,
  * root-absolute calls. The prefix is app-scoped rather than `/api` because under
- * the AppGateway every app shares one origin.
+ * app-gateway every app shares one origin.
  *
  * A deployment that mounts the API elsewhere overrides it with
  * `<meta name="hearth-api-base" content="…">`.

@@ -66,7 +66,7 @@ Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → 
   frontend server process, and nothing sits between the browser and a byte range.
   A `<video>` points at `/hearth-api/media/raw?…` and Caddy streams it straight through.
 - The SPA is served under a **path prefix** (`/hearth`), because the same public
-  port may also front sibling apps via a shared AppGateway. Standalone,
+  port may also front sibling apps via a shared app-gateway. Standalone,
   `start.ps1` runs its own Caddy; under the gateway, `start.ps1 -NoCaddy` lets the
   gateway own the port. The build discovers its own prefix at runtime, so one
   artifact works either way.
