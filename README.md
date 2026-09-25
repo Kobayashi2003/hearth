@@ -5,8 +5,8 @@
 Hearth is a self-hosted file server for one person and one machine. Photos,
 videos, music, comics, e-books and documents stay on hardware you own, and Hearth
 is the window you reach them through from any browser — read a comic page by page,
-watch a video with subtitle and audio-track selection, listen to an album, page
-through an EPUB, edit a text file. Nothing is copied to the device you view from.
+watch a video with subtitle and audio-track selection, listen to an album, read
+an EPUB that remembers your place across devices, edit a text file. Nothing is copied to the device you view from.
 
 It is deliberately **not** a sync service, a backup product, or a multi-tenant
 SaaS: what the network carries is *access*, not custody.
@@ -22,7 +22,8 @@ SPA, with search delegated to [Everything](https://www.voidtools.com/).
 - **ffmpeg** and **ffprobe** on `PATH` — for video probe, transcode, subtitle
   extraction, and video thumbnails
 - **Windows** for instant search via Everything (optional; a filesystem-walk
-  fallback works everywhere). See [`docs/everything-setup.md`](docs/everything-setup.md).
+  fallback works everywhere). Bind Everything's HTTP server to `127.0.0.1` only —
+  it serves file contents without authentication.
 - **Caddy** — the public edge, for a real deployment (optional in development)
 - **Redis** — optional, only to make sessions survive a restart
 
@@ -77,36 +78,30 @@ Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → 
 
 ```
 Hearth/
-├── start.ps1 · caddy-env.ps1     # launcher; Caddy upstreams from .env
+├── start.ps1 · caddy-env.ps1      # launcher; Caddy upstreams from .env
 ├── Caddyfile · Caddyfile.snippet  # standalone edge; routes shared with the gateway
-├── .env.example                   # every configuration variable, documented
-├── docs/                          # architecture, configuration, Everything setup, ADRs
+├── .env.example                   # every configuration variable, with defaults
+├── docs/                          # 前端代码结构 · 后端代码结构 · 已实现功能 · 拟实现功能
 ├── packages/shared/src/           # @hearth/shared — types both tiers compile against
-│   ├── entities.ts · api.ts       #   domain types and request/response contracts
-│   ├── constants.ts · media.ts    #   MIME overrides, extension sets, cover rules
-│   └── ledger.ts                  #   Ledger (positions) and Hob (preferences)
 ├── server/src/                    # @hearth/server — Fastify, loopback only
-│   ├── main.ts · app.ts           #   entrypoint; Fastify assembly
 │   ├── config/ · plugins/ · lib/  #   env, auth/errors/security, Vault and helpers
 │   ├── adapters/                  #   Everything, ffmpeg
 │   ├── modules/                   #   warden, vault, beacon, kiln, ember, ledger, hob, system
-│   └── workers/                   #   worker_threads: walk, comic, archive, cover, office, psd
+│   └── workers/                   #   worker_threads: walk, comic, cover, archive, office, psd
 └── web/src/                       # @hearth/web — Vite + React SPA
-    ├── lib/ · components/         #   API client, formatters; primitives and menus
-    ├── hooks/                     #   the two adaptation axes (width, input) — ADR 0002
-    └── features/
-        ├── shell/ · auth/         #     app frame and bottom tray; login
-        ├── explorer/              #     listing/, toolbar/, commands/, dialogs/, peek/
-        ├── mantel/                #     preview window, dock, playback, viewers/
-        ├── ledger/ · hob/         #     reading positions; preferences
-        └── transfer/ · admin/     #     uploads; settings
+    ├── lib/ · ui/ · brand/        #   API client and helpers; primitives; the logo
+    ├── features/                  #   session, preferences, progress, shell, explorer,
+    │                              #   transfer, preview (viewers, audio player), settings
+    └── vendor/epub-reader/        #   the EPUB reader component, copied in unchanged
 ```
 
-**Subsystem names** (used throughout the code and logs): **Vault** — the root
-tree, path resolution, containment; **Beacon** — name search; **Kiln** —
+The design and the reasoning behind it are documented, in Chinese, under `docs/`.
+
+**Subsystem names** used in the code and logs: **Vault** — the root tree, path
+safety, file operations; **Beacon** — name search; **Kiln** — streaming,
 transcode, thumbnails, document rendering; **Warden** — auth and permissions;
-**Ember** — the recycle bin; **Mantel** — the preview system; **Ledger** — where
-you were; **Hob** — how you like things set.
+**Ember** — the recycle bin; **Ledger** — where you were in each file; **Hob** —
+how you like things set.
 
 ---
 
@@ -116,16 +111,18 @@ you were; **Hob** — how you like things set.
 |---|---|
 | `npm install` | Install every workspace's dependencies |
 | `npm run build` | Build shared types, backend, and the SPA |
-| `npm run dev` | Backend + Vite dev server with hot reload |
-| `npm test` | Run the backend unit and integration tests |
+| `npm run dev` | Backend + Vite dev server with hot reload; layers `.env.development`, which lifts every limit |
+| `npm start` | Run the built backend in production mode (no Caddy) |
+| `npm test` | Run the unit and integration tests |
+| `npm run format` | Format the code with Prettier (`format:check` to verify) |
 | `npm run typecheck` | Typecheck every workspace |
 | `npm run lint` | Lint the whole repository |
 | `.\start.ps1 -Build` | Production: build, then run backend + Caddy |
 | `.\start.ps1 -NoCaddy` | Run the backend only; a shared gateway owns the port |
 
 Configuration lives in `.env` at the repository root. Every variable is optional
-and documented in [`docs/configuration.md`](docs/configuration.md); the defaults
-serve the bundled `./example` tree so a fresh clone runs without any setup.
+and listed in [`.env.example`](.env.example) and `docs/后端代码结构.md`; the
+defaults serve the bundled `./example` tree so a fresh clone runs without any setup.
 
 ---
 
