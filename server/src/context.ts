@@ -5,11 +5,7 @@ import type { Warden } from './modules/warden/warden.js';
 import type { Session } from './modules/warden/session-store.js';
 import type { PermissionAction } from '@hearth/shared';
 
-/**
- * The service container, assembled once at startup and reachable from every
- * route as `app.hearth`. Constructor injection keeps modules testable without
- * a framework instance.
- */
+/** Assembled once at startup and reachable from every route as `app.hearth`. */
 export interface HearthContext {
   config: AppConfig;
   runtime: RuntimeState;
@@ -26,14 +22,10 @@ declare module 'fastify' {
     /** Present once the auth hook has run and the route is not public. */
     session: Session | null;
 
-    /**
-     * The only way to obtain a `SafePath`. Resolves a user-supplied path
-     * against the active root and authorises `action` against it in one step,
-     * so no filesystem call can be reached without a permission check.
-     */
+    /** The only way to obtain a `SafePath`: resolves against the active root and authorises `action` in one step. */
     resolvePath(userPath: string | undefined, action: PermissionAction): SafePath;
 
-    /** Root-relative form of the last resolved path, for logging and responses. */
+    /** Root-relative, forward-slash form of an absolute path inside the root. */
     relativePath(absolute: string): string;
   }
 

@@ -34,9 +34,8 @@ interface SessionIndex {
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
- * Resumable upload. The client cuts a file into fixed-size chunks, each stored
- * as its own part file; `complete` concatenates them in order. An interrupted
- * upload resumes because `status` reports exactly which chunks already landed.
+ * Resumable upload: each chunk is its own part file, `complete` concatenates
+ * them in order, and `status` reports which chunks already landed.
  */
 export class ChunkedUploadService {
   private readonly index: JsonDocument<SessionIndex>;
@@ -108,7 +107,6 @@ export class ChunkedUploadService {
         candidate.uploadId === uploadId
           ? {
               ...candidate,
-              // Re-sending a chunk overwrites it rather than recording it twice.
               receivedChunks: [...new Set([...candidate.receivedChunks, chunkIndex])].sort(
                 (a, b) => a - b,
               ),
@@ -152,7 +150,6 @@ export class ChunkedUploadService {
     await this.discard(uploadId);
   }
 
-  /** Reclaim the disk held by uploads that were started and never finished. */
   startSweeper(): void {
     if (this.sweepTimer) return;
     this.sweepTimer = setInterval(() => {
@@ -186,7 +183,6 @@ export class ChunkedUploadService {
     }));
   }
 
-  /** A session belongs to the user who created it; nobody else can touch it. */
   private requireSession(username: string, uploadId: string): ChunkSession {
     const session = this.index.read().sessions.find(candidate => candidate.uploadId === uploadId);
     if (!session || session.username !== username) {
@@ -200,7 +196,6 @@ export class ChunkedUploadService {
   }
 }
 
-/** Stream the parts back-to-back so the whole file is never held in memory. */
 async function* concatenate(parts: string[]): AsyncGenerator<Buffer> {
   for (const part of parts) {
     for await (const chunk of createReadStream(part)) yield chunk as Buffer;

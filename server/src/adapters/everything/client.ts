@@ -16,10 +16,7 @@ export interface EverythingRequest {
   ascending: boolean;
 }
 
-/**
- * Thin HTTP client for Everything's built-in server. Nothing above this file
- * knows Everything's wire format or its Windows absolute paths.
- */
+/** Thin client for Everything's HTTP server; nothing above this knows its wire format. */
 export class EverythingClient {
   constructor(private readonly options: EverythingClientOptions) {}
 
@@ -32,7 +29,6 @@ export class EverythingClient {
       s: request.expression,
       j: '1',
       o: String(request.offset),
-      c: String(request.count),
       sort: request.sort,
       ascending: request.ascending ? '1' : '0',
       path_column: '1',
@@ -40,11 +36,13 @@ export class EverythingClient {
       date_modified_column: '1',
     });
 
+    // Without `c` Everything returns every match.
+    if (Number.isFinite(request.count)) query.set('c', String(request.count));
     const payload = await this.fetchJson(`${this.options.url}/?${query}`, signal);
     return parseEverythingResponse(payload);
   }
 
-  /** Cheap liveness probe; an empty search is the least expensive query available. */
+  /** An empty search is the cheapest query available. */
   async probe(signal?: AbortSignal): Promise<{ latencyMs: number }> {
     const startedAt = Date.now();
     await this.fetchJson(`${this.options.url}/?s=&j=1&c=1`, signal);
@@ -52,8 +50,13 @@ export class EverythingClient {
   }
 
   private async fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
-    const timeout = AbortSignal.timeout(this.options.timeoutMs);
-    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    const signals = [
+      signal,
+      Number.isFinite(this.options.timeoutMs)
+        ? AbortSignal.timeout(this.options.timeoutMs)
+        : undefined,
+    ].filter((candidate): candidate is AbortSignal => candidate !== undefined);
+    const combined = signals.length > 0 ? AbortSignal.any(signals) : undefined;
 
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (this.options.username !== undefined) {
@@ -63,7 +66,7 @@ export class EverythingClient {
 
     let response: Response;
     try {
-      response = await fetch(url, { headers, signal: combined });
+      response = await fetch(url, { headers, signal: combined ?? null });
     } catch (error) {
       throw new HearthError(
         'UPSTREAM_UNAVAILABLE',

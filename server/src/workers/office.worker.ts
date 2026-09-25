@@ -6,20 +6,15 @@ import mammoth from 'mammoth';
 import WordExtractor from 'word-extractor';
 import * as xlsx from 'xlsx';
 
-/**
- * Office documents rendered to an HTML fragment. Runs off the event loop
- * because parsing a large spreadsheet is CPU-bound and synchronous.
- *
- * The output is sanitised on the main thread before it reaches a browser —
- * this worker's job is conversion, not safety.
- */
+import { rethrow } from './comic-pages.js';
+
+/** Office documents to an HTML fragment. Sanitising happens on the main thread, not here. */
 export interface OfficeRequest {
   filePath: string;
 }
 
 export interface OfficeResponse {
   html: string;
-  /** Sheet names, for spreadsheets. */
   sheets?: string[];
 }
 
@@ -28,7 +23,7 @@ async function convertDocx(filePath: string): Promise<OfficeResponse> {
   return { html: value };
 }
 
-/** The legacy binary .doc format, which mammoth cannot read. */
+/** Legacy binary .doc, which mammoth cannot read. */
 async function convertDoc(filePath: string): Promise<OfficeResponse> {
   const document = await new WordExtractor().extract(filePath);
   const paragraphs = document
@@ -42,8 +37,6 @@ async function convertDoc(filePath: string): Promise<OfficeResponse> {
 function convertSpreadsheet(filePath: string): OfficeResponse {
   const workbook = xlsx.read(fs.readFileSync(filePath), { type: 'buffer' });
 
-  // Every sheet is rendered, each under a heading, so a multi-sheet workbook
-  // does not silently show only its first tab.
   const sections = workbook.SheetNames.map(name => {
     const sheet = workbook.Sheets[name];
     const table = sheet ? xlsx.utils.sheet_to_html(sheet, { id: `sheet-${name}` }) : '';
@@ -75,4 +68,4 @@ async function run(request: OfficeRequest): Promise<OfficeResponse> {
   }
 }
 
-void run(workerData as OfficeRequest).then(response => parentPort?.postMessage(response));
+run(workerData as OfficeRequest).then(response => parentPort?.postMessage(response), rethrow);

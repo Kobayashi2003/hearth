@@ -3,49 +3,53 @@ import type {
   DeleteRequest,
   MkdirRequest,
   OperationResponse,
+  OperationResult,
   RenameRequest,
   TransferRequest,
 } from '@hearth/shared';
 
 import { HearthError } from '../../lib/errors.js';
+import { maxItems } from '../../lib/limits.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { TrashService } from '../ember/trash.service.js';
 import type { LedgerService } from '../ledger/ledger.service.js';
 import type { FileOpsService } from './fileops.service.js';
 import type { ListingService } from './listing.service.js';
 
-const pathList = { type: 'array', minItems: 1, maxItems: 1000, items: { type: 'string' } } as const;
-
-const schemas = {
-  mkdir: {
-    body: {
-      type: 'object',
-      required: ['path', 'name'],
-      properties: { path: { type: 'string' }, name: { type: 'string', minLength: 1 } },
-    },
-  },
-  rename: {
-    body: {
-      type: 'object',
-      required: ['path', 'name'],
-      properties: { path: { type: 'string' }, name: { type: 'string', minLength: 1 } },
-    },
-  },
-  transfer: {
-    body: {
-      type: 'object',
-      required: ['sources', 'destination'],
-      properties: { sources: pathList, destination: { type: 'string' } },
-    },
-  },
-  remove: {
-    body: {
-      type: 'object',
-      required: ['paths'],
-      properties: { paths: pathList, permanent: { type: 'boolean' } },
-    },
+const pathAndName = {
+  body: {
+    type: 'object',
+    required: ['path', 'name'],
+    properties: { path: { type: 'string' }, name: { type: 'string', minLength: 1 } },
   },
 } as const;
+
+const schemasFor = (batch: number) => {
+  const pathList = {
+    type: 'array',
+    minItems: 1,
+    ...maxItems(batch),
+    items: { type: 'string' },
+  } as const;
+  return {
+    mkdir: pathAndName,
+    rename: pathAndName,
+    transfer: {
+      body: {
+        type: 'object',
+        required: ['sources', 'destination'],
+        properties: { sources: pathList, destination: { type: 'string' } },
+      },
+    },
+    remove: {
+      body: {
+        type: 'object',
+        required: ['paths'],
+        properties: { paths: pathList, permanent: { type: 'boolean' } },
+      },
+    },
+  } as const;
+};
 
 export function createFileOpsRoutes(
   fileOps: FileOpsService,
@@ -55,6 +59,7 @@ export function createFileOpsRoutes(
 ): FastifyPluginAsync {
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
+    const schemas = schemasFor(app.hearth.config.listing.maxBatchItems);
     const writeConfig = { permission: 'write' as const, rateLimit: rateLimits.write };
 
     app.post<{ Body: MkdirRequest }>(
@@ -73,9 +78,7 @@ export function createFileOpsRoutes(
         const target = request.resolvePath(request.body.path, 'write');
         await listing.require(target);
         const renamed = await fileOps.rename(target, request.body.name);
-        // Reading positions follow a file renamed through Hearth — including
-        // every file beneath a renamed folder. See ADR 0001.
-        await ledger.reprefix(request.body.path, renamed);
+        await ledger.reprefix(request.relativePath(target), renamed);
         return { path: renamed };
       },
     );
@@ -85,7 +88,7 @@ export function createFileOpsRoutes(
         `/fs/${mode}`,
         { schema: schemas.transfer, config: writeConfig },
         async request => {
-          // A move removes the source, so it needs delete permission there too.
+          // A move removes the source, so it needs delete permission there.
           const sourceAction = mode === 'move' ? 'delete' : 'read';
           const sources = request.body.sources.map(source =>
             request.resolvePath(source, sourceAction),
@@ -94,17 +97,12 @@ export function createFileOpsRoutes(
           await listing.assertDirectory(destination);
 
           const results = await fileOps.transfer(sources, destination, mode);
-
-          // Only a move relocates the original; a copy leaves it where it was,
-          // and the new copy legitimately starts with no position of its own.
           if (mode === 'move') {
             for (const result of results) {
-              if (result.ok && result.resultPath) {
+              if (result.ok && result.resultPath)
                 await ledger.reprefix(result.path, result.resultPath);
-              }
             }
           }
-
           const body: OperationResponse = { results };
           return body;
         },
@@ -116,24 +114,24 @@ export function createFileOpsRoutes(
       { schema: schemas.remove, config: { permission: 'delete', rateLimit: rateLimits.write } },
       async request => {
         const useTrash = trash.enabled && !request.body.permanent;
-        const results = [];
+        const results: OperationResult[] = [];
 
-        for (const relative of request.body.paths) {
-          const target = request.resolvePath(relative, 'delete');
+        for (const requested of request.body.paths) {
           try {
+            const target = request.resolvePath(requested, 'delete');
+            const relative = request.relativePath(target);
             const entry = await listing.require(target);
             if (useTrash) {
-              // Positions are kept: the item can still come back from Ember,
-              // and restoring to the same path should restore where you were.
+              // Progress is kept: restoring to the same path restores where you were.
               await trash.accept(target, entry.isDirectory, entry.size);
             } else {
               await fileOps.remove(target);
               await ledger.forget(relative);
             }
-            results.push({ path: relative, ok: true });
+            results.push({ path: requested, ok: true });
           } catch (error) {
             results.push({
-              path: relative,
+              path: requested,
               ok: false,
               error: error instanceof HearthError ? error.message : 'Could not delete that item',
             });

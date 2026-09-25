@@ -1,9 +1,7 @@
 /**
- * Everything's JSON response shape is not fully pinned down by its public
- * documentation, and has varied across versions: `size` may be a string or a
- * number, and `date_modified` may be a Windows FILETIME, epoch milliseconds, or
- * an ISO string. Rather than guess one, every accepted form is handled here and
- * covered by tests, so a version difference cannot silently corrupt results.
+ * Everything's JSON has varied across versions: `size` may be a string or a
+ * number, `date_modified` a FILETIME, epoch ms, or ISO string. Every observed
+ * form is accepted here and covered by tests.
  */
 
 export interface EverythingResult {
@@ -64,11 +62,7 @@ interface RawResponse {
   results?: RawResult[];
 }
 
-/**
- * `path` is the containing directory; `name` is the entry. Directories are
- * identified by `type`, falling back to the absence of a size when a build does
- * not send it.
- */
+/** `path` is the containing directory; `name` is the entry. */
 export function parseEverythingResponse(payload: unknown): EverythingResponse {
   const body = (payload ?? {}) as RawResponse;
   const rawResults = Array.isArray(body.results) ? body.results : [];

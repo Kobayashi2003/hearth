@@ -5,15 +5,9 @@ import { parentPort, workerData } from 'node:worker_threads';
 import AdmZip from 'adm-zip';
 import { createExtractorFromData } from 'node-unrar-js';
 
-import { collator, isPage, RAR_EXTENSIONS } from './comic-pages.js';
+import { collator, isPage, RAR_EXTENSIONS, rethrow, zipEntryNames } from './comic-pages.js';
 
-/**
- * Comic archive extraction. Runs off the event loop because decompressing a few
- * hundred megabytes of JPEGs blocks for seconds.
- *
- * Pages are extracted once into a cache directory and served as ordinary files
- * afterwards, so paging through a comic does not re-open the archive per page.
- */
+/** Extracts every page once into a cache directory. */
 export interface ComicRequest {
   archivePath: string;
   /** Directory the pages are written into. */
@@ -25,11 +19,7 @@ export interface ComicResponse {
   pages: string[];
 }
 
-/**
- * Entries are flattened into one directory, but a comic may hold two chapters
- * with identically-named pages — so the full entry path decides the order while
- * the position in that order becomes the cached filename.
- */
+/** Two chapters may share page names, so the cached name is the ordinal, not the entry name. */
 function pageFileName(entryName: string, ordinal: number): string {
   return `${String(ordinal).padStart(4, '0')}${path.extname(entryName).toLowerCase()}`;
 }
@@ -46,11 +36,12 @@ function writePages(
 }
 
 function readZip(archivePath: string): Array<{ name: string; content: Uint8Array }> {
-  return new AdmZip(archivePath)
-    .getEntries()
-    .filter(entry => !entry.isDirectory && isPage(entry.entryName))
-    .sort((a, b) => collator.compare(a.entryName, b.entryName))
-    .map(entry => ({ name: entry.entryName, content: entry.getData() }));
+  const entries = new AdmZip(archivePath).getEntries();
+  const names = zipEntryNames(entries);
+  return entries
+    .filter(entry => !entry.isDirectory && isPage(names.get(entry)!))
+    .sort((a, b) => collator.compare(names.get(a)!, names.get(b)!))
+    .map(entry => ({ name: names.get(entry)!, content: entry.getData() }));
 }
 
 async function readRar(archivePath: string): Promise<Array<{ name: string; content: Uint8Array }>> {
@@ -66,9 +57,7 @@ async function readRar(archivePath: string): Promise<Array<{ name: string; conte
 
   const extracted = [...extractor.extract({ files: names }).files];
   const contentByName = new Map(
-    extracted
-      .filter(file => file.extraction)
-      .map(file => [file.fileHeader.name, file.extraction!]),
+    extracted.filter(file => file.extraction).map(file => [file.fileHeader.name, file.extraction!]),
   );
 
   return names
@@ -87,4 +76,4 @@ async function run(request: ComicRequest): Promise<ComicResponse> {
   return { pages: writePages(request.cacheDirectory, entries) };
 }
 
-void run(workerData as ComicRequest).then(response => parentPort?.postMessage(response));
+run(workerData as ComicRequest).then(response => parentPort?.postMessage(response), rethrow);

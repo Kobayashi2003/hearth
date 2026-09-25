@@ -8,6 +8,7 @@ import type {
 
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import { HearthError } from '../../lib/errors.js';
+import { isoOrNull } from '../../lib/limits.js';
 
 const loginSchema = {
   body: {
@@ -37,7 +38,10 @@ export const wardenRoutes: FastifyPluginAsync = async app => {
     sameSite: 'lax' as const,
     secure: config.auth.cookieSecure,
     path: '/',
-    maxAge: Math.floor(config.auth.sessionExpiryMs / 1000),
+    // Browsers cap cookie lifetime at about 400 days; an unlimited session asks for that.
+    maxAge: Number.isFinite(config.auth.sessionExpiryMs)
+      ? Math.floor(config.auth.sessionExpiryMs / 1000)
+      : 400 * 24 * 3600,
   };
 
   app.post<{ Body: LoginRequest }>(
@@ -62,7 +66,6 @@ export const wardenRoutes: FastifyPluginAsync = async app => {
     return { ok: true };
   });
 
-  // Public so an unauthenticated client can discover it needs to log in.
   app.get('/auth/session', { config: { auth: 'public' } }, async request => {
     const session = await warden.resolveSession(request.cookies[warden.sessionCookieName]);
     const body: SessionResponse = {
@@ -73,8 +76,7 @@ export const wardenRoutes: FastifyPluginAsync = async app => {
     return body;
   });
 
-  // Issued only for a path the caller may already read, so a token can never
-  // widen access beyond the session that asked for it.
+  // Only for a path the caller may already read, so a token never widens access.
   app.post<{ Body: MediaTokenRequest }>(
     '/media/token',
     { schema: mediaTokenSchema, config: { permission: 'read' } },
@@ -83,7 +85,7 @@ export const wardenRoutes: FastifyPluginAsync = async app => {
       if (!request.session) throw HearthError.unauthorized();
       const relative = request.relativePath(target);
       const { token, expiresAt } = warden.issueMediaToken(request.session.username, relative);
-      const body: MediaTokenResponse = { token, expiresAt: expiresAt.toISOString() };
+      const body: MediaTokenResponse = { token, expiresAt: isoOrNull(expiresAt) };
       return body;
     },
   );

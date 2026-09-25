@@ -1,4 +1,10 @@
-import type { FileEntry, MediaKind, SortDirection, SortField, SearchProviderName } from '@hearth/shared';
+import type {
+  FileEntry,
+  MediaKind,
+  SortDirection,
+  SortField,
+  SearchProviderName,
+} from '@hearth/shared';
 
 export interface SearchQuery {
   /** Raw text the user typed. */

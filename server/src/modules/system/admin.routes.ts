@@ -10,78 +10,83 @@ import type {
 } from '@hearth/shared';
 
 import { HearthError } from '../../lib/errors.js';
+import { maxItems } from '../../lib/limits.js';
 import type { Warden } from '../warden/warden.js';
 
 const permissionActions = ['read', 'write', 'delete', 'admin'];
 
-const schemas = {
-  createUser: {
-    body: {
-      type: 'object',
-      required: ['username', 'password', 'permissions'],
-      properties: {
-        username: { type: 'string', minLength: 1, maxLength: 64 },
-        password: { type: 'string', minLength: 1, maxLength: 512 },
-        permissions: { type: 'string', maxLength: 8, pattern: '^[rwda]*$' },
+const schemasFor = (batch: number) =>
+  ({
+    createUser: {
+      body: {
+        type: 'object',
+        required: ['username', 'password', 'permissions'],
+        properties: {
+          username: { type: 'string', minLength: 1, maxLength: 64 },
+          password: { type: 'string', minLength: 1, maxLength: 512 },
+          permissions: { type: 'string', maxLength: 8, pattern: '^[rwda]*$' },
+        },
       },
     },
-  },
-  updateUser: {
-    body: {
-      type: 'object',
-      minProperties: 1,
-      properties: {
-        password: { type: 'string', minLength: 1, maxLength: 512 },
-        permissions: { type: 'string', maxLength: 8, pattern: '^[rwda]*$' },
+    updateUser: {
+      body: {
+        type: 'object',
+        minProperties: 1,
+        properties: {
+          password: { type: 'string', minLength: 1, maxLength: 512 },
+          permissions: { type: 'string', maxLength: 8, pattern: '^[rwda]*$' },
+        },
       },
     },
-  },
-  rules: {
-    body: {
-      type: 'object',
-      required: ['rules'],
-      properties: {
-        rules: {
-          type: 'array',
-          maxItems: 500,
-          items: {
-            type: 'object',
-            required: ['username', 'path', 'permissions'],
-            properties: {
-              username: { type: 'string', minLength: 1, maxLength: 64 },
-              path: { type: 'string', maxLength: 4096 },
-              permissions: {
-                type: 'array',
-                items: { type: 'string', enum: permissionActions },
+    rules: {
+      body: {
+        type: 'object',
+        required: ['rules'],
+        properties: {
+          rules: {
+            type: 'array',
+            ...maxItems(batch),
+            items: {
+              type: 'object',
+              required: ['username', 'path', 'permissions'],
+              properties: {
+                username: { type: 'string', minLength: 1, maxLength: 64 },
+                path: { type: 'string', maxLength: 4096 },
+                permissions: {
+                  type: 'array',
+                  items: { type: 'string', enum: permissionActions },
+                },
+                effect: { type: 'string', enum: ['allow', 'deny'] },
               },
-              effect: { type: 'string', enum: ['allow', 'deny'] },
             },
           },
         },
       },
     },
-  },
-  lockdown: {
-    body: { type: 'object', required: ['adminOnly'], properties: { adminOnly: { type: 'boolean' } } },
-  },
-  viewers: {
-    body: {
-      type: 'object',
-      minProperties: 1,
-      properties: {
-        htmlViewerEnabled: { type: 'boolean' },
-        htmlExternalResourcesEnabled: { type: 'boolean' },
+    lockdown: {
+      body: {
+        type: 'object',
+        required: ['adminOnly'],
+        properties: { adminOnly: { type: 'boolean' } },
       },
     },
-  },
-} as const;
+    viewers: {
+      body: {
+        type: 'object',
+        minProperties: 1,
+        properties: {
+          htmlViewerEnabled: { type: 'boolean' },
+          htmlExternalResourcesEnabled: { type: 'boolean' },
+        },
+      },
+    },
+  }) as const;
 
 export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
   return async app => {
-    const { runtime } = app.hearth;
+    const { runtime, config } = app.hearth;
+    const schemas = schemasFor(config.listing.maxBatchItems);
     const adminOnly = { permission: 'admin' as const };
-
-    // ── Users ───────────────────────────────────────────────────────────────
 
     app.get('/admin/users', { config: adminOnly }, async () => {
       const body: UsersResponse = { users: warden.users.list() };
@@ -92,11 +97,7 @@ export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
       '/admin/users',
       { schema: schemas.createUser, config: adminOnly },
       async request =>
-        warden.users.create(
-          request.body.username,
-          request.body.password,
-          request.body.permissions,
-        ),
+        warden.users.create(request.body.username, request.body.password, request.body.permissions),
     );
 
     app.patch<{ Params: { username: string }; Body: UpdateUserRequest }>(
@@ -104,8 +105,6 @@ export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
       { schema: schemas.updateUser, config: adminOnly },
       async request => {
         const updated = await warden.users.update(request.params.username, request.body);
-        // A changed password or permission set must not leave old sessions
-        // running with the old rights.
         await warden.revokeSessions(request.params.username);
         return updated;
       },
@@ -115,7 +114,6 @@ export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
       '/admin/users/:username',
       { config: adminOnly },
       async request => {
-        // Removing your own account would lock you out mid-request.
         if (request.session?.username === request.params.username) {
           throw HearthError.badRequest('You cannot delete the account you are signed in with');
         }
@@ -124,8 +122,6 @@ export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
         return { ok: true };
       },
     );
-
-    // ── Permission rules ────────────────────────────────────────────────────
 
     app.get('/admin/permissions', { config: adminOnly }, async () => {
       const body: PermissionRulesResponse = { rules: warden.permissions.list() };
@@ -142,8 +138,6 @@ export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
         return body;
       },
     );
-
-    // ── Feature toggles ─────────────────────────────────────────────────────
 
     app.get('/admin/lockdown', { config: adminOnly }, async () => {
       const body: LockdownSettings = { adminOnly: runtime.get('adminOnly') };

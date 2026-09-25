@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
-import type { LedgerDocument, LedgerPatch } from '@hearth/shared';
+import type { ProgressMap, ProgressPatch, ReadingSessionBody } from '@hearth/shared';
 
-import { HearthError } from '../../lib/errors.js';
+import { usernameOf } from '../../lib/request.js';
 import type { LedgerService } from './ledger.service.js';
 
 const progressValue = {
@@ -17,43 +17,72 @@ const progressValue = {
   },
 } as const;
 
-const patchSchema = {
-  body: {
-    type: 'object',
-    properties: {
-      progress: { type: 'object', additionalProperties: progressValue },
-      opened: { type: 'string' },
-      pin: {
-        type: 'object',
-        required: ['path', 'value'],
-        properties: { path: { type: 'string' }, value: { type: 'boolean' } },
-      },
+const schemas = {
+  progress: {
+    body: {
+      type: 'object',
+      required: ['progress'],
+      properties: { progress: { type: 'object', additionalProperties: progressValue } },
+    },
+  },
+  sessionQuery: {
+    querystring: {
+      type: 'object',
+      required: ['path'],
+      properties: { path: { type: 'string', maxLength: 4096 } },
+    },
+  },
+  sessionBody: {
+    body: {
+      type: 'object',
+      required: ['path', 'record'],
+      properties: { path: { type: 'string', maxLength: 4096 }, record: {} },
     },
   },
 } as const;
 
 export function createLedgerRoutes(ledger: LedgerService): FastifyPluginAsync {
   return async app => {
-    /** Every route here is scoped to the caller — a session is always required. */
-    const requireUser = (username: string | undefined): string => {
-      if (!username) throw HearthError.unauthorized('Sign in to use your reading history');
-      return username;
-    };
+    const config = { permission: 'read' as const };
 
-    app.get('/ledger', { config: { permission: 'read' } }, async request => {
-      const body: LedgerDocument = ledger.read(requireUser(request.session?.username));
+    app.get('/ledger/progress', { config }, async request => {
+      const body: ProgressMap = ledger.readProgress(usernameOf(request));
       return body;
     });
 
-    app.patch<{ Body: LedgerPatch }>(
-      '/ledger',
-      { schema: patchSchema, config: { permission: 'read' } },
+    app.patch<{ Body: ProgressPatch }>(
+      '/ledger/progress',
+      { schema: schemas.progress, config },
       async request => {
-        const body: LedgerDocument = await ledger.patch(
-          requireUser(request.session?.username),
-          request.body,
+        const body: ProgressMap = await ledger.patchProgress(
+          usernameOf(request),
+          request.body.progress,
         );
         return body;
+      },
+    );
+
+    app.get<{ Querystring: { path: string } }>(
+      '/ledger/session',
+      { schema: schemas.sessionQuery, config },
+      async request => ({ record: ledger.readSession(usernameOf(request), request.query.path) }),
+    );
+
+    app.put<{ Body: ReadingSessionBody }>(
+      '/ledger/session',
+      { schema: schemas.sessionBody, config },
+      async request => {
+        await ledger.saveSession(usernameOf(request), request.body.path, request.body.record);
+        return { ok: true };
+      },
+    );
+
+    app.delete<{ Querystring: { path: string } }>(
+      '/ledger/session',
+      { schema: schemas.sessionQuery, config },
+      async request => {
+        await ledger.removeSession(usernameOf(request), request.query.path);
+        return { ok: true };
       },
     );
   };

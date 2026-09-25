@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import Fastify from 'fastify';
+import Fastify, { LogController } from 'fastify';
 import fp from 'fastify-plugin';
 import multipart from '@fastify/multipart';
 import type { Logger } from 'pino';
@@ -10,6 +10,7 @@ import type { Logger } from 'pino';
 import './context.js';
 import type { AppConfig } from './config/index.js';
 import { RuntimeState } from './config/runtime-state.js';
+import { bodyLimit } from './lib/limits.js';
 import { Vault } from './lib/vault.js';
 import authPlugin from './plugins/auth.js';
 import errorsPlugin from './plugins/errors.js';
@@ -53,10 +54,7 @@ export interface BuildOptions {
   logger: Logger;
 }
 
-/**
- * Assemble the server. Kept separate from `main.ts` so tests can build an
- * instance without binding a port.
- */
+/** Separate from `main.ts` so tests can build an instance without binding a port. */
 export type HearthApp = Awaited<ReturnType<typeof buildApp>>;
 
 export async function buildApp({ config, logger }: BuildOptions) {
@@ -64,9 +62,10 @@ export async function buildApp({ config, logger }: BuildOptions) {
 
   const app = Fastify({
     loggerInstance: logger,
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
+    ajv: { customOptions: { allowUnionTypes: true } },
     genReqId: () => crypto.randomUUID(),
-    bodyLimit: 2 * 1024 * 1024,
+    bodyLimit: bodyLimit(config.server.bodyLimitBytes),
     trustProxy: true,
   });
 
@@ -74,8 +73,10 @@ export async function buildApp({ config, logger }: BuildOptions) {
   runtime.onPersistError = error =>
     logger.warn({ err: error }, 'could not persist runtime settings — they apply until restart');
   const vault = new Vault(runtime);
-  const sessions = await createSessionStore(config.auth.redisUrl, config.auth.sessionExpiryMs, reason =>
-    logger.warn({ reason }, 'Redis unavailable — falling back to in-memory sessions'),
+  const sessions = await createSessionStore(
+    config.auth.redisUrl,
+    config.auth.sessionExpiryMs,
+    reason => logger.warn({ reason }, 'Redis unavailable — falling back to in-memory sessions'),
   );
   const warden = new Warden(config, runtime, sessions);
 
@@ -89,14 +90,18 @@ export async function buildApp({ config, logger }: BuildOptions) {
 
   const listing = new ListingService(vault);
   const streams = new StreamService(config);
-  const ledger = new LedgerService(path.join(config.storage.dataDirectory, 'ledger'));
+  const ledger = new LedgerService(
+    path.join(config.storage.dataDirectory, 'ledger'),
+    config.ledger,
+  );
+  await ledger.migrate();
   const hob = new HobService(path.join(config.storage.dataDirectory, 'preferences'));
   const beacon = new Beacon(config, runtime, vault, logger);
   const fileOps = new FileOpsService(vault);
   const trash = new TrashService(config, runtime, vault, logger);
   const uploads = new UploadService(config, vault);
   const chunked = new ChunkedUploadService(config, vault, uploads, logger);
-  const downloads = new DownloadService(vault);
+  const downloads = new DownloadService(vault, config.upload.zipLinkTtlMs);
 
   const ffmpeg = new FfmpegAdapter({
     ffmpegPath: config.media.ffmpegPath,
@@ -110,9 +115,9 @@ export async function buildApp({ config, logger }: BuildOptions) {
     ffmpeg,
     text: new TextService(config),
     thumbnails: new ThumbnailService(config, ffmpeg),
-    folderCovers: new FolderCoverService(),
+    folderCovers: new FolderCoverService(config),
     comics: new ComicService(config),
-    archives: new ArchiveService(),
+    archives: new ArchiveService(config),
     documents: new DocumentService(runtime),
     backgrounds: new BackgroundService(config),
   };
@@ -157,10 +162,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
   return app;
 }
 
-/**
- * One log line per completed request. Media streams are logged at completion
- * with their byte count rather than per range, so a video does not drown the log.
- */
+/** One log line per completed request. */
 const requestLogging = fp(async app => {
   app.addHook('onResponse', async (request, reply) => {
     request.log.info(
@@ -179,8 +181,6 @@ const requestLogging = fp(async app => {
 function ensureDirectories(config: AppConfig): void {
   for (const directory of [
     config.storage.dataDirectory,
-    path.join(config.storage.dataDirectory, 'ledger'),
-    path.join(config.storage.dataDirectory, 'preferences'),
     config.storage.tempDirectory,
     config.upload.chunkDirectory,
     config.media.thumbnailCacheDirectory,

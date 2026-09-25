@@ -1,52 +1,29 @@
-import path from 'node:path';
-
 import { DEFAULT_HOB, type HobDocument, type HobPatch } from '@hearth/shared';
 
-import { JsonDocument } from '../../lib/json-store.js';
+import { UserDocuments } from '../../lib/json-store.js';
 
-/**
- * Hob — the shelf beside the fire, where things are left arranged the way you
- * like them.
- *
- * Deliberately a separate document from Ledger: this file is written perhaps
- * once a week, Ledger every few seconds during playback. Sharing storage would
- * let a background progress write clobber a preference set on another device.
- */
+/** Hob: per-user preferences. */
 export class HobService {
-  private readonly documents = new Map<string, JsonDocument<HobDocument>>();
+  private readonly documents: UserDocuments<HobDocument>;
 
-  constructor(private readonly directory: string) {}
+  constructor(directory: string) {
+    this.documents = new UserDocuments<HobDocument>(directory, () => ({ ...DEFAULT_HOB }));
+  }
 
   read(username: string): HobDocument {
-    // Spread over the defaults so a preference added in a later version appears
-    // for people whose file predates it.
-    return { ...DEFAULT_HOB, ...this.documentFor(username).read() };
+    return pick({ ...DEFAULT_HOB, ...this.documents.for(username).read() });
   }
 
   async patch(username: string, patch: HobPatch): Promise<HobDocument> {
-    return this.documentFor(username).update(current => ({
-      ...DEFAULT_HOB,
-      ...current,
-      ...patch,
-    }));
-  }
-
-  private documentFor(username: string): JsonDocument<HobDocument> {
-    let document = this.documents.get(username);
-    if (!document) {
-      document = new JsonDocument<HobDocument>(
-        path.join(this.directory, `${encodeName(username)}.json`),
-        () => structuredClone(DEFAULT_HOB),
-      );
-      this.documents.set(username, document);
-    }
-    return document;
+    return this.documents
+      .for(username)
+      .update(current => pick({ ...DEFAULT_HOB, ...current, ...patch }));
   }
 }
 
-/** Usernames are arbitrary; filenames are not. Readable for ASCII names. */
-function encodeName(username: string): string {
-  return username.replace(/[^A-Za-z0-9._-]/g, character =>
-    `~${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
-  );
+/** Drops keys from older versions so they do not linger in the file forever. */
+function pick(value: HobDocument): HobDocument {
+  return Object.fromEntries(
+    Object.keys(DEFAULT_HOB).map(key => [key, value[key as keyof HobDocument]]),
+  ) as unknown as HobDocument;
 }

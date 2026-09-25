@@ -1,16 +1,38 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import dotenv from 'dotenv';
+
 /**
- * Typed environment readers. Every variable is namespaced `HEARTH_*`; the
- * un-prefixed name from SimpleFileServer is still accepted so an existing .env
- * keeps working, and is reported once at startup so it can be migrated.
+ * Typed `HEARTH_*` environment readers. The un-prefixed legacy name is still
+ * accepted and reported once at startup.
  */
 
 const ENV_PREFIX = 'HEARTH_';
 
-/** Repository root — env paths are resolved against it, not the cwd. */
+/** Relative env paths resolve against the repository root, not the cwd. */
 export const projectRoot = path.resolve(fileURLToPath(import.meta.url), '../../../..');
+
+/**
+ * Precedence, highest first: the process environment, then `.env.development`
+ * (development only — it lifts every limit), then `.env`. dotenv never
+ * overwrites a variable that is already set, so loading in this order is enough.
+ */
+export function loadEnvFiles(development: boolean): string[] {
+  const loaded: string[] = [];
+  for (const name of development ? ['.env.development', '.env'] : ['.env']) {
+    const file = path.join(projectRoot, name);
+    if (!fs.existsSync(file)) continue;
+    dotenv.config({ path: file, quiet: true });
+    loaded.push(name);
+  }
+  return loaded;
+}
+
+export const HEARTH_VERSION = (
+  JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')) as { version: string }
+).version;
 
 const legacyNamesSeen = new Set<string>();
 
@@ -26,7 +48,6 @@ function readRaw(name: string): string | undefined {
   return undefined;
 }
 
-/** Un-prefixed variables that were read, so startup can warn about them once. */
 export function consumeLegacyEnvNames(): string[] {
   return [...legacyNamesSeen].sort();
 }
@@ -54,6 +75,29 @@ export function envInt(name: string, fallback: number): number {
   return value;
 }
 
+/**
+ * A cap. `0` means unlimited and is returned as `Infinity`, so callers compare
+ * against it without a special case. `scale` converts the configured unit
+ * (MB, minutes…) into the one the code uses.
+ */
+export function envLimit(name: string, fallback: number, scale = 1): number {
+  const value = envInt(name, fallback);
+  if (value < 0) throw new ConfigError(name, 'must be zero (unlimited) or positive');
+  return value === 0 ? Number.POSITIVE_INFINITY : value * scale;
+}
+
+/** Like `envLimit`, for a variable that was renamed. */
+export function envLimitRenamed(
+  name: string,
+  oldName: string,
+  fallback: number,
+  scale = 1,
+): number {
+  return readRaw(name) !== undefined || readRaw(oldName) === undefined
+    ? envLimit(name, fallback, scale)
+    : envLimit(oldName, fallback, scale);
+}
+
 export function envBool(name: string, fallback: boolean): boolean {
   const raw = readRaw(name)?.toLowerCase();
   if (raw === undefined) return fallback;
@@ -71,13 +115,11 @@ export function envEnum<T extends string>(name: string, allowed: readonly T[], f
   return raw as T;
 }
 
-/** Resolve a possibly-relative path against the repository root. */
 export function envPath(name: string, fallback: string): string {
   const raw = readRaw(name) ?? fallback;
   return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(projectRoot, raw);
 }
 
-/** Split a comma-separated variable, trimming and dropping empties. */
 export function envList(name: string, fallback: string[] = []): string[] {
   const raw = readRaw(name);
   if (raw === undefined) return fallback;

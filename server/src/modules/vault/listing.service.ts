@@ -7,13 +7,13 @@ import { fromNodeError, HearthError } from '../../lib/errors.js';
 import { DIRECTORY_MIME, mimeForPath } from '../../lib/mime.js';
 import type { SafePath, Vault } from '../../lib/vault.js';
 
-/** Reading a directory of N entries costs N stat calls; cap the concurrency. */
+/** A directory of N entries costs N stat calls; this bounds how many run at once. */
 const STAT_CONCURRENCY = 64;
 
 export class ListingService {
   constructor(private readonly vault: Vault) {}
 
-  /** Every visible child of `directory`, unsorted and unpaginated. */
+  /** Every visible child of `directory`, unsorted. */
   async readDirectory(directory: SafePath): Promise<FileEntry[]> {
     let dirents;
     try {
@@ -24,20 +24,17 @@ export class ListingService {
 
     const visible = dirents.filter(dirent => !isHiddenSystemEntry(dirent.name));
     const entries: FileEntry[] = [];
-
     for (let index = 0; index < visible.length; index += STAT_CONCURRENCY) {
       const batch = visible.slice(index, index + STAT_CONCURRENCY);
-      const resolved = await Promise.all(
+      const described = await Promise.all(
         batch.map(dirent => this.describe(path.join(directory, dirent.name) as SafePath)),
       );
-      // A file deleted between readdir and stat yields null; skip it silently.
-      entries.push(...resolved.filter((entry): entry is FileEntry => entry !== null));
+      entries.push(...described.filter((entry): entry is FileEntry => entry !== null));
     }
-
     return entries;
   }
 
-  /** Describe one path, or null when it has gone away. */
+  /** Null when the path has gone away. */
   async describe(target: SafePath): Promise<FileEntry | null> {
     try {
       const stats = await fsp.stat(target);
@@ -47,7 +44,7 @@ export class ListingService {
         path: this.vault.relativize(target),
         size: isDirectory ? 0 : stats.size,
         mtime: stats.mtime.toISOString(),
-        mimeType: isDirectory ? DIRECTORY_MIME : mimeForPath(target),
+        mimeType: isDirectory ? DIRECTORY_MIME : mimeForPath(target, stats.size),
         isDirectory,
       };
     } catch {
@@ -55,7 +52,6 @@ export class ListingService {
     }
   }
 
-  /** Describe one path, failing loudly — for endpoints that need the entry. */
   async require(target: SafePath): Promise<FileEntry> {
     const entry = await this.describe(target);
     if (!entry) throw HearthError.notFound('That file or folder no longer exists');

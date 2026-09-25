@@ -3,11 +3,7 @@ import fp from 'fastify-plugin';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 
-/**
- * Transport-level hardening. The frontend is served as static assets by the
- * same Caddy edge, so its own CSP is set there; these headers protect the API
- * responses themselves.
- */
+/** Headers for API responses; the SPA's own headers are set by Caddy. */
 const securityPlugin: FastifyPluginAsync = async app => {
   const { config } = app.hearth;
 

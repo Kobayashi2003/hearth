@@ -10,15 +10,9 @@ interface CacheTarget {
   maxAgeMs: number;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-/**
- * Derived caches are disposable: everything under them can be regenerated from
- * the source file. They are pruned by age rather than by size, because the cost
- * of a miss is one re-render, and the risk of unbounded growth on a personal
- * machine is a full disk.
- */
+/** Derived caches are disposable and pruned by age: a miss costs one re-render. */
 export class CacheCleanupService {
   private timer: NodeJS.Timeout | null = null;
   private readonly targets: CacheTarget[];
@@ -28,11 +22,10 @@ export class CacheCleanupService {
     private readonly logger: Logger,
   ) {
     this.targets = [
-      { directory: config.media.thumbnailCacheDirectory, maxAgeMs: 30 * DAY_MS },
-      // Comics and PSD renders are large; a shorter window keeps the footprint down.
-      { directory: config.media.comicCacheDirectory, maxAgeMs: 7 * DAY_MS },
-      { directory: config.media.psdCacheDirectory, maxAgeMs: 7 * DAY_MS },
-    ];
+      { directory: config.media.thumbnailCacheDirectory, maxAgeMs: config.cache.thumbnailMaxAgeMs },
+      { directory: config.media.comicCacheDirectory, maxAgeMs: config.cache.comicMaxAgeMs },
+      { directory: config.media.psdCacheDirectory, maxAgeMs: config.cache.psdMaxAgeMs },
+    ].filter(target => Number.isFinite(target.maxAgeMs));
   }
 
   start(): void {
@@ -61,11 +54,7 @@ export class CacheCleanupService {
   }
 }
 
-/**
- * Remove entries last modified before `deadline`. Directories are treated as a
- * unit — a comic's page directory is either kept whole or dropped whole, since
- * a half-pruned comic would render with missing pages.
- */
+/** Removes files last modified before `deadline`, then any directory left empty. */
 async function pruneOlderThan(directory: string, deadline: number): Promise<number> {
   let entries;
   try {
@@ -79,7 +68,6 @@ async function pruneOlderThan(directory: string, deadline: number): Promise<numb
     const target = path.join(directory, entry.name);
     try {
       if (entry.isDirectory()) {
-        // Recurse first so a fan-out directory of files is pruned individually.
         removed += await pruneOlderThan(target, deadline);
         const remaining = await fsp.readdir(target);
         if (remaining.length === 0) await fsp.rmdir(target).catch(() => undefined);
@@ -92,7 +80,7 @@ async function pruneOlderThan(directory: string, deadline: number): Promise<numb
         removed += 1;
       }
     } catch {
-      // A cache entry removed by another sweep or by hand is not an error.
+      // Removed concurrently; nothing to do.
     }
   }
 

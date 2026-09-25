@@ -1,26 +1,32 @@
 import type { FastifyPluginAsync } from 'fastify';
-import type { TrashListResponse, TrashRestoreRequest, TrashSettings } from '@hearth/shared';
+import type {
+  OperationResult,
+  TrashListResponse,
+  TrashRestoreRequest,
+  TrashSettings,
+} from '@hearth/shared';
 
+import { maxItems } from '../../lib/limits.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { LedgerService } from '../ledger/ledger.service.js';
 import type { TrashService } from './trash.service.js';
 
-const restoreSchema = {
-  body: {
-    type: 'object',
-    required: ['ids'],
-    properties: { ids: { type: 'array', minItems: 1, maxItems: 500, items: { type: 'string' } } },
-  },
-} as const;
+const restoreSchema = (batch: number) =>
+  ({
+    body: {
+      type: 'object',
+      required: ['ids'],
+      properties: {
+        ids: { type: 'array', minItems: 1, ...maxItems(batch), items: { type: 'string' } },
+      },
+    },
+  }) as const;
 
 const settingsSchema = {
   body: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' } } },
 } as const;
 
-export function createEmberRoutes(
-  trash: TrashService,
-  ledger: LedgerService,
-): FastifyPluginAsync {
+export function createEmberRoutes(trash: TrashService, ledger: LedgerService): FastifyPluginAsync {
   return async app => {
     const { runtime } = app.hearth;
     const rateLimits = buildRateLimits(app.hearth.config);
@@ -33,14 +39,15 @@ export function createEmberRoutes(
 
     app.post<{ Body: TrashRestoreRequest }>(
       '/trash/restore',
-      { schema: restoreSchema, config: { permission: 'write', rateLimit: rateLimits.write } },
+      {
+        schema: restoreSchema(app.hearth.config.listing.maxBatchItems),
+        config: { permission: 'write', rateLimit: rateLimits.write },
+      },
       async request => {
-        const results = [];
+        const results: OperationResult[] = [];
         for (const id of request.body.ids) {
           try {
             const { path, originalPath } = await trash.restore(id);
-            // An item that came back under a collision-resolved name takes its
-            // reading position with it. See ADR 0001.
             await ledger.reprefix(originalPath, path);
             results.push({ path: id, ok: true, resultPath: path });
           } catch (error) {

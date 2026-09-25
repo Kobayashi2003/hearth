@@ -9,36 +9,27 @@ import type { AppConfig } from '../../config/index.js';
 import type { RuntimeState } from '../../config/runtime-state.js';
 import { fromNodeError, HearthError } from '../../lib/errors.js';
 import { JsonDocument } from '../../lib/json-store.js';
+import { capOrZero } from '../../lib/limits.js';
 import type { SafePath, Vault } from '../../lib/vault.js';
-import { exists, resolveCollision } from '../vault/fileops.service.js';
+import { exists, moveAcrossVolumes, resolveCollision } from '../vault/fileops.service.js';
 
 interface TrashRecord {
   id: string;
   name: string;
-  /** Root-relative path the item was deleted from. */
   originalPath: string;
-  /** Which root it belonged to — restoring into a different root is refused. */
+  /** Restoring into a different root is refused. */
   rootId: string;
   deletedAt: string;
   size: number;
   isDirectory: boolean;
 }
 
-interface TrashIndex {
-  items: TrashRecord[];
-}
-
-const PAYLOAD_DIRECTORY = 'items';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
-/**
- * The recycle bin. Deleted items are moved into a store outside the served
- * tree, described by an index file, so a restore can put them back exactly
- * where they came from.
- */
+/** Ember: deleted items move to a store outside the served tree, described by an index file. */
 export class TrashService {
-  private readonly index: JsonDocument<TrashIndex>;
+  private readonly index: JsonDocument<{ items: TrashRecord[] }>;
   private readonly payloadRoot: string;
   private cleanupTimer: NodeJS.Timeout | null = null;
 
@@ -48,8 +39,8 @@ export class TrashService {
     private readonly vault: Vault,
     private readonly logger: Logger,
   ) {
-    this.payloadRoot = path.join(config.trash.directory, PAYLOAD_DIRECTORY);
-    this.index = new JsonDocument<TrashIndex>(path.join(config.trash.directory, 'index.json'), () => ({
+    this.payloadRoot = path.join(config.trash.directory, 'items');
+    this.index = new JsonDocument(path.join(config.trash.directory, 'index.json'), () => ({
       items: [],
     }));
   }
@@ -61,19 +52,19 @@ export class TrashService {
   settings(): TrashSettings {
     return {
       enabled: this.enabled,
-      retentionDays: this.config.trash.retentionDays,
-      maxSizeMB: this.config.trash.maxSizeMB,
+      retentionDays: capOrZero(this.config.trash.retentionDays),
+      maxSizeMB: capOrZero(this.config.trash.maxSizeBytes / (1024 * 1024)),
       autoCleanup: this.config.trash.autoCleanup,
     };
   }
 
   startAutoCleanup(): void {
     if (!this.config.trash.autoCleanup || this.cleanupTimer) return;
-    this.cleanupTimer = setInterval(() => {
+    const run = () =>
       void this.cleanup().catch(error => this.logger.warn({ err: error }, 'trash cleanup failed'));
-    }, CLEANUP_INTERVAL_MS);
+    this.cleanupTimer = setInterval(run, CLEANUP_INTERVAL_MS);
     this.cleanupTimer.unref();
-    void this.cleanup().catch(() => undefined);
+    run();
   }
 
   stopAutoCleanup(): void {
@@ -81,55 +72,45 @@ export class TrashService {
     this.cleanupTimer = null;
   }
 
-  /** Move an item into the bin. Returns its bin id. */
   async accept(target: SafePath, isDirectory: boolean, size: number): Promise<string> {
     const id = crypto.randomBytes(12).toString('hex');
-    const payload = path.join(this.payloadRoot, id);
-
     await fsp.mkdir(this.payloadRoot, { recursive: true });
     try {
-      await fsp.rename(target, payload);
+      await moveAcrossVolumes(target, this.payloadPath(id));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
-        throw fromNodeError(error, 'Could not move that item to the recycle bin');
-      }
-      // The bin may sit on a different volume from the root.
-      await fsp.cp(target, payload, { recursive: true });
-      await fsp.rm(target, { recursive: true, force: true });
+      throw fromNodeError(error, 'Could not move that item to the recycle bin');
     }
 
-    await this.index.update(current => ({
-      items: [
-        ...current.items,
-        {
-          id,
-          name: path.basename(target),
-          originalPath: this.vault.relativize(target),
-          rootId: this.runtime.get('activeRootId'),
-          deletedAt: new Date().toISOString(),
-          size,
-          isDirectory,
-        },
-      ],
-    }));
-
+    const record: TrashRecord = {
+      id,
+      name: path.basename(target),
+      originalPath: this.vault.relativize(target),
+      rootId: this.runtime.get('activeRootId'),
+      deletedAt: new Date().toISOString(),
+      size,
+      isDirectory,
+    };
+    await this.index.update(current => ({ items: [...current.items, record] }));
     return id;
   }
 
-  /**
-   * Records whose payload has gone missing are dropped, so a bin edited from
-   * outside Hearth does not surface entries that cannot be restored.
-   */
+  /** Records whose payload went missing (bin edited from outside) are dropped. */
   async list(): Promise<{ items: TrashItem[]; totalSize: number }> {
     const rootId = this.runtime.get('activeRootId');
     const records = this.index.read().items.filter(record => record.rootId === rootId);
 
     const live: TrashRecord[] = [];
     for (const record of records) {
-      if (await exists(path.join(this.payloadRoot, record.id))) live.push(record);
+      if (await exists(this.payloadPath(record.id))) live.push(record);
     }
-
-    if (live.length !== records.length) await this.reconcile();
+    if (live.length !== records.length) {
+      const missing = new Set(
+        records.filter(record => !live.includes(record)).map(record => record.id),
+      );
+      await this.index.update(current => ({
+        items: current.items.filter(record => !missing.has(record.id)),
+      }));
+    }
 
     return {
       items: live
@@ -139,85 +120,62 @@ export class TrashService {
     };
   }
 
-  /**
-   * Returns both paths: a name collision at the original location means the
-   * item comes back as "name (2)", and Ledger needs to know that to carry the
-   * reading position across.
-   */
+  /** Returns both paths: a collision brings the item back as "name (2)", and Ledger must follow. */
   async restore(id: string): Promise<{ path: string; originalPath: string }> {
     const record = this.requireRecord(id);
     if (record.rootId !== this.runtime.get('activeRootId')) {
       throw HearthError.badRequest('That item belongs to a different root');
     }
 
-    // Re-resolving proves the original location is still inside the root, which
-    // matters because the root may have changed since the delete.
-    const originalTarget = this.vault.resolve(record.originalPath);
-    const parent = path.dirname(originalTarget);
+    const parent = path.dirname(this.vault.resolve(record.originalPath));
     await fsp.mkdir(parent, { recursive: true });
-
     const destination = await resolveCollision(parent, record.name);
-    const payload = path.join(this.payloadRoot, record.id);
-
     try {
-      await fsp.rename(payload, destination);
+      await moveAcrossVolumes(this.payloadPath(id), destination);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
-        throw fromNodeError(error, 'Could not restore that item');
-      }
-      await fsp.cp(payload, destination, { recursive: true });
-      await fsp.rm(payload, { recursive: true, force: true });
+      throw fromNodeError(error, 'Could not restore that item');
     }
 
-    await this.forget(id);
-    return {
-      path: this.vault.relativize(destination as SafePath),
-      originalPath: record.originalPath,
-    };
+    await this.drop(new Set([id]));
+    return { path: this.vault.relativize(destination), originalPath: record.originalPath };
   }
 
   async purge(id: string): Promise<void> {
     this.requireRecord(id);
-    await fsp.rm(path.join(this.payloadRoot, id), { recursive: true, force: true });
-    await this.forget(id);
+    await this.drop(new Set([id]));
   }
 
-  /** Empty the bin for the active root, leaving other roots' items alone. */
+  /** Only the active root's items. */
   async empty(): Promise<number> {
     const rootId = this.runtime.get('activeRootId');
-    const doomed = this.index.read().items.filter(record => record.rootId === rootId);
-
-    for (const record of doomed) {
-      await fsp.rm(path.join(this.payloadRoot, record.id), { recursive: true, force: true });
-    }
-    await this.index.update(current => ({
-      items: current.items.filter(record => record.rootId !== rootId),
-    }));
-
-    return doomed.length;
+    const doomed = new Set(
+      this.index
+        .read()
+        .items.filter(record => record.rootId === rootId)
+        .map(record => record.id),
+    );
+    await this.drop(doomed);
+    return doomed.size;
   }
 
-  /** Drop items past the retention window, then oldest-first until under the size cap. */
+  /** Past the retention window first, then oldest-first until under the size cap. */
   async cleanup(): Promise<void> {
-    const { retentionDays, maxSizeMB } = this.config.trash;
-    const records = [...this.index.read().items].sort((a, b) => a.deletedAt.localeCompare(b.deletedAt));
-
+    const { retentionDays, maxSizeBytes } = this.config.trash;
+    const records = [...this.index.read().items].sort((a, b) =>
+      a.deletedAt.localeCompare(b.deletedAt),
+    );
     const expiredBefore = Date.now() - retentionDays * DAY_MS;
+
     const doomed = new Set<string>();
     let retainedSize = 0;
-
     for (const record of records) {
-      if (retentionDays > 0 && Date.parse(record.deletedAt) < expiredBefore) {
-        doomed.add(record.id);
-      } else {
-        retainedSize += record.size;
-      }
+      if (Date.parse(record.deletedAt) < expiredBefore) doomed.add(record.id);
+      else retainedSize += record.size;
     }
 
-    if (maxSizeMB > 0) {
-      const capBytes = maxSizeMB * 1024 * 1024;
+    if (Number.isFinite(maxSizeBytes)) {
       for (const record of records) {
-        if (retainedSize <= capBytes) break;
+        if (retainedSize <= maxSizeBytes) break;
         if (doomed.has(record.id)) continue;
         doomed.add(record.id);
         retainedSize -= record.size;
@@ -225,14 +183,15 @@ export class TrashService {
     }
 
     if (doomed.size === 0) return;
-
-    for (const id of doomed) {
-      await fsp.rm(path.join(this.payloadRoot, id), { recursive: true, force: true });
-    }
-    await this.index.update(current => ({
-      items: current.items.filter(record => !doomed.has(record.id)),
-    }));
+    await this.drop(doomed);
     this.logger.info({ removed: doomed.size }, 'recycle bin cleaned up');
+  }
+
+  private async drop(ids: Set<string>): Promise<void> {
+    for (const id of ids) await fsp.rm(this.payloadPath(id), { recursive: true, force: true });
+    await this.index.update(current => ({
+      items: current.items.filter(record => !ids.has(record.id)),
+    }));
   }
 
   private requireRecord(id: string): TrashRecord {
@@ -241,17 +200,7 @@ export class TrashService {
     return record;
   }
 
-  private async forget(id: string): Promise<void> {
-    await this.index.update(current => ({
-      items: current.items.filter(record => record.id !== id),
-    }));
-  }
-
-  private async reconcile(): Promise<void> {
-    const surviving: TrashRecord[] = [];
-    for (const record of this.index.read().items) {
-      if (await exists(path.join(this.payloadRoot, record.id))) surviving.push(record);
-    }
-    await this.index.update(() => ({ items: surviving }));
+  private payloadPath(id: string): string {
+    return path.join(this.payloadRoot, id);
   }
 }

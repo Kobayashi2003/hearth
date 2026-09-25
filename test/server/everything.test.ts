@@ -19,7 +19,7 @@ describe('query escaping', () => {
   it.each([
     ['a"b', '"ab"'],
     ['" | !<>', '" | !<>"'.replace('"', '"')],
-  ])('strips the quote character from %s so a term cannot break out', (input) => {
+  ])('strips the quote character from %s so a term cannot break out', input => {
     expect(quoteTerm(input).slice(1, -1)).not.toContain('"');
   });
 
@@ -124,7 +124,9 @@ describe('response parsing', () => {
   });
 
   it('skips rows without a name rather than emitting a broken entry', () => {
-    const parsed = parseEverythingResponse({ results: [{ path: 'C:\\' }, { name: 'ok', path: 'C:\\' }] });
+    const parsed = parseEverythingResponse({
+      results: [{ path: 'C:\\' }, { name: 'ok', path: 'C:\\' }],
+    });
     expect(parsed.results).toHaveLength(1);
   });
 });

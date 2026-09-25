@@ -44,7 +44,8 @@ export interface MediaTokenRequest {
 
 export interface MediaTokenResponse {
   token: string;
-  expiresAt: string;
+  /** Null when tokens never expire. */
+  expiresAt: string | null;
 }
 
 // ── Vault: browsing ─────────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ export interface ListResponse extends Page<FileEntry> {
 // ── Beacon: search ──────────────────────────────────────────────────────────
 
 export interface SearchQueryParams extends ListQuery {
-  q: string;
+  q?: string;
   recursive?: boolean;
   type?: MediaKind;
 }
@@ -150,7 +151,8 @@ export interface ZipRequest {
 
 export interface ZipTokenResponse {
   token: string;
-  expiresAt: string;
+  /** Null when download links never expire. */
+  expiresAt: string | null;
 }
 
 // ── Kiln: content ───────────────────────────────────────────────────────────

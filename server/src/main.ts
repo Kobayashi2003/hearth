@@ -1,17 +1,20 @@
-import path from 'node:path';
-
-import dotenv from 'dotenv';
-
 import { buildApp } from './app.js';
-import { ConfigError, consumeLegacyEnvNames, projectRoot } from './config/env.js';
+import { ConfigError, consumeLegacyEnvNames, loadEnvFiles } from './config/env.js';
 import { loadConfig } from './config/index.js';
 import { createLogger } from './lib/logger.js';
 
-dotenv.config({ path: path.join(projectRoot, '.env'), quiet: true });
+/** `npm run dev` passes --development; it layers .env.development, which lifts every limit. */
+const development =
+  process.argv.includes('--development') || process.env.HEARTH_MODE === 'development';
+const envFiles = loadEnvFiles(development);
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig(development);
   const logger = createLogger(config);
+  logger.info(
+    { mode: development ? 'development' : 'production', envFiles },
+    'configuration loaded',
+  );
 
   const legacyNames = consumeLegacyEnvNames();
   if (legacyNames.length > 0) {
@@ -21,8 +24,7 @@ async function main(): Promise<void> {
     );
   }
 
-  // Everything's HTTP server can download any indexed file with no auth of its
-  // own, so a non-loopback binding would be a second door into the filesystem.
+  // Everything's HTTP server serves any indexed file without auth; off loopback it is a second door in.
   if (!isLoopbackUrl(config.search.everythingUrl)) {
     logger.warn(
       { url: config.search.everythingUrl },
@@ -61,7 +63,6 @@ function isLoopbackUrl(rawUrl: string): boolean {
 
 main().catch((error: unknown) => {
   if (error instanceof ConfigError) {
-    // Configuration problems are the user's to fix; a stack trace only obscures them.
     process.stderr.write(`\nHearth cannot start.\n${error.message}\n\n`);
     process.exit(1);
   }

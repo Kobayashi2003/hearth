@@ -5,11 +5,7 @@ import { HearthError } from '../../lib/errors.js';
 import { isMediaKind } from '../../lib/mime.js';
 import type { AppConfig } from '../../config/index.js';
 
-/**
- * Wallpapers for the explorer background. They live in their own directory
- * outside the served tree, so choosing one never depends on the active root and
- * cannot be used to probe it.
- */
+/** Wallpapers live outside the served tree, so choosing one cannot probe the root. */
 export class BackgroundService {
   constructor(private readonly config: AppConfig) {}
 
@@ -23,7 +19,6 @@ export class BackgroundService {
         .map(entry => entry.name)
         .sort();
     } catch {
-      // No backgrounds directory simply means no wallpapers are offered.
       return [];
     }
   }
@@ -35,10 +30,9 @@ export class BackgroundService {
     return chosen;
   }
 
-  /** Resolve a name against the backgrounds directory, rejecting any escape. */
   async resolve(name: string): Promise<string> {
     const names = await this.list();
-    // Membership in the listing is the check — no path arithmetic on user input.
+    // Membership is the check; no path arithmetic on user input.
     if (!names.includes(name)) throw HearthError.notFound('No such background');
     return path.join(this.config.storage.backgroundsDirectory, name);
   }

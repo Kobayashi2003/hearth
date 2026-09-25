@@ -9,10 +9,14 @@ import { LedgerService } from '../../server/src/modules/ledger/ledger.service.js
 
 const temporaryDirectories: string[] = [];
 
-function ledger(): LedgerService {
+function temporaryDirectory(): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-ledger-'));
   temporaryDirectories.push(directory);
-  return new LedgerService(directory);
+  return directory;
+}
+
+function ledger(): LedgerService {
+  return new LedgerService(temporaryDirectory());
 }
 
 afterEach(() => {
@@ -29,158 +33,192 @@ const at = (seconds: number): Progress => ({
   savedAt: Date.now(),
 });
 
-describe('LedgerService.patch', () => {
+describe('LedgerService progress', () => {
   it('starts empty for a user who has never opened anything', () => {
-    expect(ledger().read('nobody')).toEqual({ progress: {}, recent: [], pinned: [] });
+    expect(ledger().readProgress('nobody')).toEqual({});
   });
 
   it('records progress and reads it back', async () => {
     const service = ledger();
-    await service.patch('mei', { progress: { 'Anime/ep01.mkv': at(120) } });
-    expect(service.read('mei').progress['Anime/ep01.mkv']?.at).toBe(120);
+    await service.patchProgress('mei', { 'Anime/ep01.mkv': at(120) });
+    expect(service.readProgress('mei')['Anime/ep01.mkv']?.at).toBe(120);
   });
 
   it('keeps each user apart', async () => {
     const service = ledger();
-    await service.patch('mei', { progress: { 'Anime/ep01.mkv': at(120) } });
-    await service.patch('ren', { progress: { 'Anime/ep01.mkv': at(900) } });
+    await service.patchProgress('mei', { 'Anime/ep01.mkv': at(120) });
+    await service.patchProgress('ren', { 'Anime/ep01.mkv': at(900) });
 
-    expect(service.read('mei').progress['Anime/ep01.mkv']?.at).toBe(120);
-    expect(service.read('ren').progress['Anime/ep01.mkv']?.at).toBe(900);
+    expect(service.readProgress('mei')['Anime/ep01.mkv']?.at).toBe(120);
+    expect(service.readProgress('ren')['Anime/ep01.mkv']?.at).toBe(900);
   });
 
   it('forgets a position when patched with null', async () => {
     const service = ledger();
-    await service.patch('mei', { progress: { 'Anime/ep01.mkv': at(120) } });
-    await service.patch('mei', { progress: { 'Anime/ep01.mkv': null } });
-    expect(service.read('mei').progress).toEqual({});
-  });
-
-  it('moves a reopened file to the front of recent without duplicating it', async () => {
-    const service = ledger();
-    await service.patch('mei', { opened: 'a.mkv' });
-    await service.patch('mei', { opened: 'b.mkv' });
-    await service.patch('mei', { opened: 'a.mkv' });
-
-    expect(service.read('mei').recent.map(entry => entry.path)).toEqual(['a.mkv', 'b.mkv']);
-  });
-
-  it('pins and unpins', async () => {
-    const service = ledger();
-    await service.patch('mei', { pin: { path: 'x.cbz', value: true } });
-    expect(service.read('mei').pinned).toEqual(['x.cbz']);
-
-    await service.patch('mei', { pin: { path: 'x.cbz', value: false } });
-    expect(service.read('mei').pinned).toEqual([]);
+    await service.patchProgress('mei', { 'Anime/ep01.mkv': at(120) });
+    await service.patchProgress('mei', { 'Anime/ep01.mkv': null });
+    expect(service.readProgress('mei')).toEqual({});
   });
 
   it('survives a reload from disk', async () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-ledger-'));
-    temporaryDirectories.push(directory);
-
-    await new LedgerService(directory).patch('mei', { progress: { 'a.mkv': at(60) } });
-    expect(new LedgerService(directory).read('mei').progress['a.mkv']?.at).toBe(60);
+    const directory = temporaryDirectory();
+    await new LedgerService(directory).patchProgress('mei', { 'a.mkv': at(60) });
+    expect(new LedgerService(directory).readProgress('mei')['a.mkv']?.at).toBe(60);
   });
 
   it('writes a file per user with an unusual name safely', async () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-ledger-'));
-    temporaryDirectories.push(directory);
+    const directory = temporaryDirectory();
     const service = new LedgerService(directory);
+    await service.patchProgress('../etc/passwd', { 'a.mkv': at(60) });
 
-    await service.patch('../etc/passwd', { progress: { 'a.mkv': at(60) } });
+    expect(fs.readdirSync(path.join(directory, 'progress'))).toHaveLength(1);
+    expect(service.readProgress('../etc/passwd')['a.mkv']?.at).toBe(60);
+  });
 
-    expect(fs.readdirSync(directory)).toHaveLength(1);
-    expect(service.read('../etc/passwd').progress['a.mkv']?.at).toBe(60);
+  it('migrates a pre-2.0 ledger file and drops recent/pinned', async () => {
+    const directory = temporaryDirectory();
+    fs.writeFileSync(
+      path.join(directory, 'mei.json'),
+      JSON.stringify({
+        progress: { 'a.mkv': at(60) },
+        recent: [{ path: 'a.mkv', openedAt: 1 }],
+        pinned: ['a.mkv'],
+      }),
+    );
+    const service = new LedgerService(directory);
+    await service.migrate();
+
+    expect(service.readProgress('mei')).toEqual({ 'a.mkv': expect.objectContaining({ at: 60 }) });
+    expect(fs.existsSync(path.join(directory, 'mei.json'))).toBe(false);
+  });
+});
+
+describe('LedgerService reading sessions', () => {
+  it('stores an opaque record per file and removes it', async () => {
+    const service = ledger();
+    await service.saveSession('mei', 'Books/a.epub', { locator: { spineIndex: 3 } });
+    expect(service.readSession('mei', 'Books/a.epub')).toEqual({ locator: { spineIndex: 3 } });
+    expect(service.readSession('mei', 'Books/b.epub')).toBeNull();
+
+    await service.removeSession('mei', 'Books/a.epub');
+    expect(service.readSession('mei', 'Books/a.epub')).toBeNull();
+  });
+
+  it('refuses a record over the configured size, and accepts any size when unlimited', async () => {
+    const capped = new LedgerService(temporaryDirectory(), {
+      maxProgressEntries: 10,
+      maxSessions: 10,
+      maxSessionBytes: 512 * 1024,
+    });
+    await expect(capped.saveSession('mei', 'a.epub', 'x'.repeat(600 * 1024))).rejects.toThrow(
+      /too large/,
+    );
+    await expect(
+      ledger().saveSession('mei', 'a.epub', 'x'.repeat(600 * 1024)),
+    ).resolves.toBeUndefined();
+  });
+
+  it('keeps only the newest positions when capped', async () => {
+    const capped = new LedgerService(temporaryDirectory(), {
+      maxProgressEntries: 2,
+      maxSessions: 2,
+      maxSessionBytes: Number.POSITIVE_INFINITY,
+    });
+    await capped.patchProgress('mei', { 'a.mkv': { ...at(1), savedAt: 1 } });
+    await capped.patchProgress('mei', { 'b.mkv': { ...at(2), savedAt: 2 } });
+    await capped.patchProgress('mei', { 'c.mkv': { ...at(3), savedAt: 3 } });
+    expect(Object.keys(capped.readProgress('mei')).sort()).toEqual(['b.mkv', 'c.mkv']);
+  });
+});
+
+describe('LedgerService with hostile keys', () => {
+  it('stores "__proto__" as an ordinary path and never touches the prototype', async () => {
+    const service = ledger();
+    expect(service.readSession('mei', '__proto__')).toBeNull();
+    await service.saveSession('mei', '__proto__', { locator: 1 });
+    await service.patchProgress('mei', { __proto__: at(5) } as unknown as Record<
+      string,
+      ReturnType<typeof at>
+    >);
+    await service.reprefix('__proto__', 'renamed');
+
+    expect(service.readSession('mei', 'renamed')).toEqual({ locator: 1 });
+    expect(Object.getPrototypeOf(service.readProgress('mei'))).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).locator).toBeUndefined();
   });
 });
 
 describe('LedgerService.reprefix', () => {
   it('follows a renamed file', async () => {
     const service = ledger();
-    await service.patch('mei', { progress: { 'Anime/ep01.mkv': at(120) } });
+    await service.patchProgress('mei', { 'Anime/ep01.mkv': at(120) });
     await service.reprefix('Anime/ep01.mkv', 'Anime/episode-01.mkv');
 
-    const { progress } = service.read('mei');
+    const progress = service.readProgress('mei');
     expect(progress['Anime/ep01.mkv']).toBeUndefined();
     expect(progress['Anime/episode-01.mkv']?.at).toBe(120);
   });
 
   it('rewrites everything beneath a renamed folder', async () => {
     const service = ledger();
-    await service.patch('mei', {
-      progress: { 'Anime/SomeShow/ep03.mkv': at(1080), 'Anime/SomeShow/ep04.mkv': at(60) },
+    await service.patchProgress('mei', {
+      'Anime/Show/ep03.mkv': at(1080),
+      'Anime/Show/ep04.mkv': at(60),
     });
-    await service.reprefix('Anime/SomeShow', 'Anime/[Group] Some Show (2024)');
+    await service.reprefix('Anime/Show', 'Anime/[Group] Show (2024)');
 
-    const { progress } = service.read('mei');
-    expect(progress['Anime/[Group] Some Show (2024)/ep03.mkv']?.at).toBe(1080);
-    expect(progress['Anime/[Group] Some Show (2024)/ep04.mkv']?.at).toBe(60);
+    const progress = service.readProgress('mei');
+    expect(progress['Anime/[Group] Show (2024)/ep03.mkv']?.at).toBe(1080);
+    expect(progress['Anime/[Group] Show (2024)/ep04.mkv']?.at).toBe(60);
   });
 
   it('does not rewrite a sibling that merely starts with the same characters', async () => {
     const service = ledger();
-    await service.patch('mei', {
-      progress: { 'Anime/ep01.mkv': at(120), 'Anime Movies/film.mkv': at(300) },
+    await service.patchProgress('mei', {
+      'Anime/ep01.mkv': at(120),
+      'Anime Movies/film.mkv': at(300),
     });
     await service.reprefix('Anime', 'Cartoons');
 
-    const { progress } = service.read('mei');
+    const progress = service.readProgress('mei');
     expect(progress['Cartoons/ep01.mkv']?.at).toBe(120);
-    // The bug this test exists for: a naive startsWith would move this too.
     expect(progress['Anime Movies/film.mkv']?.at).toBe(300);
   });
 
-  it('carries recent and pinned along with progress', async () => {
+  it('carries reading sessions along with progress', async () => {
     const service = ledger();
-    await service.patch('mei', { opened: 'Books/a.epub' });
-    await service.patch('mei', { pin: { path: 'Books/a.epub', value: true } });
+    await service.saveSession('mei', 'Books/a.epub', { locator: 1 });
     await service.reprefix('Books', 'Library');
-
-    const document = service.read('mei');
-    expect(document.recent[0]?.path).toBe('Library/a.epub');
-    expect(document.pinned).toEqual(['Library/a.epub']);
+    expect(service.readSession('mei', 'Library/a.epub')).toEqual({ locator: 1 });
   });
 
   it('applies to every user, not only the one who made the move', async () => {
     const service = ledger();
-    await service.patch('mei', { progress: { 'Anime/ep01.mkv': at(120) } });
-    await service.patch('ren', { progress: { 'Anime/ep01.mkv': at(900) } });
+    await service.patchProgress('mei', { 'Anime/ep01.mkv': at(120) });
+    await service.patchProgress('ren', { 'Anime/ep01.mkv': at(900) });
     await service.reprefix('Anime', 'Cartoons');
 
-    expect(service.read('mei').progress['Cartoons/ep01.mkv']?.at).toBe(120);
-    expect(service.read('ren').progress['Cartoons/ep01.mkv']?.at).toBe(900);
+    expect(service.readProgress('mei')['Cartoons/ep01.mkv']?.at).toBe(120);
+    expect(service.readProgress('ren')['Cartoons/ep01.mkv']?.at).toBe(900);
   });
 
-  it('is a no-op when the path did not change', async () => {
+  it('handles a backslash boundary', async () => {
     const service = ledger();
-    await service.patch('mei', { progress: { 'a.mkv': at(60) } });
-    await service.reprefix('a.mkv', 'a.mkv');
-    expect(service.read('mei').progress['a.mkv']?.at).toBe(60);
-  });
-
-  it('handles a backslash boundary, since Windows paths arrive that way', async () => {
-    const service = ledger();
-    await service.patch('mei', { progress: { 'Anime\\ep01.mkv': at(120) } });
+    await service.patchProgress('mei', { 'Anime\\ep01.mkv': at(120) });
     await service.reprefix('Anime', 'Cartoons');
-    expect(service.read('mei').progress['Cartoons\\ep01.mkv']?.at).toBe(120);
+    expect(service.readProgress('mei')['Cartoons\\ep01.mkv']?.at).toBe(120);
   });
 });
 
 describe('LedgerService.forget', () => {
-  it('drops a permanently deleted folder and everything under it', async () => {
+  it('drops a deleted folder and everything under it, but not a same-prefixed sibling', async () => {
     const service = ledger();
-    await service.patch('mei', {
-      progress: { 'Old/a.mkv': at(60), 'Old/b.mkv': at(90), 'Keep/c.mkv': at(30) },
+    await service.patchProgress('mei', {
+      'Old/a.mkv': at(60),
+      'Old/b.mkv': at(90),
+      'Old Stuff/c.mkv': at(30),
     });
     await service.forget('Old');
-
-    expect(Object.keys(service.read('mei').progress)).toEqual(['Keep/c.mkv']);
-  });
-
-  it('leaves a same-prefixed sibling alone', async () => {
-    const service = ledger();
-    await service.patch('mei', { progress: { 'Old Stuff/a.mkv': at(60) } });
-    await service.forget('Old');
-    expect(service.read('mei').progress['Old Stuff/a.mkv']?.at).toBe(60);
+    expect(Object.keys(service.readProgress('mei'))).toEqual(['Old Stuff/c.mkv']);
   });
 });

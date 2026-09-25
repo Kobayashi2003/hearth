@@ -20,7 +20,7 @@ export function actionsFromPermissionString(permissions: string): PermissionActi
   );
 }
 
-/** `w` also grants `delete`, so existing "rw" accounts keep working. */
+/** `w` implies `d`, so older "rw" accounts keep working. */
 function hasGlobalPermission(permissions: string, action: PermissionAction): boolean {
   if (permissions.includes(ACTION_CHARS[action])) return true;
   return action === 'delete' && permissions.includes('w');
@@ -31,10 +31,7 @@ function normalizeRulePath(rulePath: string): string {
   return forward.startsWith('/') ? forward : `/${forward}`;
 }
 
-/**
- * Score how specifically `pattern` matches `target`; 0 means no match. A longer
- * matched prefix beats a shorter one, and an exact match beats any wildcard.
- */
+/** Specificity of a match (0 = none): longer prefixes win, exact beats any wildcard. */
 function matchScore(pattern: string, target: string): number {
   const normalizedTarget = normalizeRulePath(target);
 
@@ -54,16 +51,14 @@ function matchScore(pattern: string, target: string): number {
     return remainder.includes('/') ? 0 : prefix.length * 10 + 1;
   }
 
-  // A bare path acts as a directory prefix.
   return normalizedTarget === pattern || normalizedTarget.startsWith(`${pattern}/`)
     ? pattern.length * 10
     : 0;
 }
 
 /**
- * Path-scoped ACL. Rules are ranked by specificity, then user-specific over
- * wildcard, then deny over allow — the first survivor decides. With no matching
- * rule the user's global permission string applies.
+ * Path-scoped ACL: ranked by specificity, then user over `*`, then deny over
+ * allow. With no matching rule the user's global permission string applies.
  */
 export class PermissionRegistry {
   private readonly document: JsonDocument<PermissionsFile>;

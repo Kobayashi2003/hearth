@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import type {
   ArchiveListing,
   ComicManifest,
@@ -9,7 +9,10 @@ import type {
 } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
-import { mimeForPath } from '../../lib/mime.js';
+import { decodeText } from '../../lib/charset.js';
+import { inlineSafetyHeaders, mimeForPath } from '../../lib/mime.js';
+import { bodyLimit, maximum } from '../../lib/limits.js';
+import { abortSignalOf } from '../../lib/request.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { ListingService } from '../vault/listing.service.js';
 import type { ArchiveService } from './archive.service.js';
@@ -44,18 +47,17 @@ const pathQuerySchema = {
   },
 } as const;
 
-/** Client disconnect must stop transcodes and worker jobs, not just the response. */
-function abortSignalOf(request: FastifyRequest): AbortSignal {
-  const controller = new AbortController();
-  request.raw.on('close', () => {
-    if (!request.raw.readableEnded) controller.abort();
-  });
-  return controller.signal;
-}
-
 export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
   const {
-    listing, streams, text, thumbnails, folderCovers, comics, archives, documents, backgrounds,
+    listing,
+    streams,
+    text,
+    thumbnails,
+    folderCovers,
+    comics,
+    archives,
+    documents,
+    backgrounds,
     ffmpeg,
   } = services;
 
@@ -63,8 +65,6 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
     const rateLimits = buildRateLimits(app.hearth.config);
     const readConfig = { permission: 'read' as const };
     const streamConfig = { auth: 'media-token' as const, permission: 'read' as const };
-
-    // ── Raw bytes ───────────────────────────────────────────────────────────
 
     app.route<{ Querystring: { path: string; token?: string } }>({
       method: ['GET', 'HEAD'],
@@ -78,8 +78,6 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
     });
 
-    // ── Transcode, probe, subtitles ─────────────────────────────────────────
-
     app.get<{ Querystring: { path: string; token?: string } }>(
       '/media/probe',
       { schema: { querystring: pathQuerySchema }, config: streamConfig },
@@ -91,11 +89,7 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
     );
 
-    /**
-     * The fallback for codecs no browser decodes. Output is fragmented MP4 sent
-     * as it is produced, so playback starts before the encode finishes; the
-     * child process dies with the request.
-     */
+    /** Fragmented MP4 sent as produced; the ffmpeg child dies with the request. */
     app.get<{
       Querystring: { path: string; token?: string; audioTrack?: number; start?: number };
     }>(
@@ -123,8 +117,7 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
           abortSignalOf(request),
         );
 
-        // A transcode has no known length and is not seekable by byte range;
-        // the client seeks by restarting with a new `start`.
+        // Not byte-seekable: the client seeks by restarting with a new `start`.
         return reply
           .header('Content-Type', 'video/mp4')
           .header('Cache-Control', 'no-store')
@@ -159,8 +152,6 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
     );
 
-    // ── Thumbnails ──────────────────────────────────────────────────────────
-
     app.get<{ Querystring: { path: string; token?: string; width?: number; quality?: number } }>(
       '/thumbnail',
       {
@@ -169,7 +160,12 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
             ...pathQuerySchema,
             properties: {
               ...pathQuerySchema.properties,
-              width: { type: 'integer', minimum: 16, maximum: 2048, default: 320 },
+              width: {
+                type: 'integer',
+                minimum: 16,
+                ...maximum(app.hearth.config.media.thumbnailMaxWidth),
+                default: 320,
+              },
               quality: { type: 'integer', minimum: 1, maximum: 100, default: 72 },
             },
           },
@@ -180,15 +176,11 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
         const target = request.resolvePath(request.query.path, 'read');
         const entry = await listing.require(target);
 
-        // A folder borrows the cover of the first coverable thing inside it,
-        // so a shelf of series folders is not a wall of identical icons.
         const source = entry.isDirectory
           ? await folderCovers.sourceFor(target, abortSignalOf(request))
           : target;
 
-        // "This folder has nothing to show" is an answer, not a failure. A 404
-        // per iconless folder filled the console with red and buried the errors
-        // that actually matter.
+        // "Nothing to show" is an answer, not an error; the client keeps its icon.
         if (!source) return reply.code(204).send();
 
         const thumbnail = await thumbnails.render(
@@ -197,19 +189,14 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
           abortSignalOf(request),
         );
 
-        // Same as an iconless folder: "there is no picture in this" is an
-        // answer. The client falls back to its glyph without logging an error.
         if (!thumbnail) return reply.code(204).send();
 
-        // Keyed by content identity, so it can be cached hard.
         return reply
           .header('Content-Type', 'image/webp')
           .header('Cache-Control', 'private, max-age=86400, immutable')
           .send(thumbnail);
       },
     );
-
-    // ── Text ────────────────────────────────────────────────────────────────
 
     app.get<{ Querystring: { path: string; encoding?: string } }>(
       '/content',
@@ -248,8 +235,7 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
           },
         },
         config: { permission: 'write', rateLimit: rateLimits.write },
-        // Editing a large file needs a larger body than the API default.
-        bodyLimit: 32 * 1024 * 1024,
+        bodyLimit: bodyLimit(app.hearth.config.media.maxTextSaveBytes),
       },
       async request => {
         const target = request.resolvePath(request.body.path, 'write');
@@ -257,8 +243,6 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
         return { ok: true };
       },
     );
-
-    // ── Comics ──────────────────────────────────────────────────────────────
 
     app.get<{ Querystring: { path: string } }>(
       '/comic',
@@ -271,20 +255,16 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
     );
 
-    /**
-     * Pages are served from the extraction cache. The key alone is not a
-     * capability: it is derived from a path the requester had to be authorised
-     * to read in order to obtain, and the page name is checked against the
-     * manifest rather than joined blindly.
-     */
+    /** The page name is checked against the cached manifest, never joined blindly. */
     app.get<{ Params: { key: string; page: string } }>(
       '/comic/:key/:page',
       { config: streamConfig },
       async (request, reply) =>
-        streams.sendGenerated(reply, await comics.pagePath(request.params.key, request.params.page)),
+        streams.sendGenerated(
+          reply,
+          await comics.pagePath(request.params.key, request.params.page),
+        ),
     );
-
-    // ── Archives ────────────────────────────────────────────────────────────
 
     app.get<{ Querystring: { path: string } }>(
       '/archive',
@@ -297,11 +277,7 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
     );
 
-    /**
-     * One member, extracted on demand. Served inline so an image or a text file
-     * can be looked at without saving it first; the member name is resolved
-     * against the archive rather than trusted, so it cannot escape it.
-     */
+    /** One member, extracted on demand; the name is matched against the archive listing. */
     app.get<{ Querystring: { path: string; entry: string; token?: string } }>(
       '/archive/entry',
       {
@@ -322,15 +298,18 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
         await listing.assertFile(target);
 
         const member = await archives.read(target, request.query.entry, abortSignalOf(request));
+        const mimeType = mimeForPath(member.name);
+        // Text inside an archive keeps its original encoding; the browser would guess. Send UTF-8.
+        const isText = /^text\/|\/(json|xml|javascript)$/.test(mimeType);
+        const body = isText ? Buffer.from(decodeText(member.content), 'utf8') : member.content;
         return reply
-          .header('Content-Type', mimeForPath(member.name))
+          .header('Content-Type', isText ? `${mimeType}; charset=utf-8` : mimeType)
+          .headers(inlineSafetyHeaders(mimeType))
           .header('Content-Disposition', contentDisposition(member.name, 'inline'))
           .header('Cache-Control', 'private, max-age=3600')
-          .send(member.content);
+          .send(body);
       },
     );
-
-    // ── Documents ───────────────────────────────────────────────────────────
 
     app.get<{ Querystring: { path: string } }>(
       '/office',
@@ -355,8 +334,6 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
         return documents.renderHtml(target);
       },
     );
-
-    // ── Backgrounds ─────────────────────────────────────────────────────────
 
     app.get('/backgrounds', { config: readConfig }, async () => ({
       backgrounds: await backgrounds.list(),

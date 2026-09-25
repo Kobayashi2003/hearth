@@ -8,10 +8,7 @@ import { PermissionRegistry, actionsFromPermissionString } from './permissions.j
 import type { Session, SessionStore } from './session-store.js';
 import { UserDirectory } from './user-directory.js';
 
-/**
- * The authentication and authorisation surface. Everything that decides "may
- * this request do this to this path" goes through here.
- */
+/** Everything that decides "may this request do this to this path". */
 export class Warden {
   readonly users: UserDirectory;
   readonly permissions: PermissionRegistry;
@@ -42,7 +39,6 @@ export class Warden {
     const user = await this.users.authenticate(username, password);
     if (!user) throw HearthError.unauthorized('Incorrect username or password');
 
-    // Admin-only mode locks the server without changing anyone's account.
     if (this.runtime.get('adminOnly') && !user.permissions.includes('a')) {
       throw HearthError.forbidden('The server is currently limited to administrators');
     }
@@ -59,7 +55,6 @@ export class Warden {
     return this.sessions.get(sessionId);
   }
 
-  /** Revoke every live session for a user — after a password or permission change. */
   async revokeSessions(username: string): Promise<void> {
     await this.sessions.deleteByUser(username);
   }
@@ -72,10 +67,6 @@ export class Warden {
     };
   }
 
-  /**
-   * `relativePath` is the root-relative target of the request; a path-scoped
-   * rule can allow or deny below the user's global permission string.
-   */
   can(session: Session, action: PermissionAction, relativePath: string): boolean {
     return this.permissions.allows(session.username, session.permissions, relativePath, action);
   }
@@ -86,15 +77,11 @@ export class Warden {
     }
   }
 
-  issueMediaToken(username: string, relativePath: string): { token: string; expiresAt: Date } {
+  issueMediaToken(username: string, relativePath: string): { token: string; expiresAt: number } {
     return this.mediaTokens.issue(username, relativePath, this.runtime.get('activeRootId'));
   }
 
-  /**
-   * Authorise a stream request carrying a media token. The token's own path
-   * must match the requested one, so one token cannot be replayed for another
-   * file.
-   */
+  /** The token's own path must match the requested one. */
   verifyMediaToken(token: string, relativePath: string): { username: string } | null {
     const payload = this.mediaTokens.verify(token, this.runtime.get('activeRootId'));
     if (!payload) return null;

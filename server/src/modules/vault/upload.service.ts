@@ -13,7 +13,6 @@ import { mimeForPath } from '../../lib/mime.js';
 import { assertValidEntryName, type SafePath, type Vault } from '../../lib/vault.js';
 import { resolveCollision } from './fileops.service.js';
 
-/** Enough bytes for `file-type` to recognise every format it supports. */
 const MAGIC_NUMBER_SAMPLE_BYTES = 4100;
 
 export interface StoredUpload {
@@ -27,20 +26,11 @@ export class UploadService {
     private readonly vault: Vault,
   ) {}
 
-  /**
-   * Write one uploaded stream into `directory`. `relativeName` may contain
-   * directory segments — that is how a folder upload preserves its structure —
-   * and every segment is validated before it becomes a path.
-   */
-  async store(
-    directory: SafePath,
-    relativeName: string,
-    content: Readable,
-  ): Promise<StoredUpload> {
+  /** `relativeName` may contain directory segments (folder uploads); each is validated. */
+  async store(directory: SafePath, relativeName: string, content: Readable): Promise<StoredUpload> {
     const segments = splitRelativeName(relativeName);
     const filename = segments.pop()!;
 
-    // Re-resolving through the vault proves the nested path stays in the root.
     const parent =
       segments.length > 0
         ? this.vault.resolve(path.join(this.vault.relativize(directory), ...segments))
@@ -67,7 +57,6 @@ export class UploadService {
     try {
       await pipeline(source, counter, createWriteStream(target));
     } catch (error) {
-      // A partial file is worse than none — the client will retry.
       await fsp.rm(target, { force: true });
       throw error instanceof HearthError ? error : fromNodeError(error, 'Could not save that file');
     }
@@ -75,10 +64,7 @@ export class UploadService {
     return { path: this.vault.relativize(target as SafePath), size: written };
   }
 
-  /**
-   * Reject a file whose actual content contradicts its extension. The leading
-   * bytes are buffered, checked, then replayed, so the rest still streams.
-   */
+  /** Rejects content that contradicts its extension; the sampled head is replayed so the rest still streams. */
   private async verifiedStream(content: Readable, filename: string): Promise<Readable> {
     const chunks: Buffer[] = [];
     let sampled = 0;
@@ -94,7 +80,6 @@ export class UploadService {
     const detected = await fileTypeFromBuffer(sample);
     assertContentMatchesExtension(filename, detected?.mime);
 
-    // The loop above consumed part of the stream; put it back in front.
     return Readable.from(replay(sample, content));
   }
 }
@@ -104,19 +89,14 @@ async function* replay(sample: Buffer, rest: Readable): AsyncGenerator<Buffer> {
   for await (const chunk of rest) yield chunk as Buffer;
 }
 
-/**
- * Only a contradiction is an error. `file-type` cannot identify text, source
- * code, or many container formats, and an unrecognised file must not be
- * rejected just because it has no magic number.
- */
+/** Only a contradiction is an error: unrecognised content (text, code) passes. */
 function assertContentMatchesExtension(filename: string, detectedMime: string | undefined): void {
   if (!detectedMime) return;
 
   const claimedMime = mimeForPath(filename);
   if (claimedMime === detectedMime) return;
 
-  // The extension may legitimately map to a different label for the same bytes
-  // (e.g. .jpg/.jpeg, or a zip-based format such as .docx or .cbz).
+  // Same bytes, different label: .jpg/.jpeg, or zip-based formats such as .docx and .cbz.
   const detectedExtensions = mimeTypes.extensions[detectedMime] ?? [];
   const claimedExtension = path.extname(filename).slice(1).toLowerCase();
   if (detectedExtensions.includes(claimedExtension)) return;
@@ -130,7 +110,6 @@ function assertContentMatchesExtension(filename: string, detectedMime: string | 
   );
 }
 
-/** Normalise a browser-supplied relative path and validate every segment. */
 export function splitRelativeName(relativeName: string): string[] {
   const segments = relativeName
     .replace(/\\/g, '/')

@@ -4,11 +4,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 
 import { isHiddenSystemEntry } from '@hearth/shared';
 
-/**
- * Recursive name search on the filesystem. Runs off the event loop because a
- * deep tree can take seconds, and the main thread must keep streaming media
- * while it does.
- */
+/** Breadth-first name search; a deep tree takes seconds, so it runs off the event loop. */
 export interface WalkRequest {
   rootDirectory: string;
   /** Lower-cased terms; an entry must contain all of them. */
@@ -16,7 +12,6 @@ export interface WalkRequest {
   /** Lower-cased extensions without the dot; empty means any. */
   extensions: string[];
   recursive: boolean;
-  /** Stop after this many matches so a pathological tree cannot exhaust memory. */
   maxResults: number;
 }
 
@@ -30,7 +25,6 @@ export interface WalkMatch {
 
 export interface WalkResponse {
   matches: WalkMatch[];
-  /** True when the walk stopped at `maxResults` and the total is a floor. */
   truncated: boolean;
 }
 
@@ -50,15 +44,14 @@ function walk(request: WalkRequest): WalkResponse {
   const found: WalkMatch[] = [];
   const queue: string[] = [request.rootDirectory];
 
-  while (queue.length > 0) {
+  for (let head = 0; head < queue.length; head += 1) {
     if (found.length >= request.maxResults) return { matches: found, truncated: true };
 
-    const directory = queue.shift()!;
+    const directory = queue[head]!;
     let dirents: fs.Dirent[];
     try {
       dirents = fs.readdirSync(directory, { withFileTypes: true });
     } catch {
-      // An unreadable subtree is skipped rather than failing the whole search.
       continue;
     }
 

@@ -1,17 +1,11 @@
-/**
- * HTTP Range parsing for byte streams. Only single ranges are honoured;
- * a multi-range request falls back to the whole entity, which is a legal
- * response and avoids multipart/byteranges for no practical gain.
- */
+/** Single ranges only; a multi-range request gets the whole entity, which is legal. */
 export interface ByteRange {
   start: number;
   end: number;
 }
 
 export type RangeResult =
-  | { kind: 'none' }
-  | { kind: 'satisfiable'; range: ByteRange }
-  | { kind: 'unsatisfiable' };
+  { kind: 'none' } | { kind: 'satisfiable'; range: ByteRange } | { kind: 'unsatisfiable' };
 
 const RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/;
 

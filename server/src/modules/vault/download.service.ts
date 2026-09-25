@@ -19,28 +19,27 @@ interface ZipTicket {
 }
 
 /**
- * A ticket lives just long enough for the browser to follow the URL it was
- * handed. Downloads must be a plain navigation so the browser owns the save
- * dialog and the progress UI, which rules out sending a request body — hence
- * the two-step exchange.
+ * A download must be a plain navigation (so the browser owns the save dialog),
+ * which cannot carry a body — hence a short-lived ticket for the path list.
  */
-const TICKET_TTL_MS = 5 * 60 * 1000;
-
 export class DownloadService {
   private readonly tickets = new Map<string, ZipTicket>();
 
-  constructor(private readonly vault: Vault) {}
+  constructor(
+    private readonly vault: Vault,
+    private readonly ticketTtlMs: number,
+  ) {}
 
   issueZipTicket(
     username: string,
     relativePaths: string[],
     archiveName: string,
     rootId: string,
-  ): { token: string; expiresAt: Date } {
+  ): { token: string; expiresAt: number } {
     this.sweepExpired();
 
     const token = crypto.randomBytes(24).toString('base64url');
-    const expiresAt = Date.now() + TICKET_TTL_MS;
+    const expiresAt = Date.now() + this.ticketTtlMs;
     this.tickets.set(token, {
       token,
       username,
@@ -50,10 +49,10 @@ export class DownloadService {
       expiresAt,
     });
 
-    return { token, expiresAt: new Date(expiresAt) };
+    return { token, expiresAt };
   }
 
-  /** Single use: redeeming removes the ticket so a leaked URL cannot be replayed. */
+  /** Single use, so a leaked URL cannot be replayed. */
   redeem(token: string, rootId: string): ZipTicket {
     const ticket = this.tickets.get(token);
     if (!ticket || ticket.expiresAt < Date.now()) {
@@ -67,19 +66,13 @@ export class DownloadService {
     return ticket;
   }
 
-  /**
-   * A readable ZIP of `sources`. Entries are read and compressed as the socket
-   * drains them — nothing is staged on disk or buffered whole, so a 10 GiB
-   * folder costs a constant amount of memory.
-   */
+  /** Compressed as the socket drains it; nothing is staged on disk or buffered whole. */
   async createZipStream(sources: SafePath[], signal: AbortSignal): Promise<Readable> {
-    // Deflating already-compressed media costs CPU for almost no saving; a low
-    // level keeps the archive flowing at disk speed.
+    // Most media is already compressed; a low level keeps the stream at disk speed.
     const archive = archiver('zip', { zlib: { level: 1 } });
 
     signal.addEventListener('abort', () => archive.abort(), { once: true });
 
-    // Collision-free names: two selected files can share a basename.
     const usedNames = new Set<string>();
     for (const source of sources) {
       const stats = await fsp.stat(source);
@@ -91,12 +84,10 @@ export class DownloadService {
       }
     }
 
-    // Not awaited: finalising drives the stream the caller is about to read.
     void archive.finalize();
     return archive;
   }
 
-  /** Resolve a ticket's paths at download time, re-checking every one. */
   resolveTicketPaths(ticket: ZipTicket): SafePath[] {
     return ticket.paths.map(relative => this.vault.resolve(relative));
   }
@@ -109,7 +100,6 @@ export class DownloadService {
   }
 }
 
-/** A sensible archive name for whatever the user selected. */
 export function suggestArchiveName(relativePaths: string[], requested: string | undefined): string {
   if (requested) return sanitizeArchiveName(requested);
   if (relativePaths.length === 1) {
@@ -119,7 +109,6 @@ export function suggestArchiveName(relativePaths: string[], requested: string | 
   return 'hearth-selection';
 }
 
-/** Two selected files can share a basename; the archive needs distinct entries. */
 function uniqueEntryName(used: Set<string>, name: string): string {
   if (!used.has(name)) {
     used.add(name);

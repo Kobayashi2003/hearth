@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 export interface Session {
   id: string;
   username: string;
-  /** Compact permission string, e.g. 'rwda'. */
   permissions: string;
   createdAt: number;
-  expiresAt: number;
+  /** Null when sessions never expire. */
+  expiresAt: number | null;
 }
 
 export interface SessionStore {
@@ -14,9 +14,13 @@ export interface SessionStore {
   create(username: string, permissions: string): Promise<Session>;
   get(id: string): Promise<Session | null>;
   delete(id: string): Promise<boolean>;
-  /** Drop every session for a user — used when their account changes or is removed. */
+  /** Used when an account changes or is removed. */
   deleteByUser(username: string): Promise<void>;
   close(): Promise<void>;
+}
+
+function isExpired(session: Session, now: number): boolean {
+  return session.expiresAt !== null && session.expiresAt <= now;
 }
 
 function newSession(username: string, permissions: string, expiryMs: number): Session {
@@ -26,7 +30,7 @@ function newSession(username: string, permissions: string, expiryMs: number): Se
     username,
     permissions,
     createdAt: now,
-    expiresAt: now + expiryMs,
+    expiresAt: Number.isFinite(expiryMs) ? now + expiryMs : null,
   };
 }
 
@@ -43,7 +47,7 @@ export class MemorySessionStore implements SessionStore {
   private sweepExpired(): void {
     const now = Date.now();
     for (const [id, session] of this.sessions) {
-      if (session.expiresAt <= now) this.sessions.delete(id);
+      if (isExpired(session, now)) this.sessions.delete(id);
     }
   }
 
@@ -56,7 +60,7 @@ export class MemorySessionStore implements SessionStore {
   async get(id: string): Promise<Session | null> {
     const session = this.sessions.get(id);
     if (!session) return null;
-    if (session.expiresAt <= Date.now()) {
+    if (isExpired(session, Date.now())) {
       this.sessions.delete(id);
       return null;
     }
@@ -79,10 +83,10 @@ export class MemorySessionStore implements SessionStore {
   }
 }
 
-/** Minimal surface of the `redis` client this store needs, so it can be typed without the dep. */
+/** The slice of the optional `redis` client this store uses. */
 interface RedisLike {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, options: { PX: number }): Promise<unknown>;
+  set(key: string, value: string, options?: { PX: number }): Promise<unknown>;
   del(key: string | string[]): Promise<number>;
   sAdd(key: string, member: string): Promise<number>;
   sMembers(key: string): Promise<string[]>;
@@ -93,10 +97,7 @@ interface RedisLike {
 const SESSION_PREFIX = 'hearth:session:';
 const USER_SESSIONS_PREFIX = 'hearth:user-sessions:';
 
-/**
- * Sessions survive a server restart. A per-user index is maintained alongside
- * so account changes can revoke every live session without scanning keys.
- */
+/** Survives restarts; a per-user set allows revoking without scanning keys. */
 export class RedisSessionStore implements SessionStore {
   readonly kind = 'redis' as const;
 
@@ -107,9 +108,11 @@ export class RedisSessionStore implements SessionStore {
 
   async create(username: string, permissions: string): Promise<Session> {
     const session = newSession(username, permissions, this.expiryMs);
-    await this.client.set(SESSION_PREFIX + session.id, JSON.stringify(session), {
-      PX: this.expiryMs,
-    });
+    await this.client.set(
+      SESSION_PREFIX + session.id,
+      JSON.stringify(session),
+      Number.isFinite(this.expiryMs) ? { PX: this.expiryMs } : undefined,
+    );
     await this.client.sAdd(USER_SESSIONS_PREFIX + username, session.id);
     return session;
   }
@@ -118,7 +121,7 @@ export class RedisSessionStore implements SessionStore {
     const raw = await this.client.get(SESSION_PREFIX + id);
     if (!raw) return null;
     const session = JSON.parse(raw) as Session;
-    if (session.expiresAt <= Date.now()) {
+    if (isExpired(session, Date.now())) {
       await this.delete(id);
       return null;
     }
@@ -145,10 +148,7 @@ export class RedisSessionStore implements SessionStore {
   }
 }
 
-/**
- * Redis is optional and its absence must not stop the server; fall back to the
- * memory store with a warning rather than failing to boot.
- */
+/** Redis is optional: an unreachable one falls back to memory with a warning. */
 export async function createSessionStore(
   redisUrl: string | undefined,
   expiryMs: number,

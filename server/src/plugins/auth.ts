@@ -5,13 +5,10 @@ import type { PermissionAction } from '@hearth/shared';
 import { HearthError } from '../lib/errors.js';
 import type { SafePath, Vault } from '../lib/vault.js';
 import type { Session } from '../modules/warden/session-store.js';
+import { actionsFromPermissionString } from '../modules/warden/permissions.js';
 import type { Warden } from '../modules/warden/warden.js';
 
-/**
- * Populates `request.session`, enforces the route's declared auth mode, and
- * installs `request.resolvePath` — the single gate through which a user path
- * becomes a filesystem path.
- */
+/** Resolves the session, enforces each route's auth mode and verb, and installs `request.resolvePath`. */
 const authPlugin: FastifyPluginAsync = async app => {
   const { warden, vault, runtime } = app.hearth;
 
@@ -23,7 +20,11 @@ const authPlugin: FastifyPluginAsync = async app => {
 
   app.decorateRequest(
     'resolvePath',
-    function (this: FastifyRequest, userPath: string | undefined, action: PermissionAction): SafePath {
+    function (
+      this: FastifyRequest,
+      userPath: string | undefined,
+      action: PermissionAction,
+    ): SafePath {
       const resolved = vault.resolve(userPath);
       const relative = vault.relativize(resolved);
       if (!this.session) throw HearthError.unauthorized();
@@ -47,7 +48,6 @@ const authPlugin: FastifyPluginAsync = async app => {
 
     if (!request.session) throw HearthError.unauthorized();
 
-    // Admin-only mode must take effect immediately, not at next login.
     if (runtime.get('adminOnly') && !request.session.permissions.includes('a')) {
       throw HearthError.forbidden('The server is currently limited to administrators');
     }
@@ -59,18 +59,11 @@ const authPlugin: FastifyPluginAsync = async app => {
   });
 };
 
-/** `w` implies `d`, matching the permission registry's own fallback. */
 function hasGlobalVerb(session: Session, action: PermissionAction): boolean {
-  const char = { read: 'r', write: 'w', delete: 'd', admin: 'a' }[action];
-  if (session.permissions.includes(char)) return true;
-  return action === 'delete' && session.permissions.includes('w');
+  return actionsFromPermissionString(session.permissions).includes(action);
 }
 
-/**
- * A media token authorises exactly one path, so it is validated against the
- * path this request is actually asking for. The synthesised session is
- * read-only regardless of what the real account may do.
- */
+/** A media token is checked against the requested path and yields a read-only session. */
 async function sessionFromMediaToken(
   request: FastifyRequest,
   warden: Warden,
@@ -79,7 +72,6 @@ async function sessionFromMediaToken(
   const query = request.query as { token?: string; path?: string };
   if (!query.token || query.path === undefined) return null;
 
-  // Normalise through the vault so a token issued for "a/b" also matches "a//b".
   let relative: string;
   try {
     relative = vault.relativize(vault.resolve(query.path));

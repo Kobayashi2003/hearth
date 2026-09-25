@@ -4,9 +4,8 @@ import type { AppConfig, RootConfig } from './index.js';
 import { readJsonFile, writeJsonFileAtomic } from '../lib/json-store.js';
 
 /**
- * The parts of the configuration an admin can change while the server is
- * running. Kept apart from the frozen `AppConfig` so nothing can quietly mutate
- * startup configuration, and so every change has one place to observe.
+ * Settings an admin can change at runtime, kept apart from the frozen
+ * `AppConfig`. Readers derive the current value on each use.
  */
 export interface RuntimeSettings {
   activeRootId: string;
@@ -29,7 +28,6 @@ export class RuntimeState {
   constructor(private readonly config: AppConfig) {
     this.statePath = path.join(config.storage.dataDirectory, STATE_FILENAME);
     this.settings = { ...this.defaults(), ...this.loadPersisted() };
-    // A root removed from the environment must not stay selected.
     if (!config.storage.roots.some(root => root.id === this.settings.activeRootId)) {
       this.settings.activeRootId = config.storage.defaultRootId;
     }
@@ -51,7 +49,6 @@ export class RuntimeState {
 
   get activeRoot(): RootConfig {
     const root = this.config.storage.roots.find(r => r.id === this.settings.activeRootId);
-    // The constructor guarantees a valid id; this keeps the return type non-null.
     return root ?? this.config.storage.roots[0]!;
   }
 
@@ -63,11 +60,7 @@ export class RuntimeState {
     return this.settings[key];
   }
 
-  /**
-   * The in-memory value is authoritative for this process; persistence only
-   * carries it across a restart. A failed write is therefore reported, not
-   * fatal — the setting still takes effect.
-   */
+  /** In-memory is authoritative; a failed persist is reported, not fatal. */
   set<K extends RuntimeChange>(key: K, value: RuntimeSettings[K]): void {
     if (this.settings[key] === value) return;
     this.settings[key] = value;
@@ -79,10 +72,8 @@ export class RuntimeState {
     for (const listener of this.listeners) listener(key, this.snapshot());
   }
 
-  /** Set once at startup, so a failed persist is visible in the log. */
   onPersistError: ((error: Error) => void) | undefined;
 
-  /** Returns an unsubscribe function so callers cannot leak listeners. */
   onChange(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

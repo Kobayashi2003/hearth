@@ -22,10 +22,18 @@ describe('detectEncoding', () => {
     expect(detectEncoding(Buffer.from('中文测试 — em dash', 'utf8'))).toBe('utf8');
   });
 
-  it('falls back to a legacy encoding for bytes that are not valid UTF-8', () => {
-    // GB18030 and Shift_JIS both produce byte sequences UTF-8 cannot decode.
-    expect(detectEncoding(iconv.encode('中文测试', 'gb18030'))).toBe('win1252');
-    expect(detectEncoding(iconv.encode('日本語テスト', 'shift_jis'))).toBe('win1252');
+  it.each([
+    ['中文测试，这是一个简单的句子。', 'gb18030'],
+    ['這是一個繁體中文的句子，我們來測試。', 'big5'],
+    ['日本語のテキストです。これはテスト。', 'shift_jis'],
+    ['ソードアート・オンライン 第01巻', 'shift_jis'],
+    ['한국어 텍스트입니다. 테스트.', 'euc-kr'],
+  ])('recognises legacy CJK text: %s', (text, encoding) => {
+    expect(detectEncoding(iconv.encode(text, encoding))).toBe(encoding);
+  });
+
+  it('falls back to Windows-1252 for Western text that is not UTF-8', () => {
+    expect(detectEncoding(iconv.encode('café résumé naïve', 'win1252'))).toBe('win1252');
   });
 
   it('never throws on binary input', () => {

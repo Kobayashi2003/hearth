@@ -7,6 +7,8 @@ import {
   envBool,
   envEnum,
   envInt,
+  envLimit,
+  envLimitRenamed,
   envList,
   envOptional,
   envPath,
@@ -15,7 +17,7 @@ import {
 } from './env.js';
 
 export interface RootConfig {
-  /** Stable id derived from the absolute path, so it survives reordering. */
+  /** Derived from the absolute path, so it survives reordering. */
   id: string;
   absolutePath: string;
   label: string;
@@ -23,18 +25,22 @@ export interface RootConfig {
 
 export type SearchProviderChoice = 'everything' | 'walk' | 'auto';
 
+/** Every cap below is `Infinity` when its variable is `0`. */
+export interface RateBucket {
+  readonly max: number;
+  readonly windowMs: number;
+}
+
 export interface AppConfig {
   readonly projectRoot: string;
+  readonly development: boolean;
   readonly server: {
     readonly port: number;
     readonly host: string;
     readonly corsOrigins: readonly string[];
-    /**
-     * Public path prefix the API is reached under. App-scoped (`/hearth-api`)
-     * rather than a generic `/api`, because under app-gateway every app
-     * shares one origin and a generic prefix would collide.
-     */
+    /** App-scoped rather than `/api`: under a shared gateway every app shares one origin. */
     readonly apiPrefix: string;
+    readonly bodyLimitBytes: number;
   };
   readonly storage: {
     readonly roots: readonly RootConfig[];
@@ -59,6 +65,11 @@ export interface AppConfig {
     readonly mediaTokenSecret: string;
     readonly mediaTokenTtlSeconds: number;
   };
+  readonly listing: {
+    readonly maxEntries: number;
+    /** Paths in one copy/move/delete/zip/restore request, and rules in one save. */
+    readonly maxBatchItems: number;
+  };
   readonly upload: {
     readonly maxFileSizeBytes: number;
     readonly maxFilesPerRequest: number;
@@ -66,13 +77,14 @@ export interface AppConfig {
     readonly chunkSizeBytes: number;
     readonly chunkSessionTimeoutMs: number;
     readonly validateMagicNumber: boolean;
+    readonly zipLinkTtlMs: number;
   };
   readonly trash: {
     readonly directory: string;
     readonly enabled: boolean;
     readonly autoCleanup: boolean;
     readonly retentionDays: number;
-    readonly maxSizeMB: number;
+    readonly maxSizeBytes: number;
   };
   readonly search: {
     readonly provider: SearchProviderChoice;
@@ -80,8 +92,8 @@ export interface AppConfig {
     readonly everythingUsername: string | undefined;
     readonly everythingPassword: string | undefined;
     readonly everythingTimeoutMs: number;
-    readonly everythingMaxResults: number;
-    /** Backoff before re-probing Everything after a failure. */
+    readonly maxResults: number;
+    readonly maxQueryLength: number;
     readonly probeCooldownMs: number;
   };
   readonly media: {
@@ -92,18 +104,29 @@ export interface AppConfig {
     readonly ffprobePath: string;
     readonly transcodeCrf: number;
     readonly transcodePreset: string;
-    /** Largest file the text viewer will read into memory. */
+    readonly thumbnailMaxWidth: number;
     readonly maxTextBytes: number;
+    readonly maxTextSaveBytes: number;
+    readonly archiveMaxEntries: number;
+    readonly archiveMaxMemberBytes: number;
+    readonly folderCoverMaxDepth: number;
+    readonly folderCoverMaxBranches: number;
   };
-  readonly limits: {
-    readonly globalMax: number;
-    readonly globalWindowMs: number;
-    readonly writeMax: number;
-    readonly writeWindowMs: number;
-    readonly searchMax: number;
-    readonly searchWindowMs: number;
-    readonly loginMax: number;
-    readonly loginWindowMs: number;
+  readonly cache: {
+    readonly thumbnailMaxAgeMs: number;
+    readonly comicMaxAgeMs: number;
+    readonly psdMaxAgeMs: number;
+  };
+  readonly ledger: {
+    readonly maxProgressEntries: number;
+    readonly maxSessions: number;
+    readonly maxSessionBytes: number;
+  };
+  readonly rateLimits: {
+    readonly global: RateBucket;
+    readonly write: RateBucket;
+    readonly search: RateBucket;
+    readonly login: RateBucket;
   };
   readonly logging: {
     readonly level: string;
@@ -126,11 +149,13 @@ export interface StaticUser {
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const KB = 1024;
+const MB = 1024 * KB;
 
 /**
- * Parse `USER_RULES` — "user:pass:perms" entries joined by ';' (',' accepted
- * when no semicolon is present). The password may itself contain ':', so it is
- * everything between the first and last separator.
+ * `USER_RULES`: "user:pass:perms" joined by ';' (or ','). The password is
+ * everything between the first and last ':'.
  */
 function parseStaticUsers(raw: string): StaticUser[] {
   if (!raw.trim()) return [];
@@ -157,7 +182,6 @@ function rootIdFor(absolutePath: string): string {
   return crypto.createHash('sha1').update(absolutePath.toLowerCase()).digest('hex').slice(0, 12);
 }
 
-/** Resolve, deduplicate (case-insensitively on Windows), and validate roots. */
 function parseRoots(): RootConfig[] {
   const configured = envList('ROOT_DIRECTORIES');
   const fallback = envPath('BASE_DIRECTORY', './example');
@@ -182,29 +206,33 @@ function parseRoots(): RootConfig[] {
   return roots;
 }
 
-function bytesFromMB(name: string, fallbackMB: number): number {
-  const mb = envInt(name, fallbackMB);
-  if (mb < 0) throw new ConfigError(name, 'must be zero or positive');
-  return mb === 0 ? Number.POSITIVE_INFINITY : mb * 1024 * 1024;
+function rateBucket(name: string, max: number, windowMinutes: number): RateBucket {
+  return {
+    max: envLimit(`RATE_LIMIT_${name}_MAX`, max),
+    windowMs: envInt(`RATE_LIMIT_${name}_WINDOW_MINUTES`, windowMinutes) * MINUTE_MS,
+  };
 }
 
-export function loadConfig(): AppConfig {
+export function loadConfig(development = false): AppConfig {
   const roots = parseRoots();
   const requestedDefault = envOptional('BASE_DIRECTORY');
   const defaultRoot = requestedDefault
     ? (roots.find(
-        r => r.absolutePath.toLowerCase() === path.resolve(projectRoot, requestedDefault).toLowerCase(),
+        r =>
+          r.absolutePath.toLowerCase() ===
+          path.resolve(projectRoot, requestedDefault).toLowerCase(),
       ) ?? roots[0]!)
     : roots[0]!;
 
   const config: AppConfig = {
     projectRoot,
+    development,
     server: {
       port: envInt('PORT', 5111),
-      // Loopback only: every request, media bytes included, arrives via the Caddy edge.
       host: envString('HOST', '127.0.0.1'),
       corsOrigins: envList('CORS_ORIGIN', ['http://localhost:5110']),
       apiPrefix: envString('API_PREFIX', '/hearth-api'),
+      bodyLimitBytes: envLimit('API_BODY_LIMIT_MB', 2, MB),
     },
     storage: {
       roots,
@@ -213,67 +241,85 @@ export function loadConfig(): AppConfig {
       tempDirectory: envPath('TEMP_DIRECTORY', './server/temp'),
       backgroundsDirectory: envPath('BACKGROUNDS_DIRECTORY', './server/backgrounds'),
       streamBufferBytes: {
-        video: envInt('STREAM_BUFFER_VIDEO', 1024 * 1024),
-        audio: envInt('STREAM_BUFFER_AUDIO', 256 * 1024),
-        default: envInt('STREAM_BUFFER_DEFAULT', 64 * 1024),
+        video: envInt('STREAM_BUFFER_VIDEO', MB),
+        audio: envInt('STREAM_BUFFER_AUDIO', 256 * KB),
+        default: envInt('STREAM_BUFFER_DEFAULT', 64 * KB),
       },
     },
     auth: {
-      sessionExpiryMs: envInt('SESSION_EXPIRY_HOURS', 24) * HOUR_MS,
+      sessionExpiryMs: envLimit('SESSION_EXPIRY_HOURS', 24, HOUR_MS),
       cookieName: envString('SESSION_COOKIE_NAME', 'hearth_session'),
       cookieSecure: envBool('SESSION_COOKIE_SECURE', false),
       staticUsers: parseStaticUsers(envString('USER_RULES', '')),
       usersFile: envPath('USERS_FILE', './server/data/users.json'),
       permissionsFile: envPath('PERMISSIONS_FILE', './server/data/permissions.json'),
       redisUrl: envOptional('REDIS_URL'),
-      // A generated secret is fine for a single process; set it to survive restarts.
+      // Set it explicitly for media URLs to survive a restart.
       mediaTokenSecret: envString('MEDIA_TOKEN_SECRET', crypto.randomBytes(32).toString('hex')),
-      mediaTokenTtlSeconds: envInt('MEDIA_TOKEN_TTL', 3600),
+      mediaTokenTtlSeconds: envLimit('MEDIA_TOKEN_TTL', 3600),
+    },
+    listing: {
+      maxEntries: envLimit('LISTING_MAX_ENTRIES', 20_000),
+      maxBatchItems: envLimit('BATCH_MAX_ITEMS', 1000),
     },
     upload: {
-      maxFileSizeBytes: bytesFromMB('MAX_UPLOAD_SIZE_MB', 10240),
-      maxFilesPerRequest: envInt('MAX_UPLOAD_FILES', 0),
+      maxFileSizeBytes: envLimit('MAX_UPLOAD_SIZE_MB', 10_240, MB),
+      maxFilesPerRequest: envLimit('MAX_UPLOAD_FILES', 0),
       chunkDirectory: envPath('CHUNK_UPLOAD_DIR', './server/temp/chunks'),
-      chunkSizeBytes: envInt('CHUNK_SIZE_MB', 10) * 1024 * 1024,
-      chunkSessionTimeoutMs: envInt('CHUNK_UPLOAD_TIMEOUT_HOURS', 24) * HOUR_MS,
+      chunkSizeBytes: envInt('CHUNK_SIZE_MB', 10) * MB,
+      chunkSessionTimeoutMs: envLimit('CHUNK_UPLOAD_TIMEOUT_HOURS', 24, HOUR_MS),
       validateMagicNumber: envBool('MAGIC_NUMBER_VALIDATION', false),
+      zipLinkTtlMs: envLimit('ZIP_LINK_TTL_MINUTES', 5, MINUTE_MS),
     },
     trash: {
       directory: envPath('RECYCLE_BIN_DIRECTORY', './server/data/trash'),
       enabled: envBool('RECYCLE_BIN_ENABLED', true),
       autoCleanup: envBool('RECYCLE_BIN_AUTO_CLEANUP', true),
-      retentionDays: envInt('RECYCLE_BIN_RETENTION_DAYS', 30),
-      maxSizeMB: envInt('RECYCLE_BIN_MAX_SIZE_MB', 1024),
+      retentionDays: envLimit('RECYCLE_BIN_RETENTION_DAYS', 30),
+      maxSizeBytes: envLimit('RECYCLE_BIN_MAX_SIZE_MB', 1024, MB),
     },
     search: {
       provider: envEnum('SEARCH_PROVIDER', ['everything', 'walk', 'auto'] as const, 'auto'),
       everythingUrl: envString('EVERYTHING_URL', 'http://127.0.0.1:8081'),
       everythingUsername: envOptional('EVERYTHING_USERNAME'),
       everythingPassword: envOptional('EVERYTHING_PASSWORD'),
-      everythingTimeoutMs: envInt('EVERYTHING_TIMEOUT_MS', 5000),
-      everythingMaxResults: envInt('EVERYTHING_MAX_RESULTS', 10000),
+      everythingTimeoutMs: envLimit('EVERYTHING_TIMEOUT_MS', 5000),
+      maxResults: envLimitRenamed('SEARCH_MAX_RESULTS', 'EVERYTHING_MAX_RESULTS', 10_000),
+      maxQueryLength: envLimit('SEARCH_MAX_QUERY_LENGTH', 512),
       probeCooldownMs: envInt('SEARCH_PROBE_COOLDOWN_MS', 5000),
     },
     media: {
       thumbnailCacheDirectory: envPath('THUMBNAIL_CACHE_DIR', './server/temp/thumbnails'),
       comicCacheDirectory: envPath('COMIC_CACHE_DIR', './server/temp/comics'),
       psdCacheDirectory: envPath('PSD_CACHE_DIR', './server/temp/psd'),
-      // Bare names resolve on PATH, which is the usual install shape on Windows.
+      // Bare names resolve on PATH.
       ffmpegPath: envString('FFMPEG_PATH', 'ffmpeg'),
       ffprobePath: envString('FFPROBE_PATH', 'ffprobe'),
       transcodeCrf: envInt('TRANSCODE_CRF', 23),
       transcodePreset: envString('TRANSCODE_PRESET', 'veryfast'),
-      maxTextBytes: bytesFromMB('MAX_TEXT_SIZE_MB', 8),
+      thumbnailMaxWidth: envLimit('THUMBNAIL_MAX_WIDTH', 2048),
+      maxTextBytes: envLimit('MAX_TEXT_SIZE_MB', 8, MB),
+      maxTextSaveBytes: envLimit('MAX_TEXT_SAVE_SIZE_MB', 32, MB),
+      archiveMaxEntries: envLimit('ARCHIVE_MAX_ENTRIES', 5000),
+      archiveMaxMemberBytes: envLimit('ARCHIVE_MAX_MEMBER_SIZE_MB', 64, MB),
+      folderCoverMaxDepth: envLimit('FOLDER_COVER_MAX_DEPTH', 2),
+      folderCoverMaxBranches: envLimit('FOLDER_COVER_MAX_BRANCHES', 6),
     },
-    limits: {
-      globalMax: envInt('RATE_LIMIT_GLOBAL_MAX', 1000),
-      globalWindowMs: envInt('RATE_LIMIT_GLOBAL_WINDOW_MINUTES', 1) * MINUTE_MS,
-      writeMax: envInt('RATE_LIMIT_WRITE_MAX', 100),
-      writeWindowMs: envInt('RATE_LIMIT_WRITE_WINDOW_MINUTES', 1) * MINUTE_MS,
-      searchMax: envInt('RATE_LIMIT_SEARCH_MAX', 50),
-      searchWindowMs: envInt('RATE_LIMIT_SEARCH_WINDOW_MINUTES', 1) * MINUTE_MS,
-      loginMax: envInt('RATE_LIMIT_LOGIN_MAX', 10),
-      loginWindowMs: envInt('RATE_LIMIT_LOGIN_WINDOW_MINUTES', 5) * MINUTE_MS,
+    cache: {
+      thumbnailMaxAgeMs: envLimit('CACHE_THUMBNAIL_DAYS', 30, DAY_MS),
+      comicMaxAgeMs: envLimit('CACHE_COMIC_DAYS', 7, DAY_MS),
+      psdMaxAgeMs: envLimit('CACHE_PSD_DAYS', 7, DAY_MS),
+    },
+    ledger: {
+      maxProgressEntries: envLimit('LEDGER_MAX_PROGRESS', 1000),
+      maxSessions: envLimit('LEDGER_MAX_SESSIONS', 300),
+      maxSessionBytes: envLimit('LEDGER_SESSION_MAX_KB', 512, KB),
+    },
+    rateLimits: {
+      global: rateBucket('GLOBAL', 1000, 1),
+      write: rateBucket('WRITE', 100, 1),
+      search: rateBucket('SEARCH', 50, 1),
+      login: rateBucket('LOGIN', 10, 5),
     },
     logging: {
       level: envString('LOG_LEVEL', 'info'),
@@ -291,7 +337,6 @@ export function loadConfig(): AppConfig {
   return deepFreeze(config);
 }
 
-/** Fail loudly at startup rather than on the first request. */
 function assertRootsExist(config: AppConfig): void {
   const missing = config.storage.roots.filter(root => {
     try {
@@ -317,5 +362,3 @@ function deepFreeze<T>(value: T): T {
   }
   return value;
 }
-
-export type { AppConfig as HearthConfig };

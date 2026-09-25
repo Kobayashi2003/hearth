@@ -4,11 +4,7 @@ import type { ApiErrorBody } from '@hearth/shared';
 
 import { HearthError, isAbortError } from '../lib/errors.js';
 
-/**
- * The one place an error becomes a response. Unknown errors are logged in full
- * and reported generically — internal messages and absolute host paths are
- * never sent to a client.
- */
+/** The one place an error becomes a response; internal messages and host paths never reach a client. */
 const errorsPlugin: FastifyPluginAsync = async app => {
   app.setNotFoundHandler((request, reply) => {
     const body: ApiErrorBody = { code: 'NOT_FOUND', message: 'No such endpoint' };
@@ -16,7 +12,6 @@ const errorsPlugin: FastifyPluginAsync = async app => {
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
-    // The client hung up; nothing to send and nothing worth logging as an error.
     if (isAbortError(error) || reply.raw.destroyed) {
       request.log.debug({ err: error }, 'request aborted by client');
       return;
@@ -30,7 +25,6 @@ const errorsPlugin: FastifyPluginAsync = async app => {
       return;
     }
 
-    // Fastify's own errors (schema validation, payload limits) carry a status.
     const status = error.statusCode ?? 500;
     if (status < 500) {
       const body: ApiErrorBody = {

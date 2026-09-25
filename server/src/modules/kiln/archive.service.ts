@@ -6,8 +6,9 @@ import {
   type ArchiveListing,
 } from '@hearth/shared';
 
+import type { AppConfig } from '../../config/index.js';
 import { HearthError } from '../../lib/errors.js';
-import { runWorker } from '../../lib/worker-pool.js';
+import { runWorker } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
 import type {
   ArchiveListResponse,
@@ -15,35 +16,16 @@ import type {
   ArchiveRequest,
 } from '../../workers/archive.worker.js';
 
-/**
- * Reading an archive's table of contents, and one member out of it.
- *
- * Nothing is cached and nothing is unpacked to disk — unlike a comic, which is
- * paged through hundreds of times and so is worth extracting once. An archive is
- * usually opened, looked at, and closed, and leaving a copy of it in a cache
- * directory for that would be the wrong trade.
- */
-
-/**
- * The listing cap. An archive with more members than this is shown as a prefix,
- * the same way an enormous folder is: the alternative is a response measured in
- * megabytes for a list nobody will scroll.
- */
-const MAX_ENTRIES = 5_000;
-
-/**
- * The largest member that may be pulled out and served inline. Big enough for a
- * document or a page scan; past it the archive is the thing to download.
- */
-const MAX_MEMBER_BYTES = 64 * 1024 * 1024;
-
+/** An archive's listing and single members. Unlike comics, nothing is cached or unpacked to disk. */
 export class ArchiveService {
+  constructor(private readonly config: AppConfig) {}
+
   async list(target: SafePath, signal?: AbortSignal): Promise<ArchiveListing> {
     this.assertReadable(target);
 
     const response = await runWorker<ArchiveRequest, ArchiveListResponse>(
       'archive',
-      { kind: 'list', archivePath: target, limit: MAX_ENTRIES },
+      { kind: 'list', archivePath: target, limit: this.config.media.archiveMaxEntries },
       signal,
     );
 
@@ -55,7 +37,6 @@ export class ArchiveService {
     };
   }
 
-  /** The bytes of one member, for viewing or downloading it on its own. */
   async read(
     target: SafePath,
     entryName: string,
@@ -66,7 +47,12 @@ export class ArchiveService {
 
     const response = await runWorker<ArchiveRequest, ArchiveReadResponse>(
       'archive',
-      { kind: 'read', archivePath: target, entryName, maxBytes: MAX_MEMBER_BYTES },
+      {
+        kind: 'read',
+        archivePath: target,
+        entryName,
+        maxBytes: this.config.media.archiveMaxMemberBytes,
+      },
       signal,
     );
 
@@ -87,8 +73,6 @@ export class ArchiveService {
       throw HearthError.badRequest('That file is not an archive');
     }
     if (!READABLE_ARCHIVE_EXTENSIONS.has(extension)) {
-      // Stated plainly rather than dressed up as a failure: zip and rar are what
-      // Hearth can open, and the file is still perfectly downloadable.
       throw HearthError.badRequest(
         `Hearth can look inside zip and rar archives; ${extension} has to be downloaded first`,
       );

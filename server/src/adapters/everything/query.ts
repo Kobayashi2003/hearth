@@ -1,11 +1,6 @@
 /**
- * Everything search-expression construction.
- *
- * Everything's query language gives `|`, `!`, `<>`, `"` and the `name:` family
- * operator meaning. User input is data, never syntax, so every user term is
- * wrapped in double quotes — inside which Everything treats the content
- * literally — and any embedded quote is removed, leaving no way to break out of
- * the quoting and alter the expression.
+ * User input is data, never syntax: every term is double-quoted (literal inside
+ * Everything) with embedded quotes removed, so it cannot alter the expression.
  */
 
 /** Quote one user term so Everything reads it literally. */
@@ -24,10 +19,7 @@ export interface EverythingQueryParts {
   only?: 'files' | 'folders';
 }
 
-/**
- * Build the search expression. Terms are ANDed, which is what a user typing
- * two words expects, rather than being treated as one phrase.
- */
+/** Terms are ANDed, not treated as one phrase. */
 export function buildSearchExpression(parts: EverythingQueryParts): string {
   const clauses: string[] = [`path:${quoteTerm(parts.scopeDirectory)}`];
 
@@ -50,8 +42,6 @@ const SORT_FIELD_MAP = {
   name: 'name',
   size: 'size',
   mtime: 'date_modified',
-  // Everything has no notion of Hearth's "type" ordering; name is the closest
-  // stable base, and the page is reordered by extension after retrieval.
   type: 'name',
 } as const;
 

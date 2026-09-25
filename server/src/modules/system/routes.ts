@@ -7,6 +7,7 @@ import type {
   VersionResponse,
 } from '@hearth/shared';
 
+import { HEARTH_VERSION } from '../../config/env.js';
 import { HearthError } from '../../lib/errors.js';
 
 const switchRootSchema = {
@@ -26,18 +27,12 @@ export const systemRoutes: FastifyPluginAsync = async app => {
   });
 
   app.get('/system/version', { config: { auth: 'public' } }, async () => {
-    const body: VersionResponse = { name: 'hearth', version: '1.0.0' };
+    const body: VersionResponse = { name: 'hearth', version: HEARTH_VERSION };
     return body;
   });
 
   app.get('/system/roots', { config: { permission: 'read' } }, async () => describeRoots());
 
-  /**
-   * Switching the root goes through `RuntimeState`, which is the single place
-   * that owns it — every reader (the vault, the search provider, the trash)
-   * derives from it on each use, so nothing holds a stale copy and no cache
-   * needs manual invalidation.
-   */
   app.post<{ Body: SwitchRootRequest }>(
     '/system/roots',
     { schema: switchRootSchema, config: { permission: 'admin' } },

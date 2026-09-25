@@ -6,15 +6,12 @@ import { EverythingClient } from '../../adapters/everything/client.js';
 import { buildSearchExpression, everythingSortField } from '../../adapters/everything/query.js';
 import type { EverythingResult } from '../../adapters/everything/parse.js';
 import type { AppConfig } from '../../config/index.js';
-import { clampLimit, sortEntries } from '../../lib/listing.js';
+import { sortEntries } from '../../lib/listing.js';
 import { DIRECTORY_MIME, extensionsForMediaKind, mimeForPath } from '../../lib/mime.js';
 import type { Vault } from '../../lib/vault.js';
 import type { ProviderHealth, SearchPage, SearchProvider, SearchQuery } from './provider.js';
 
-/**
- * Name search delegated to Everything. Filtering, sorting and pagination are
- * all pushed down so totals stay exact and large roots stay fast.
- */
+/** Filtering, sorting and pagination are pushed down to Everything so totals stay exact. */
 export class EverythingProvider implements SearchProvider {
   readonly name: SearchProviderName = 'everything';
   private readonly client: EverythingClient;
@@ -47,7 +44,8 @@ export class EverythingProvider implements SearchProvider {
 
   async search(query: SearchQuery, signal?: AbortSignal): Promise<SearchPage> {
     const scopeDirectory = this.vault.resolve(query.scope);
-    const limit = clampLimit(query.limit);
+    const limit = query.limit;
+    const index = Math.max(1, query.page) - 1;
 
     const expression = buildSearchExpression({
       scopeDirectory,
@@ -58,8 +56,8 @@ export class EverythingProvider implements SearchProvider {
     const response = await this.client.search(
       {
         expression,
-        offset: (Math.max(1, query.page) - 1) * limit,
-        count: Math.min(limit, this.config.search.everythingMaxResults),
+        offset: Number.isFinite(limit) ? index * limit : 0,
+        count: Math.min(limit, this.config.search.maxResults),
         sort: everythingSortField(query.sort.field),
         ascending: query.sort.direction === 'asc',
       },
@@ -68,30 +66,24 @@ export class EverythingProvider implements SearchProvider {
 
     const { entries, dropped } = this.toEntries(response.results, scopeDirectory, query);
 
-    // Rows filtered out after retrieval are not in the index's total; subtract
-    // them so the reported count matches what the user can actually page through.
     const total = Math.max(0, response.total - dropped);
 
-    // Everything cannot order by Hearth's "type" key, so the page is reordered
-    // locally. Only the within-page ordering differs; totals stay exact.
+    // Everything cannot order by extension; reorder within the page.
     const items =
-      query.sort.field === 'type'
-        ? sortEntries(entries, 'type', query.sort.direction)
-        : entries;
+      query.sort.field === 'type' ? sortEntries(entries, 'type', query.sort.direction) : entries;
 
     return {
       items,
       total,
-      hasMore: (Math.max(1, query.page) - 1) * limit + entries.length < total,
+      hasMore: (Number.isFinite(limit) ? index * limit : 0) + entries.length < total,
       provider: this.name,
       approximate: dropped > 0,
     };
   }
 
   /**
-   * Everything's index knows nothing about Hearth's root or its hidden-entry
-   * rules, so every returned path is re-verified here. A query-syntax mistake
-   * must not become a path disclosure — this is a security boundary.
+   * Security boundary: Everything knows nothing of Hearth's root or hidden
+   * entries, so every returned path is re-verified here.
    */
   private toEntries(
     results: EverythingResult[],
@@ -114,8 +106,7 @@ export class EverythingProvider implements SearchProvider {
         continue;
       }
 
-      // `path:` matches subfolders too; a non-recursive search wants only
-      // direct children.
+      // `path:` also matches subfolders.
       if (!query.recursive && path.dirname(safe) !== scopeDirectory) {
         dropped += 1;
         continue;
@@ -126,7 +117,7 @@ export class EverythingProvider implements SearchProvider {
         path: relative,
         size: result.isDirectory ? 0 : result.size,
         mtime: new Date(result.mtimeMs).toISOString(),
-        mimeType: result.isDirectory ? DIRECTORY_MIME : mimeForPath(result.name),
+        mimeType: result.isDirectory ? DIRECTORY_MIME : mimeForPath(result.name, result.size),
         isDirectory: result.isDirectory,
       });
     }

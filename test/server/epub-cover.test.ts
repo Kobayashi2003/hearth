@@ -22,7 +22,10 @@ describe('coverHrefFrom — EPUB 3', () => {
       <item id="c" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>
     </manifest></package>`;
 
-    const href = coverHrefFrom(container('OEBPS/content.opf'), reader({ 'OEBPS/content.opf': opf }));
+    const href = coverHrefFrom(
+      container('OEBPS/content.opf'),
+      reader({ 'OEBPS/content.opf': opf }),
+    );
     expect(href).toBe('OEBPS/images/cover.jpg');
   });
 
@@ -31,7 +34,9 @@ describe('coverHrefFrom — EPUB 3', () => {
       <item id="c" properties="svg cover-image scripted" href="cover.png" media-type="image/png"/>
     </manifest></package>`;
 
-    expect(coverHrefFrom(container('content.opf'), reader({ 'content.opf': opf }))).toBe('cover.png');
+    expect(coverHrefFrom(container('content.opf'), reader({ 'content.opf': opf }))).toBe(
+      'cover.png',
+    );
   });
 });
 
@@ -42,7 +47,10 @@ describe('coverHrefFrom — EPUB 2', () => {
       <item id="cover-img" href="images/front.jpeg" media-type="image/jpeg"/>
     </manifest></package>`;
 
-    const href = coverHrefFrom(container('OEBPS/package.opf'), reader({ 'OEBPS/package.opf': opf }));
+    const href = coverHrefFrom(
+      container('OEBPS/package.opf'),
+      reader({ 'OEBPS/package.opf': opf }),
+    );
     expect(href).toBe('OEBPS/images/front.jpeg');
   });
 
@@ -84,7 +92,9 @@ describe('coverHrefFrom — path resolution', () => {
       <item id="c" properties="cover-image" href="cover.jpg" media-type="image/jpeg"/>
     </manifest></package>`;
 
-    expect(coverHrefFrom(container('content.opf'), reader({ 'content.opf': opf }))).toBe('cover.jpg');
+    expect(coverHrefFrom(container('content.opf'), reader({ 'content.opf': opf }))).toBe(
+      'cover.jpg',
+    );
   });
 
   it('decodes a percent-encoded href', () => {

@@ -16,9 +16,8 @@ interface ProbeRecord {
 }
 
 /**
- * Provider selection and health. Search must never hard-fail because Everything
- * is down: an unreachable index degrades to the walk provider, and the failure
- * is reported through the status endpoint rather than to the user mid-search.
+ * Provider selection and health. Search never hard-fails because Everything is
+ * down: it degrades to the walk provider and reports that via the status endpoint.
  */
 export class Beacon {
   private readonly everything: EverythingProvider;
@@ -35,19 +34,13 @@ export class Beacon {
     this.everything = new EverythingProvider(config, vault);
     this.walk = new WalkProvider(config, vault);
 
-    // A new root may be on a volume Everything does not index; re-probe rather
-    // than trusting a result obtained against the previous one.
+    // A new root may be on a volume Everything does not index.
     runtime.onChange(change => {
       if (change === 'activeRootId') this.lastProbe = null;
     });
   }
 
-  /**
-   * `canRead` is applied to every result. A search scope is authorised before
-   * the query runs, but a scope may legitimately contain subtrees the user is
-   * denied — without this, searching from the root would list paths the user
-   * cannot open, which is a disclosure in itself.
-   */
+  /** `canRead` filters every result; listing a path the user cannot open is itself a disclosure. */
   async search(
     query: SearchQuery,
     canRead: (relativePath: string) => boolean,
@@ -63,7 +56,6 @@ export class Beacon {
       ...page,
       items: permitted,
       total: Math.max(permitted.length, page.total - denied),
-      // Only this page's denials are known, so the total is now a bound.
       approximate: true,
     };
   }
@@ -75,14 +67,16 @@ export class Beacon {
     try {
       return await this.everything.search(query, signal);
     } catch (error) {
-      // Everything went away between the probe and the query.
       this.lastProbe = {
         reachable: false,
         at: Date.now(),
         latencyMs: null,
         note: error instanceof Error ? error.message : String(error),
       };
-      this.logger.warn({ err: error }, 'Everything search failed — falling back to filesystem walk');
+      this.logger.warn(
+        { err: error },
+        'Everything search failed — falling back to filesystem walk',
+      );
       return this.walk.search(query, signal);
     }
   }
@@ -119,11 +113,7 @@ export class Beacon {
     }
   }
 
-  /**
-   * Probes are cached for the cooldown window and de-duplicated, so a burst of
-   * searches against a dead Everything costs one failed connection, not one per
-   * request.
-   */
+  /** Cached for the cooldown and de-duplicated, so a burst of searches costs one failed connection. */
   private async probeEverything(signal?: AbortSignal): Promise<ProbeRecord> {
     const cooldown = this.config.search.probeCooldownMs;
     if (this.lastProbe && Date.now() - this.lastProbe.at < cooldown) return this.lastProbe;

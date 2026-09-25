@@ -6,7 +6,7 @@ import { COMIC_EXTENSIONS, type ComicManifest } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
 import { HearthError } from '../../lib/errors.js';
-import { runWorker } from '../../lib/worker-pool.js';
+import { runWorker } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
 import type { ComicRequest, ComicResponse } from '../../workers/comic.worker.js';
 
@@ -17,14 +17,8 @@ interface CachedComic {
 
 const MANIFEST_FILENAME = 'pages.json';
 
-/**
- * Comic archives are unpacked once into a cache directory keyed by content
- * identity, and pages are served from there afterwards. Paging through a
- * 300-page volume then costs one file read per page instead of re-opening and
- * re-scanning the archive each time.
- */
+/** Comics are unpacked once into a cache keyed by path+mtime+size; pages are then plain file reads. */
 export class ComicService {
-  /** De-duplicates concurrent extraction of the same archive. */
   private readonly extracting = new Map<string, Promise<CachedComic>>();
 
   constructor(private readonly config: AppConfig) {}
@@ -51,11 +45,7 @@ export class ComicService {
     }
   }
 
-  /**
-   * Resolve one page to a filesystem path. The page name is checked against the
-   * manifest rather than trusted, so the cache key cannot be combined with a
-   * crafted page name to read an arbitrary file.
-   */
+  /** The page name is checked against the manifest, so a crafted name cannot read other files. */
   async pagePath(key: string, pageName: string): Promise<string> {
     assertCacheKey(key);
 

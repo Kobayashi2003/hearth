@@ -2,12 +2,6 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-/**
- * Small JSON persistence helpers for the handful of files Hearth keeps in
- * `data/`. Writes go to a sibling temp file and are renamed into place, so a
- * crash mid-write cannot truncate the previous good copy.
- */
-
 export function readJsonFile<T>(filePath: string): T | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
@@ -16,6 +10,7 @@ export function readJsonFile<T>(filePath: string): T | null {
   }
 }
 
+/** Written to a sibling temp file and renamed, so a crash cannot truncate the previous copy. */
 export async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<void> {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.tmp`;
@@ -23,10 +18,7 @@ export async function writeJsonFileAtomic(filePath: string, value: unknown): Pro
   await fsp.rename(tempPath, filePath);
 }
 
-/**
- * Serialises writes to one file so concurrent mutations cannot interleave and
- * lose an update. Reads are served from the in-memory copy.
- */
+/** One JSON file with an in-memory copy and serialised writes. */
 export class JsonDocument<T> {
   private cache: T | null = null;
   private pending: Promise<void> = Promise.resolve();
@@ -41,13 +33,12 @@ export class JsonDocument<T> {
     return this.cache;
   }
 
-  /** Applies `mutate` to the current value and persists the result. */
   async update(mutate: (current: T) => T): Promise<T> {
     const next = mutate(this.read());
     this.cache = next;
 
-    // The queue waits for the previous write either way: a transient disk error
-    // must not leave every later update rejecting against a poisoned chain.
+    // Chain on the previous write whether it failed or not, so one disk error
+    // does not poison every later update.
     const write = this.pending.then(
       () => writeJsonFileAtomic(this.filePath, next),
       () => writeJsonFileAtomic(this.filePath, next),
@@ -57,16 +48,56 @@ export class JsonDocument<T> {
     try {
       await write;
     } catch (error) {
-      // Disk still holds the previous value; drop the optimistic copy rather
-      // than serving reads that disagree with what was persisted.
-      this.invalidate();
+      this.cache = null;
       throw error;
     }
     return next;
   }
+}
 
-  /** Drops the in-memory copy so the next read re-reads from disk. */
-  invalidate(): void {
-    this.cache = null;
+/** One JSON document per user in a directory, named reversibly after the username. */
+export class UserDocuments<T> {
+  private readonly documents = new Map<string, JsonDocument<T>>();
+
+  constructor(
+    private readonly directory: string,
+    private readonly initial: () => T,
+  ) {}
+
+  for(username: string): JsonDocument<T> {
+    let document = this.documents.get(username);
+    if (!document) {
+      document = new JsonDocument<T>(
+        path.join(this.directory, `${encodeUsername(username)}.json`),
+        this.initial,
+      );
+      this.documents.set(username, document);
+    }
+    return document;
   }
+
+  async usernames(): Promise<string[]> {
+    let names: string[];
+    try {
+      names = await fsp.readdir(this.directory);
+    } catch {
+      return [];
+    }
+    return names
+      .filter(name => name.endsWith('.json'))
+      .map(name => decodeUsername(name.slice(0, -'.json'.length)));
+  }
+}
+
+export function encodeUsername(username: string): string {
+  return username.replace(
+    /[^A-Za-z0-9._-]/g,
+    character => `~${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
+export function decodeUsername(encoded: string): string {
+  return encoded.replace(/~([0-9a-f]{4})/g, (_, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
 }

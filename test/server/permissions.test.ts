@@ -11,7 +11,10 @@ import type { AppConfig } from '../../server/src/config/index.js';
 const temporaryFiles: string[] = [];
 
 function registryWith(rules: PermissionRule[]): PermissionRegistry {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-perm-')), 'permissions.json');
+  const file = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-perm-')),
+    'permissions.json',
+  );
   fs.writeFileSync(file, JSON.stringify({ rules }));
   temporaryFiles.push(file);
   return new PermissionRegistry({ auth: { permissionsFile: file } } as unknown as AppConfig);

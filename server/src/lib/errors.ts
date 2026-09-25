@@ -1,8 +1,4 @@
-/**
- * One error type for the whole server. Routes and services throw it; a single
- * Fastify error hook turns it into a response. The `message` is always safe to
- * show a user — absolute host paths never appear in it.
- */
+/** The one error type; `message` is always safe to show a user. */
 export type ErrorCode =
   | 'BAD_REQUEST'
   | 'UNAUTHORIZED'
@@ -65,7 +61,6 @@ export class HearthError extends Error {
   }
 }
 
-/** Node filesystem error codes mapped onto user-facing ones. */
 export function fromNodeError(error: unknown, fallbackMessage: string): HearthError {
   if (error instanceof HearthError) return error;
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
@@ -90,7 +85,6 @@ export function fromNodeError(error: unknown, fallbackMessage: string): HearthEr
   }
 }
 
-/** Thrown when the client goes away mid-operation; never logged as an error. */
 export function isAbortError(error: unknown): boolean {
   return (
     (error instanceof HearthError && error.code === 'ABORTED') ||

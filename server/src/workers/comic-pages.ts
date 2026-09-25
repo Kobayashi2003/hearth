@@ -1,38 +1,27 @@
 import path from 'node:path';
 
-/**
- * What counts as a page inside a comic archive, and in what order.
- *
- * Shared by the full extraction worker and the cover worker so the two can
- * never disagree about which entry is page one — a cover that does not match
- * the first page you are shown would be worse than no cover at all.
- */
+import type { IZipEntry } from 'adm-zip';
+
+import { decodeText, detectEncoding } from '../lib/charset.js';
+
+/** Shared by the comic and cover workers so they never disagree about which entry is page one. */
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif']);
 
 export const RAR_EXTENSIONS = new Set(['.rar', '.cbr']);
 
-/** Natural order, so page 10 follows page 9 rather than page 1. */
 export const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 export function isPage(entryName: string): boolean {
   const base = path.basename(entryName);
-  // Skip macOS resource forks, which otherwise appear as duplicate pages.
   if (base.startsWith('.') || entryName.includes('__MACOSX/')) return false;
   return IMAGE_EXTENSIONS.has(path.extname(base).toLowerCase());
 }
 
 /**
- * Which entry an EPUB declares as its cover, resolved to a path inside the
- * archive — or null if it declares none.
- *
- * Matched with targeted expressions rather than a parser: these two elements
- * have a fixed shape, and pulling in an XML dependency for four attributes is
- * not worth the weight.
- *
- * Pure, and separated from the archive reading around it, because the resolution
- * rules are where this goes wrong: hrefs are relative to the package file rather
- * than the archive root, and EPUB 2 and 3 declare the cover in different places.
+ * The cover an EPUB declares, as a path inside the archive. Regexes rather than
+ * an XML parser: the elements have a fixed shape. Hrefs are relative to the OPF,
+ * and EPUB 2 and 3 declare the cover differently.
  */
 export function coverHrefFrom(
   containerXml: string,
@@ -44,7 +33,6 @@ export function coverHrefFrom(
   const opf = readEntry(opfPath);
   if (!opf) return null;
 
-  // Hrefs inside the package are relative to the package file, not to the root.
   const base = path.posix.dirname(opfPath);
   const resolve = (target: string) =>
     base === '.' ? target : path.posix.normalize(`${base}/${target}`);
@@ -65,19 +53,13 @@ export function coverHrefFrom(
   return itemHref ? resolve(decodeURIComponent(itemHref)) : null;
 }
 
-/**
- * Width and height from the file header alone — no decoding.
- *
- * Only the three formats that actually appear as comic pages are handled; a
- * fourth would simply be treated as unmeasurable and accepted as-is.
- */
+/** Dimensions from the header alone (PNG, JPEG, WebP); anything else is unmeasurable. */
 export function imageSize(buffer: Buffer): { width: number; height: number } | null {
-  // PNG: IHDR is always the first chunk, at a fixed offset.
   if (buffer.length > 24 && buffer.readUInt32BE(0) === 0x89504e47) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   }
 
-  // JPEG: walk the segment chain to the frame header that carries the size.
+  // JPEG: walk the segments to the frame header.
   if (buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
     let offset = 2;
     while (offset + 9 < buffer.length) {
@@ -93,7 +75,6 @@ export function imageSize(buffer: Buffer): { width: number; height: number } | n
     return null;
   }
 
-  // WebP: the dimensions sit in the VP8/VP8L/VP8X chunk after the RIFF header.
   if (buffer.length > 30 && buffer.toString('ascii', 8, 12) === 'WEBP') {
     const chunk = buffer.toString('ascii', 12, 16);
     if (chunk === 'VP8X') {
@@ -111,4 +92,37 @@ export function imageSize(buffer: Buffer): { width: number; height: number } | n
   }
 
   return null;
+}
+
+/** Rethrown from a worker's promise so the parent sees an `error` event instead of a silent exit. */
+export function rethrow(error: unknown): never {
+  throw error;
+}
+
+/** General-purpose bit 11: the entry name is UTF-8. */
+const UTF8_NAME_FLAG = 0x800;
+
+/**
+ * Entry names as the archive's author saw them. adm-zip decodes every name as
+ * UTF-8, but a zip made on a Chinese or Japanese Windows stores unflagged names
+ * in GBK or Shift_JIS. The encoding is detected once across all unflagged names
+ * of the archive: one short name is ambiguous, a whole archive rarely is.
+ */
+export function zipEntryNames(entries: readonly IZipEntry[]): Map<IZipEntry, string> {
+  const isUtf8 = (entry: IZipEntry) => (entry.header.flags & UTF8_NAME_FLAG) !== 0;
+  const legacy = entries.filter(entry => !isUtf8(entry));
+  const encoding =
+    legacy.length > 0
+      ? detectEncoding(
+          Buffer.concat(legacy.flatMap(entry => [entry.rawEntryName, Buffer.from('/')])),
+        )
+      : 'utf8';
+  return new Map(
+    entries.map(entry => [
+      entry,
+      isUtf8(entry)
+        ? entry.rawEntryName.toString('utf8')
+        : decodeText(entry.rawEntryName, encoding),
+    ]),
+  );
 }

@@ -1,22 +1,16 @@
 import crypto from 'node:crypto';
 
 /**
- * Short-lived HMAC token authorising one path for one user. Stream URLs are put
- * into `<video src>` and `<img src>` attributes, which cannot carry an
- * Authorization header, and a media element started before a session refresh
- * must keep working — so streams authenticate with this instead of the cookie.
- *
- * The token is bound to a single path, so possessing one grants nothing else.
+ * Short-lived HMAC token authorising one path for one user, for URLs handed to
+ * elements or apps that cannot send the session cookie.
  */
 export interface MediaTokenPayload {
-  /** Username the token was issued to. */
   sub: string;
-  /** Root-relative path the token authorises. */
   path: string;
-  /** Root the path is relative to; a root switch invalidates outstanding tokens. */
+  /** A root switch invalidates outstanding tokens. */
   root: string;
-  /** Expiry, seconds since epoch. */
-  exp: number;
+  /** Null when tokens never expire. */
+  exp: number | null;
 }
 
 export class MediaTokenIssuer {
@@ -25,21 +19,26 @@ export class MediaTokenIssuer {
     private readonly ttlSeconds: number,
   ) {}
 
-  issue(username: string, relativePath: string, rootId: string): { token: string; expiresAt: Date } {
+  issue(
+    username: string,
+    relativePath: string,
+    rootId: string,
+  ): { token: string; expiresAt: number } {
     const payload: MediaTokenPayload = {
       sub: username,
       path: relativePath,
       root: rootId,
-      exp: Math.floor(Date.now() / 1000) + this.ttlSeconds,
+      exp: Number.isFinite(this.ttlSeconds)
+        ? Math.floor(Date.now() / 1000) + this.ttlSeconds
+        : null,
     };
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
     return {
       token: `${body}.${this.sign(body)}`,
-      expiresAt: new Date(payload.exp * 1000),
+      expiresAt: payload.exp === null ? Number.POSITIVE_INFINITY : payload.exp * 1000,
     };
   }
 
-  /** Returns the payload only when the signature, expiry, and root all hold. */
   verify(token: string, rootId: string): MediaTokenPayload | null {
     const separator = token.lastIndexOf('.');
     if (separator < 0) return null;
@@ -53,7 +52,7 @@ export class MediaTokenIssuer {
 
     try {
       const payload = JSON.parse(Buffer.from(body, 'base64url').toString()) as MediaTokenPayload;
-      if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+      if (payload.exp !== null && payload.exp < Math.floor(Date.now() / 1000)) return null;
       if (payload.root !== rootId) return null;
       return payload;
     } catch {

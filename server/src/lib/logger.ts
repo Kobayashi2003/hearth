@@ -5,10 +5,7 @@ import pino, { type Logger } from 'pino';
 
 import type { AppConfig } from '../config/index.js';
 
-/**
- * Structured logging. Console output is human-readable in development; the file
- * stream is line-delimited JSON rotated daily so it can be tailed and shipped.
- */
+/** Console plus a daily-rotated JSON log file. */
 export function createLogger(config: AppConfig): Logger {
   const targets: pino.TransportTargetOptions[] = [
     { target: 'pino/file', level: config.logging.level, options: { destination: 1 } },
@@ -33,8 +30,6 @@ export function createLogger(config: AppConfig): Logger {
     {
       name: 'hearth-server',
       level: config.logging.level,
-      // Absolute host paths must never reach a client; they are fine in logs,
-      // but credentials and tokens are not.
       redact: {
         paths: ['req.headers.cookie', 'req.headers.authorization', '*.password', '*.token'],
         censor: '[redacted]',

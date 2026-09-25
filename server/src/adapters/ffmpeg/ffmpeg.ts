@@ -11,10 +11,8 @@ import {
 import { HearthError } from '../../lib/errors.js';
 
 /**
- * ffmpeg and ffprobe are driven by spawning them directly rather than through a
- * wrapper library, because the one thing this adapter must get right is child
- * process lifetime: an abandoned transcode holds a CPU core and a file handle
- * until it is killed, and every path out of here kills its child.
+ * ffmpeg/ffprobe spawned directly: the thing that must be right is child
+ * lifetime, and every path out of here kills its child.
  */
 export interface FfmpegOptions {
   ffmpegPath: string;
@@ -40,7 +38,7 @@ interface ProbeStream {
 }
 
 interface ProbePayload {
-  format?: { duration?: string };
+  format?: { duration?: string; format_name?: string };
   streams?: ProbeStream[];
 }
 
@@ -74,41 +72,50 @@ export class FfmpegAdapter {
       height: video?.height ?? null,
       videoCodec: video?.codec_name ?? null,
       audioCodec: audio[0]?.codec_name ?? null,
-      browserPlayable: isBrowserPlayable(video?.codec_name, audio[0]?.codec_name),
+      browserPlayable: isBrowserPlayable(
+        payload.format?.format_name,
+        video?.codec_name,
+        audio[0]?.codec_name,
+      ),
       audioTracks: audio.map(toTrack),
       subtitleTracks: subtitles.map(toTrack),
-      // `toTrack` reports the ordinal within the kind, which is what the
-      // `-map 0:a:N` and `-map 0:s:N` selectors below take.
     };
   }
 
-  /**
-   * Re-encode to fragmented MP4 on stdout. Fragmented output can start playing
-   * before the encode finishes, which is what makes seeking into a long file
-   * feel immediate.
-   */
+  /** Fragmented MP4 on stdout, playable before the encode finishes. */
   transcode(filePath: string, options: TranscodeOptions, signal: AbortSignal): Readable {
     const args: string[] = [];
 
-    // Placing -ss before -i seeks by keyframe index instead of decoding to the
-    // offset, which is the difference between instant and minutes.
+    // -ss before -i seeks by keyframe instead of decoding up to the offset.
     if (options.startSeconds && options.startSeconds > 0) {
       args.push('-ss', options.startSeconds.toFixed(3));
     }
 
     args.push(
-      '-i', filePath,
-      '-map', '0:v:0?',
-      '-map', `0:a:${options.audioTrack ?? 0}?`,
-      '-c:v', 'libx264',
-      '-preset', this.options.preset,
-      '-crf', String(this.options.crf),
-      '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac',
-      '-b:a', '160k',
-      '-ac', '2',
-      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-      '-f', 'mp4',
+      '-i',
+      filePath,
+      '-map',
+      '0:v:0?',
+      '-map',
+      `0:a:${options.audioTrack ?? 0}?`,
+      '-c:v',
+      'libx264',
+      '-preset',
+      this.options.preset,
+      '-crf',
+      String(this.options.crf),
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '160k',
+      '-ac',
+      '2',
+      '-movflags',
+      'frag_keyframe+empty_moov+default_base_moof',
+      '-f',
+      'mp4',
       'pipe:1',
     );
 
@@ -116,7 +123,7 @@ export class FfmpegAdapter {
     return child.stdout;
   }
 
-  /** Extract one subtitle track as WebVTT, which is the only format a browser takes. */
+  /** WebVTT is the only subtitle format a browser takes. */
   async extractSubtitle(
     filePath: string,
     trackIndex: number,
@@ -129,7 +136,6 @@ export class FfmpegAdapter {
     );
   }
 
-  /** Grab a single frame as a JPEG, for a video thumbnail. */
   async extractFrame(
     filePath: string,
     atSeconds: number,
@@ -139,20 +145,26 @@ export class FfmpegAdapter {
     return this.collectBinary(
       this.options.ffmpegPath,
       [
-        '-v', 'quiet',
-        '-ss', atSeconds.toFixed(2),
-        '-i', filePath,
-        '-frames:v', '1',
-        '-vf', `scale=${width}:-2`,
-        '-f', 'image2',
-        '-c:v', 'mjpeg',
+        '-v',
+        'quiet',
+        '-ss',
+        atSeconds.toFixed(2),
+        '-i',
+        filePath,
+        '-frames:v',
+        '1',
+        '-vf',
+        `scale=${width}:-2`,
+        '-f',
+        'image2',
+        '-c:v',
+        'mjpeg',
         'pipe:1',
       ],
       signal,
     );
   }
 
-  /** Spawn a child whose life is tied to `signal`; aborting kills it immediately. */
   private spawnBound(
     command: string,
     args: string[],
@@ -170,7 +182,6 @@ export class FfmpegAdapter {
       child.once('close', () => signal.removeEventListener('abort', kill));
     }
 
-    // If the consumer stops reading (a closed socket), the child must go too.
     child.stdout.once('close', kill);
     child.once('error', kill);
 
@@ -188,7 +199,6 @@ export class FfmpegAdapter {
 
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => {
-      // Bounded: a failing ffmpeg can produce a lot of diagnostics.
       if (stderr.length < 4096) stderr += chunk.toString();
     });
 
@@ -199,7 +209,8 @@ export class FfmpegAdapter {
       child.once('close', code => {
         if (code === 0) resolve(Buffer.concat(chunks));
         else if (signal?.aborted) reject(new HearthError('ABORTED', 'The request was cancelled'));
-        else reject(HearthError.badRequest(`Media processing failed: ${stderr.trim().slice(0, 200)}`));
+        else
+          reject(HearthError.badRequest(`Media processing failed: ${stderr.trim().slice(0, 200)}`));
       });
     });
   }
@@ -209,11 +220,7 @@ export class FfmpegAdapter {
   }
 }
 
-/**
- * `index` is the ordinal within the track's own kind — the first audio track is
- * 0 regardless of its global stream index — because that is what ffmpeg's
- * `-map 0:a:N` selector and the client's track picker both use.
- */
+/** `index` is the ordinal within its kind, matching ffmpeg's `-map 0:a:N`. */
 function toTrack(stream: ProbeStream, ordinal: number): MediaTrack {
   return {
     index: ordinal,
@@ -223,7 +230,21 @@ function toTrack(stream: ProbeStream, ordinal: number): MediaTrack {
   };
 }
 
-function isBrowserPlayable(videoCodec: string | undefined, audioCodec: string | undefined): boolean {
+/**
+ * ffprobe's format names for the containers a browser opens. Matroska is
+ * included because Chromium plays most .mkv files; where it cannot, the client
+ * falls back to transcoding. AVI, MPEG-TS, FLV and ASF never play natively,
+ * whatever codec they carry.
+ */
+const BROWSER_CONTAINERS = ['mp4', 'mov', 'webm', 'matroska', 'ogg'];
+
+export function isBrowserPlayable(
+  formatName: string | undefined,
+  videoCodec: string | undefined,
+  audioCodec: string | undefined,
+): boolean {
+  const containers = (formatName ?? '').split(',');
+  if (!containers.some(name => BROWSER_CONTAINERS.includes(name))) return false;
   const videoOk = !videoCodec || BROWSER_VIDEO_CODECS.has(videoCodec);
   const audioOk = !audioCodec || BROWSER_AUDIO_CODECS.has(audioCodec);
   return videoOk && audioOk;
