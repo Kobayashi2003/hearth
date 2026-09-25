@@ -49,8 +49,8 @@ export function CommandPalette({
       }}
     >
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)]" />
-        <RadixDialog.Content className="animate-rise fixed left-1/2 top-[14vh] z-50 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-line bg-surface shadow-float">
+        <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
+        <RadixDialog.Content className="animate-rise data-[state=closed]:animate-sink fixed left-1/2 top-[14vh] z-50 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-line bg-surface shadow-float">
           <RadixDialog.Title className="sr-only">Commands</RadixDialog.Title>
           <RadixDialog.Description className="sr-only">
             Type to find a command, Enter to run it.

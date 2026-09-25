@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 export const menuSurface =
-  'z-50 min-w-44 rounded-xl border border-line bg-surface p-1 text-[13px] shadow-float animate-rise';
+  'z-50 min-w-44 rounded-xl border border-line bg-surface p-1 text-[13px] shadow-float animate-rise data-[state=closed]:animate-sink';
 export const menuItem =
   'flex h-8 w-full select-none items-center gap-2.5 rounded-lg px-2.5 text-left text-ink outline-none ' +
   'data-[highlighted]:bg-sunken hover:bg-sunken data-[disabled]:opacity-40 [&_svg]:size-4 [&_svg]:text-ink-3';
@@ -61,19 +61,25 @@ export function MenuItem({
   );
 }
 
+/**
+ * One of several options. The menu stays open by default so related settings
+ * can be changed together; `closes` is for a choice that moves you elsewhere.
+ */
 export function MenuChoice({
   checked,
   children,
   onSelect,
+  closes = false,
 }: {
   checked: boolean;
   children: ReactNode;
   onSelect: () => void;
+  closes?: boolean;
 }) {
   return (
     <Dropdown.Item
       onSelect={event => {
-        event.preventDefault();
+        if (!closes) event.preventDefault();
         onSelect();
       }}
       className={menuItem}

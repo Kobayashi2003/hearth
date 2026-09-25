@@ -20,7 +20,7 @@ export interface ListingProps {
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }
 
-const COLUMNS = 'grid-cols-[minmax(0,1fr)_5.5rem] md:grid-cols-[minmax(0,1fr)_9rem_6rem]';
+export const COLUMNS = 'grid-cols-[minmax(0,1fr)_5.5rem] md:grid-cols-[minmax(0,1fr)_9rem_6rem]';
 
 export function FileList({
   entries,
@@ -109,6 +109,7 @@ export function FileList({
                   entry={entry}
                   width={thumbWidth}
                   folderCovers={folderCovers}
+                  badge="list"
                   className="size-[calc(var(--row)-10px)] shrink-0 rounded-md"
                   iconClassName="size-[18px]"
                 />

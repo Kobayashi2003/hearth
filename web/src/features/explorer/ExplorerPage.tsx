@@ -35,7 +35,7 @@ import {
 } from '@/features/transfer/uploads';
 import { UploadTray } from '@/features/transfer/UploadTray';
 import { Button } from '@/ui/Button';
-import { Centered, Notice, Spinner } from '@/ui/Feedback';
+import { Notice } from '@/ui/Feedback';
 import { actionsFor } from './actions';
 import { CommandPalette, type Command } from './CommandPalette';
 import { ContextMenu } from './ContextMenu';
@@ -44,6 +44,7 @@ import { useEntryEvents } from './entryEvents';
 import { ExplorerHeader } from './ExplorerHeader';
 import { FileGrid } from './FileGrid';
 import { FileList, useRowHeight } from './FileList';
+import { ListingSkeleton } from './ListingSkeleton';
 import { SelectionBar } from './SelectionBar';
 import { useExplorer } from './useExplorer';
 import { useFileOperations } from './useFileOperations';
@@ -371,9 +372,12 @@ export function ExplorerPage() {
         }}
       >
         {explorer.isPending ? (
-          <Centered className="py-20">
-            <Spinner />
-          </Centered>
+          <ListingSkeleton
+            view={isGrid ? 'grid' : 'list'}
+            tileSize={preferences.gridSize}
+            rowHeight={rowHeight}
+            scrollRef={scrollRef}
+          />
         ) : explorer.error ? (
           <Notice
             icon={<TriangleAlert />}

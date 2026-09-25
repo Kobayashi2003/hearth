@@ -5,24 +5,17 @@ import { cn } from '@/lib/cn';
 import { EntryVisual, ProgressBar } from './EntryVisual';
 import type { ListingProps } from './FileList';
 
-const GAP = 14;
-const PADDING = 24;
+export const GAP = 14;
+export const PADDING = 24;
 /** Tiles are book-shaped: most of what earns a cover here is comics, novels and albums. */
-const ASPECT = 4 / 3;
+export const ASPECT = 4 / 3;
 const CAPTION = 44;
 
-export function FileGrid({
-  entries,
-  selected,
-  focusedIndex,
-  bottomInset,
-  folderCovers,
-  progressFor,
-  eventsFor,
-  scrollRef,
-  tileSize,
-  onColumns,
-}: ListingProps & { tileSize: number; onColumns: (columns: number) => void }) {
+/** Columns and tile size for the scroll container's width; shared with the loading skeleton. */
+export function useGridLayout(
+  scrollRef: React.RefObject<HTMLDivElement | null>,
+  tileSize: number,
+): { columns: number; tileWidth: number; rowHeight: number } {
   const [width, setWidth] = useState(0);
 
   useLayoutEffect(() => {
@@ -37,7 +30,22 @@ export function FileGrid({
   // Rounded, so tiles stay within about half a step of the preferred size either way.
   const columns = Math.max(2, Math.round((width - PADDING * 2 + GAP) / (tileSize + GAP)));
   const tileWidth = width > 0 ? (width - PADDING * 2 - GAP * (columns - 1)) / columns : tileSize;
-  const rowHeight = tileWidth * ASPECT + CAPTION + GAP;
+  return { columns, tileWidth, rowHeight: tileWidth * ASPECT + CAPTION + GAP };
+}
+
+export function FileGrid({
+  entries,
+  selected,
+  focusedIndex,
+  bottomInset,
+  folderCovers,
+  progressFor,
+  eventsFor,
+  scrollRef,
+  tileSize,
+  onColumns,
+}: ListingProps & { tileSize: number; onColumns: (columns: number) => void }) {
+  const { columns, tileWidth, rowHeight } = useGridLayout(scrollRef, tileSize);
   const rows = Math.ceil(entries.length / columns);
 
   useEffect(() => onColumns(columns), [columns, onColumns]);
@@ -104,6 +112,7 @@ export function FileGrid({
                       entry={entry}
                       width={thumbWidth}
                       folderCovers={folderCovers}
+                      badge="grid"
                       className="absolute inset-0 transition-transform duration-300 group-hover:scale-[1.02]"
                       iconClassName="size-10"
                     />

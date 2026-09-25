@@ -111,16 +111,30 @@ export class ThumbnailService {
     return fsp.readFile(target);
   }
 
+  /**
+   * An HTTP validator for the thumbnail of `target`: the disk cache key, which
+   * already changes with the absolute path (so two roots never share one), the
+   * file's mtime and size, and the requested dimensions.
+   */
+  async etag(target: SafePath, request: ThumbnailRequest): Promise<string> {
+    const stats = await fsp.stat(target);
+    return `"${this.keyFor(target, stats.mtimeMs, stats.size, request)}"`;
+  }
+
+  private keyFor(target: string, mtimeMs: number, size: number, request: ThumbnailRequest): string {
+    return crypto
+      .createHash('sha1')
+      .update(`${target}|${mtimeMs}|${size}|${request.width}|${request.quality}`)
+      .digest('hex');
+  }
+
   private cachePathFor(
     target: string,
     mtimeMs: number,
     size: number,
     request: ThumbnailRequest,
   ): string {
-    const key = crypto
-      .createHash('sha1')
-      .update(`${target}|${mtimeMs}|${size}|${request.width}|${request.quality}`)
-      .digest('hex');
+    const key = this.keyFor(target, mtimeMs, size, request);
     return path.join(this.config.media.thumbnailCacheDirectory, key.slice(0, 2), `${key}.webp`);
   }
 }

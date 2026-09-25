@@ -18,6 +18,18 @@ const COLLECTIONS: ReadonlyArray<[MediaKind, string, typeof Image]> = [
   ['audio', 'Music', Music],
 ];
 
+/** Query families whose keys are paths inside the active root. */
+const ROOT_SCOPED = new Set([
+  'listing',
+  'archive',
+  'comic',
+  'content',
+  'html',
+  'office',
+  'probe',
+  'trash',
+]);
+
 export function Sidebar({
   onNavigate,
   onSettings,
@@ -48,9 +60,21 @@ export function Sidebar({
 
   const switchRoot = async (id: string) => {
     try {
-      await api.switchRoot(id);
-      await queryClient.invalidateQueries();
-      go({ path: '' });
+      queryClient.setQueryData(['roots'], await api.switchRoot(id));
+      // Listings and file contents are keyed by root-relative path, so the old
+      // root's would pass for the new one's: drop them rather than refetch, and
+      // leave the old path before anything asks for it again.
+      queryClient.removeQueries({
+        predicate: query => ROOT_SCOPED.has(String(query.queryKey[0])),
+      });
+      // A collection is not tied to a root: keep showing it, from the new one.
+      go({ path: '', type: search.type });
+      await queryClient.invalidateQueries({
+        predicate: query => {
+          const family = String(query.queryKey[0]);
+          return family !== 'roots' && !ROOT_SCOPED.has(family);
+        },
+      });
     } catch (error) {
       toast.error('The root could not be switched', {
         description: error instanceof Error ? error.message : undefined,
@@ -87,7 +111,10 @@ export function Sidebar({
             <MenuChoice
               key={root.id}
               checked={root.active}
-              onSelect={() => void switchRoot(root.id)}
+              closes
+              onSelect={() => {
+                if (!root.active) void switchRoot(root.id);
+              }}
             >
               {root.label}
             </MenuChoice>

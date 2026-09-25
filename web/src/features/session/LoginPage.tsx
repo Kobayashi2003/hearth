@@ -70,7 +70,7 @@ export function LoginPage() {
             disabled={isSubmitting}
             className="mt-2 h-10 justify-center"
           >
-            {isSubmitting ? <Spinner className="size-4" /> : 'Sign in'}
+            {isSubmitting ? <Spinner className="size-4" immediate /> : 'Sign in'}
           </Button>
           {adminOnly ? (
             <p className="text-[12.5px] text-ink-3">Only administrators can sign in right now.</p>

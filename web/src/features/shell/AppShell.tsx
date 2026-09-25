@@ -79,8 +79,8 @@ function Frame({ children }: { children: ReactNode }) {
         ) : (
           <RadixDialog.Root open={navOpen} onOpenChange={setNavOpen}>
             <RadixDialog.Portal>
-              <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)]" />
-              <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-bg shadow-float outline-none data-[state=open]:animate-[rise_160ms]">
+              <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
+              <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-bg shadow-float outline-none animate-slide-in data-[state=closed]:animate-slide-out">
                 <RadixDialog.Title className="sr-only">Places</RadixDialog.Title>
                 <RadixDialog.Description className="sr-only">
                   Folders and collections

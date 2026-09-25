@@ -2,13 +2,18 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/cn';
 
-export function Spinner({ className }: { className?: string }) {
+/**
+ * Waits 200ms before showing, so a fast load never flickers. `immediate` is for
+ * a spinner answering a click, where a blank moment would look like nothing happened.
+ */
+export function Spinner({ className, immediate }: { className?: string; immediate?: boolean }) {
   return (
     <span
       role="status"
       aria-label="Loading"
       className={cn(
-        'inline-block size-5 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60',
+        immediate ? 'animate-spin' : 'animate-spinner',
+        'inline-block size-5 rounded-full border-2 border-current border-t-transparent opacity-60',
         className,
       )}
     />

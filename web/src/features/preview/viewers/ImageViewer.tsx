@@ -41,6 +41,24 @@ export default function ImageViewer({ entry }: ViewerProps) {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
 
+  // Warm the neighbours so stepping through a folder of pictures shows the next
+  // one at once; the browser reuses an image already decoded in this page.
+  const gallery = current?.gallery;
+  useEffect(() => {
+    if (!gallery || gallery.length < 2) return;
+    const index = gallery.findIndex(item => item.path === entry.path);
+    if (index < 0) return;
+    const neighbours = [gallery[(index + 1) % gallery.length], gallery.at(index - 1)];
+    // Not cancelled on cleanup: stepping on is exactly when the preload pays off.
+    for (const item of neighbours) {
+      // A PSD preview is rendered on demand by a server worker; not worth guessing at.
+      if (!item || item.path === entry.path || extensionOf(item.path) === '.psd') continue;
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = sourceFor(item.path);
+    }
+  }, [gallery, entry.path]);
+
   /** Zoom by `factor` keeping the point under (clientX, clientY) still. */
   const zoomAt = useCallback((factor: number, clientX?: number, clientY?: number) => {
     setView(previous => {
@@ -186,8 +204,9 @@ export default function ImageViewer({ entry }: ViewerProps) {
           draggable={false}
           onLoad={() => setStatus('ready')}
           onError={() => setStatus('error')}
-          className="absolute inset-0 m-auto max-h-full max-w-full object-contain transition-transform duration-75"
+          className="absolute inset-0 m-auto max-h-full max-w-full object-contain"
           style={{
+            transition: 'transform 75ms, opacity 150ms ease-out',
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale}) rotate(${view.rotation}deg)`,
             opacity: status === 'ready' ? 1 : 0,
           }}

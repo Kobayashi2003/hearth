@@ -51,8 +51,8 @@ export function SettingsDialog({
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)]" />
-        <RadixDialog.Content className="animate-rise fixed inset-0 z-50 flex flex-col bg-bg outline-none md:inset-auto md:left-1/2 md:top-1/2 md:h-[min(40rem,86vh)] md:w-[min(56rem,92vw)] md:-translate-x-1/2 md:-translate-y-1/2 md:flex-row md:overflow-hidden md:rounded-2xl md:border md:border-line md:shadow-float">
+        <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
+        <RadixDialog.Content className="animate-rise data-[state=closed]:animate-sink fixed inset-0 z-50 flex flex-col bg-bg outline-none md:inset-auto md:left-1/2 md:top-1/2 md:h-[min(40rem,86vh)] md:w-[min(56rem,92vw)] md:-translate-x-1/2 md:-translate-y-1/2 md:flex-row md:overflow-hidden md:rounded-2xl md:border md:border-line md:shadow-float">
           <RadixDialog.Description className="sr-only">
             Preferences and administration
           </RadixDialog.Description>

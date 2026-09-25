@@ -104,7 +104,25 @@ export function PreviewOverlay() {
     [closeAll, step, index, total, isFullscreen, toggleFullscreen],
   );
 
-  if (!current || kind === 'none') return null;
+  // Closing fades out an empty stage; the viewer itself unmounts at once, so
+  // playback stops (or hands off to the dock) exactly when it did before.
+  const isOpen = current !== null && kind !== 'none';
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  const [leaving, setLeaving] = useState(false);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    setLeaving(!isOpen);
+  }
+
+  if (!current || kind === 'none') {
+    return leaving ? (
+      <div
+        aria-hidden
+        className="animate-fade-out pointer-events-none fixed inset-0 z-50 bg-stage"
+        onAnimationEnd={() => setLeaving(false)}
+      />
+    ) : null;
+  }
   const Viewer = VIEWERS[kind];
 
   return (

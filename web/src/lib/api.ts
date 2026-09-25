@@ -208,7 +208,9 @@ export const mediaUrls = {
   transcode: (path: string, options: { audioTrack?: number; start?: number } = {}) =>
     apiUrl('/media/transcode', { path, ...options }),
   subtitle: (path: string, track: number) => apiUrl('/media/subtitle', { path, track }),
-  thumbnail: (path: string, width = 320) => apiUrl('/thumbnail', { path, width }),
+  /** `version` (mtime and size) lets the browser keep a thumbnail until the file changes. */
+  thumbnail: (path: string, width = 320, version?: string) =>
+    apiUrl('/thumbnail', { path, width, v: version }),
   download: (path: string) => apiUrl('/download', { path }),
   zip: (token: string) => apiUrl(`/download/zip/${token}`),
   comicPage: (key: string, page: string) => apiUrl(`/comic/${key}/${encodeURIComponent(page)}`),

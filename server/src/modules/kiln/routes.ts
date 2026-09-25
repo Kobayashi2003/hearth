@@ -152,7 +152,9 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       },
     );
 
-    app.get<{ Querystring: { path: string; token?: string; width?: number; quality?: number } }>(
+    app.get<{
+      Querystring: { path: string; token?: string; width?: number; quality?: number; v?: string };
+    }>(
       '/thumbnail',
       {
         schema: {
@@ -167,6 +169,8 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
                 default: 320,
               },
               quality: { type: 'integer', minimum: 1, maximum: 100, default: 72 },
+              // The client's version of the file (mtime and size); only a cache key.
+              v: { type: 'string', maxLength: 64 },
             },
           },
         },
@@ -183,18 +187,24 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
         // "Nothing to show" is an answer, not an error; the client keeps its icon.
         if (!source) return reply.code(204).send();
 
-        const thumbnail = await thumbnails.render(
-          source,
-          { width: request.query.width ?? 320, quality: request.query.quality ?? 72 },
-          abortSignalOf(request),
-        );
+        // A versioned URL (from a listing) can be kept; a bare one must revalidate,
+        // or a file replaced in place, or the same path in another root, would
+        // keep showing the old picture.
+        const size = { width: request.query.width ?? 320, quality: request.query.quality ?? 72 };
+        const etag = await thumbnails.etag(source, size);
+        reply
+          .header('ETag', etag)
+          .header(
+            'Cache-Control',
+            request.query.v ? 'private, max-age=86400, immutable' : 'private, no-cache',
+          );
+        if (request.headers['if-none-match'] === etag) return reply.code(304).send();
+
+        const thumbnail = await thumbnails.render(source, size, abortSignalOf(request));
 
         if (!thumbnail) return reply.code(204).send();
 
-        return reply
-          .header('Content-Type', 'image/webp')
-          .header('Cache-Control', 'private, max-age=86400, immutable')
-          .send(thumbnail);
+        return reply.header('Content-Type', 'image/webp').send(thumbnail);
       },
     );
 

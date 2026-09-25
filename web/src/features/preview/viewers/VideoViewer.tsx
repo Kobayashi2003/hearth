@@ -243,8 +243,13 @@ export default function VideoViewer({ entry }: ViewerProps) {
             body={failure}
           />
         ) : state.waiting ? (
-          <Centered className="pointer-events-none absolute inset-0">
+          <Centered className="pointer-events-none absolute inset-0 flex-col gap-3">
             <Spinner className="size-8" />
+            {transcoding ? (
+              <p className="animate-appear px-6 text-center text-[13px] text-stage-ink/70">
+                Converting for this browser. The first seconds take a moment.
+              </p>
+            ) : null}
           </Centered>
         ) : null}
       </div>

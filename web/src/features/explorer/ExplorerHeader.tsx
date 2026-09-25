@@ -177,9 +177,11 @@ export function ExplorerHeader({
           {title}
         </h1>
         <p className="tabular pb-1 text-[13px] text-ink-3">
-          {isSearching
-            ? `${total.toLocaleString()} found ${search.recursive ? 'in' : 'directly in'} ${segments.at(-1) ?? rootLabel}`
-            : `${total.toLocaleString()} ${total === 1 ? 'item' : 'items'}`}
+          {explorer.isPending
+            ? ' ' // no count yet; keeps the line so nothing shifts when it arrives
+            : isSearching
+              ? `${total.toLocaleString()} found ${search.recursive ? 'in' : 'directly in'} ${segments.at(-1) ?? rootLabel}`
+              : `${total.toLocaleString()} ${total === 1 ? 'item' : 'items'}`}
         </p>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 pb-0.5">
