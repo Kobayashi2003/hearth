@@ -1,89 +1,110 @@
-import { createContext, use, useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import * as RadixDialog from '@radix-ui/react-dialog';
+import { useQuery } from '@tanstack/react-query';
 
-import { Spinner } from '@/components/ui/primitives';
-import { LoginScreen } from '@/features/auth/LoginScreen';
-import { useSession } from '@/features/auth/SessionProvider';
-import { usePreferences, type Preferences } from '@/features/hob/usePreferences';
-import { mediaUrls } from '@/lib/api';
-import { PreviewProvider } from '@/features/mantel/PreviewProvider';
-import { PreviewLayer } from '@/features/mantel/PreviewLayer';
-import { BottomTrayProvider } from './BottomTray';
+import { LogoMark } from '@/brand/Logo';
+import { api, mediaUrls } from '@/lib/api';
+import { useIsWide } from '@/hooks/useMediaQuery';
+import { LoginPage } from '@/features/session/LoginPage';
+import { useSession } from '@/features/session/session';
+import { PreferencesProvider, usePreferences } from '@/features/preferences/preferences';
+import { PlayerProvider } from '@/features/preview/audio/PlayerProvider';
+import { MiniPlayer } from '@/features/preview/audio/MiniPlayer';
+import { PreviewOverlay } from '@/features/preview/PreviewOverlay';
+import { PreviewProvider } from '@/features/preview/PreviewProvider';
+import { SettingsDialog } from '@/features/settings/SettingsDialog';
+import { DockProvider, DockSlot } from './Dock';
+import { ShellContext } from './shell-context';
+import { Sidebar } from './Sidebar';
 
-interface ShellValue {
-  preferences: Preferences;
-  updatePreference: ReturnType<typeof usePreferences>['update'];
-}
-
-const ShellContext = createContext<ShellValue | null>(null);
-
-export function useShell(): ShellValue {
-  const value = use(ShellContext);
-  if (!value) throw new Error('useShell must be used inside AppShell');
-  return value;
-}
-
-/**
- * The application frame: authentication gate, preferences, wallpaper, and the
- * preview layer.
- *
- * The preview layer is mounted here, above the routed content, so a pinned
- * audio player keeps playing while the user navigates — its media element never
- * unmounts, which is the fix for playback stopping when a pinned preview closed.
- */
 export function AppShell({ children }: { children: ReactNode }) {
   const { identity, isLoading } = useSession();
-  const { preferences, update } = usePreferences();
-
-  const shellValue = useMemo(
-    () => ({ preferences, updatePreference: update }),
-    [preferences, update],
-  );
 
   if (isLoading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-surface">
-        <Spinner className="h-6 w-6" />
+      <div className="grid h-dvh place-items-center">
+        <LogoMark className="size-10 animate-pulse" />
       </div>
     );
   }
-
-  if (!identity) return <LoginScreen />;
+  if (!identity) return <LoginPage />;
 
   return (
-    <ShellContext value={shellValue}>
+    <PreferencesProvider>
       <PreviewProvider>
-        <div
-          className="relative flex h-dvh flex-col overflow-hidden bg-surface"
-          data-density={preferences.density}
-        >
-          <Wallpaper preferences={preferences} />
-          {/* The tray owns the bottom edge for everyone who wants to float
-              something there; see BottomTray. */}
-          <BottomTrayProvider>
-            <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
-            <PreviewLayer />
-          </BottomTrayProvider>
-        </div>
+        <PlayerProvider>
+          <DockProvider>
+            <Frame>{children}</Frame>
+          </DockProvider>
+        </PlayerProvider>
       </PreviewProvider>
-    </ShellContext>
+    </PreferencesProvider>
   );
 }
 
-/**
- * The wallpaper sits behind everything at reduced opacity. It is decoration, so
- * it is hidden from assistive technology and never intercepts a pointer.
- */
-function Wallpaper({ preferences }: { preferences: Preferences }) {
-  if (!preferences.wallpaper) return null;
+function Frame({ children }: { children: ReactNode }) {
+  const isWide = useIsWide();
+  const { preferences } = usePreferences();
+  const [navOpen, setNavOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const roots = useQuery({ queryKey: ['roots'], queryFn: () => api.roots(), staleTime: 60_000 });
+
+  const shell = useMemo(
+    () => ({
+      openSettings: () => setSettingsOpen(true),
+      openNav: isWide ? undefined : () => setNavOpen(true),
+      rootLabel: roots.data?.roots.find(root => root.active)?.label ?? 'Home',
+    }),
+    [isWide, roots.data],
+  );
 
   return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 bg-cover bg-center"
-      style={{
-        backgroundImage: `url("${mediaUrls.background(preferences.wallpaper)}")`,
-        opacity: preferences.wallpaperOpacity,
-      }}
-    />
+    <ShellContext value={shell}>
+      <div className="relative flex h-dvh overflow-hidden">
+        {preferences.wallpaper ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-cover bg-center"
+            style={{
+              backgroundImage: `url("${mediaUrls.background(preferences.wallpaper)}")`,
+              opacity: preferences.wallpaperOpacity,
+            }}
+          />
+        ) : null}
+
+        {isWide ? (
+          <aside className="relative z-10 w-64 shrink-0 border-r border-line">
+            <Sidebar onSettings={() => setSettingsOpen(true)} />
+          </aside>
+        ) : (
+          <RadixDialog.Root open={navOpen} onOpenChange={setNavOpen}>
+            <RadixDialog.Portal>
+              <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)]" />
+              <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-bg shadow-float outline-none data-[state=open]:animate-[rise_160ms]">
+                <RadixDialog.Title className="sr-only">Places</RadixDialog.Title>
+                <RadixDialog.Description className="sr-only">
+                  Folders and collections
+                </RadixDialog.Description>
+                <Sidebar
+                  onNavigate={() => setNavOpen(false)}
+                  onSettings={() => {
+                    setNavOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                />
+              </RadixDialog.Content>
+            </RadixDialog.Portal>
+          </RadixDialog.Root>
+        )}
+
+        <main className="relative z-10 flex min-w-0 flex-1 flex-col">{children}</main>
+      </div>
+
+      <DockSlot slot="left">
+        <MiniPlayer />
+      </DockSlot>
+      <PreviewOverlay />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+    </ShellContext>
   );
 }

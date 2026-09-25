@@ -1,0 +1,158 @@
+import { ChevronLeft, ChevronRight, Download, Maximize, Minimize, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { FileEntry } from '@hearth/shared';
+
+import { mediaUrls } from '@/lib/api';
+import { cn } from '@/lib/cn';
+import { Button } from '@/ui/Button';
+import { useOverlay } from './PreviewOverlay';
+
+/**
+ * The chrome every viewer shares: name, position in the gallery, the viewer's
+ * own controls, download, fullscreen, close. `immersive` floats the bar over
+ * the content and hides it while the pointer rests.
+ */
+export function ViewerFrame({
+  entry,
+  children,
+  actions,
+  immersive = false,
+  arrows = false,
+  subtitle,
+  className,
+}: {
+  entry: FileEntry;
+  children: ReactNode;
+  actions?: ReactNode;
+  immersive?: boolean;
+  /** Side buttons for stepping through the gallery. */
+  arrows?: boolean;
+  subtitle?: ReactNode;
+  className?: string;
+}) {
+  const { close, step, index, total, isFullscreen, toggleFullscreen } = useOverlay();
+  const idle = useIdle(immersive);
+
+  const bar = (
+    <header
+      className={cn(
+        // Narrow screens put the controls on a second row so the name keeps its width.
+        'flex shrink-0 flex-wrap items-center gap-x-2 px-3 py-2 sm:min-h-14 sm:flex-nowrap sm:px-4',
+        immersive &&
+          'absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent pb-5 transition-opacity duration-300',
+        immersive && idle && 'pointer-events-none opacity-0',
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-[15px] font-semibold" title={entry.name}>
+          {entry.name}
+        </h2>
+        <p className="tabular truncate text-[12px] text-stage-ink/60">
+          {subtitle ?? (total > 1 ? `${index + 1} of ${total}` : null)}
+        </p>
+      </div>
+      <Button
+        variant="stage"
+        size="icon"
+        onClick={close}
+        aria-label="Close"
+        title="Close (Esc)"
+        className="sm:order-last"
+      >
+        <X />
+      </Button>
+      <div className="flex w-full items-center justify-end gap-0.5 overflow-x-auto sm:w-auto">
+        {actions}
+        <a
+          href={mediaUrls.download(entry.path)}
+          aria-label="Download"
+          title="Download"
+          className="grid size-tap place-items-center rounded-lg text-stage-ink/80 hover:bg-white/10 hover:text-stage-ink [&_svg]:size-[18px]"
+        >
+          <Download />
+        </a>
+        <Button
+          variant="stage"
+          size="icon"
+          onClick={toggleFullscreen}
+          aria-label="Full screen"
+          title="Full screen"
+        >
+          {isFullscreen ? <Minimize /> : <Maximize />}
+        </Button>
+      </div>
+    </header>
+  );
+
+  return (
+    <div
+      className={cn('relative flex min-h-0 flex-1 flex-col', immersive && idle && 'cursor-none')}
+    >
+      {bar}
+      <div className={cn('relative min-h-0 flex-1', className)}>{children}</div>
+      {arrows && total > 1 ? (
+        <>
+          <SideArrow side="left" hidden={immersive && idle} onClick={() => step(-1)} />
+          <SideArrow side="right" hidden={immersive && idle} onClick={() => step(1)} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function SideArrow({
+  side,
+  hidden,
+  onClick,
+}: {
+  side: 'left' | 'right';
+  hidden: boolean;
+  onClick: () => void;
+}) {
+  const Icon = side === 'left' ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={side === 'left' ? 'Previous file' : 'Next file'}
+      className={cn(
+        'absolute top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full',
+        'bg-black/35 text-white/85 backdrop-blur transition-opacity hover:bg-black/55 [&_svg]:size-6',
+        side === 'left' ? 'left-3' : 'right-3',
+        hidden && 'pointer-events-none opacity-0',
+      )}
+    >
+      <Icon />
+    </button>
+  );
+}
+
+const IDLE_MS = 2500;
+
+/** True after the pointer has rested for a while; any movement or key wakes it. */
+export function useIdle(enabled: boolean): boolean {
+  const [idle, setIdle] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+
+  const wake = useCallback(() => {
+    setIdle(false);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setIdle(true), IDLE_MS);
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+    wake();
+    window.addEventListener('pointermove', wake);
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', wake);
+    return () => {
+      window.clearTimeout(timer.current);
+      window.removeEventListener('pointermove', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', wake);
+    };
+  }, [enabled, wake]);
+
+  return enabled && idle;
+}

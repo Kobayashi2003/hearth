@@ -1,370 +1,492 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import {
+  CheckSquare,
+  FolderInput,
+  FolderPlus,
+  FolderUp,
+  LayoutGrid,
+  List,
+  LogOut,
+  Moon,
+  RefreshCw,
+  Search as SearchIcon,
+  Settings,
+  SunMedium,
+  Upload,
+} from 'lucide-react';
+import { FolderOpen, SearchX, TriangleAlert } from 'lucide-react';
 import type { FileEntry } from '@hearth/shared';
 
-import { mediaUrls } from '@/lib/api';
-import { useSession } from '@/features/auth/SessionProvider';
-import { useShell } from '@/features/shell/AppShell';
-import { useTrayInset } from '@/features/shell/BottomTray';
-import { usePreview } from '@/features/mantel/PreviewProvider';
-import { galleryFor, isPreviewable } from '@/features/mantel/viewerFor';
-import { DropOverlay, UploadPanel } from '@/features/transfer/UploadPanel';
-import { UploadInputs } from '@/features/transfer/UploadInputs';
-import { useDropZone } from '@/features/transfer/useDropZone';
-import { useUploads } from '@/features/transfer/useUploads';
-import { ContinueRail } from './ContinueRail';
-import { DetailsDialog } from './dialogs/DetailsDialog';
-import { HoverPreview } from './peek/HoverPreview';
-import { useHoverPreview } from './peek/useHoverPreview';
-import { PeekCard } from './peek/PeekCard';
-import { usePeek } from './peek/usePeek';
-import { EntryContextMenu } from './EntryContextMenu';
-import { ExplorerBody } from './ExplorerBody';
-import { ExplorerModals, type OpenDialog } from './dialogs/ExplorerModals';
+import { api, mediaUrls } from '@/lib/api';
+import { isPreviewable } from '@/lib/file-kind';
+import { useSession } from '@/features/session/session';
+import { usePreferences } from '@/features/preferences/preferences';
+import { useProgress } from '@/features/progress/progress';
+import { usePreview } from '@/features/preview/PreviewProvider';
+import { isTypingTarget } from '@/features/preview/PreviewOverlay';
+import { DOCK_CLEARANCE, DockSlot } from '@/features/shell/Dock';
+import { useShell } from '@/features/shell/shell-context';
+import {
+  collectDropped,
+  fromInput,
+  useUploads,
+  type QueuedFile,
+} from '@/features/transfer/uploads';
+import { UploadTray } from '@/features/transfer/UploadTray';
+import { Button } from '@/ui/Button';
+import { Centered, Notice, Spinner } from '@/ui/Feedback';
+import { actionsFor } from './actions';
+import { CommandPalette, type Command } from './CommandPalette';
+import { ContextMenu } from './ContextMenu';
+import { ExplorerDialogs, type DialogState } from './dialogs';
+import { useEntryEvents } from './entryEvents';
+import { ExplorerHeader } from './ExplorerHeader';
+import { FileGrid } from './FileGrid';
+import { FileList, useRowHeight } from './FileList';
 import { SelectionBar } from './SelectionBar';
-import { Toolbar } from './toolbar/Toolbar';
-import { isTypingTarget, matchCommand } from './commands/commands';
-import { useExplorerCommands } from './commands/useExplorerCommands';
-import { useEntryActions } from './useEntryActions';
+import { useExplorer } from './useExplorer';
 import { useFileOperations } from './useFileOperations';
-import { useExplorerFocus } from './listing/useExplorerFocus';
-import { useExplorerState } from './useExplorerState';
-import { useLedger } from '@/features/ledger/useLedger';
+import { useSelection } from './useSelection';
 
-/**
- * Rows PageUp / PageDown travel. A fixed count rather than a measured one: the
- * key should move a predictable distance, and a measured page changes with the
- * window and with density, so the same keystroke would land somewhere different
- * each time.
- */
-const PAGE_ROWS = 12;
+const PAGE_ROWS = 10;
 
-/**
- * The explorer's orchestrator: wires the toolbar, listing, selection, uploads,
- * command registry, and modals together. Each of those lives in its own file;
- * this component holds only the shared state and the handlers that cross them.
- */
 export function ExplorerPage() {
-  const explorer = useExplorerState();
-  const { can } = useSession();
-  const { preferences, updatePreference } = useShell();
+  const explorer = useExplorer();
+  const { search, entries } = explorer;
+  const { can, signOut } = useSession();
+  const { preferences, update } = usePreferences();
+  const { progressFor } = useProgress();
   const preview = usePreview();
-  const queryClient = useQueryClient();
+  const shell = useShell();
+  const selection = useSelection(entries);
+  const uploads = useUploads();
 
-  const { ledger, progressFor, setPinned } = useLedger();
-  /** Room the tray's floating bars need at the end of the listing. */
-  const trayInset = useTrayInset();
+  const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
+  const [menu, setMenu] = useState<{ entries: FileEntry[]; x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const [columns, setColumns] = useState(1);
 
-  const openEntry = useCallback(
-    (entry: FileEntry) => {
-      if (entry.isDirectory) explorer.openDirectory(entry.path);
-      else if (isPreviewable(entry)) preview.open(entry, galleryFor(entry, explorer.entries));
-      else window.location.href = mediaUrls.download(entry.path);
-    },
-    [explorer, preview],
-  );
-
-  // The grid reports its real column count so ↑↓ move a row; a list is one wide.
-  const [gridColumns, setGridColumns] = useState(1);
-  const columns = preferences.viewMode === 'grid' ? gridColumns : 1;
-
-  const selection = useExplorerFocus({
-    entries: explorer.entries,
-    columns,
-    pageRows: PAGE_ROWS,
-    onOpen: openEntry,
-  });
-
-  const peek = usePeek();
-  const hoverPreview = useHoverPreview();
-  const [dialog, setDialog] = useState<OpenDialog>('none');
-  const [isPaletteOpen, setPaletteOpen] = useState(false);
-  const [contextTarget, setContextTarget] = useState<{ entry: FileEntry; x: number; y: number } | null>(null);
-
-  const filePickerRef = useRef<HTMLInputElement | null>(null);
-  const folderPickerRef = useRef<HTMLInputElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const filesInput = useRef<HTMLInputElement | null>(null);
+  const folderInput = useRef<HTMLInputElement | null>(null);
+  const dragDepth = useRef(0);
 
   const canWrite = can('write');
   const canDelete = can('delete');
+  const rowHeight = useRowHeight(preferences.density);
+  const isGrid = preferences.viewMode === 'grid';
+  const step = isGrid ? columns : 1;
 
-  const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['listing'] });
-  }, [queryClient]);
+  const { data: trash } = useQuery({
+    queryKey: ['trash-settings'],
+    queryFn: () => api.trashSettings(),
+    staleTime: 60_000,
+  });
+  const operations = useFileOperations(search.path, selection.clear);
 
-  const uploads = useUploads(refresh);
-
-  // Selection belongs to a directory; carrying it across a navigation would let a
-  // later action apply to files the user can no longer see.
-  //
-  // The hover preview goes too. Its row unmounts from under the cursor on a
-  // navigation, so `mouseleave` never arrives and the thumbnail would otherwise
-  // hang there showing a file from the folder you just left.
+  // A selection belongs to the folder it was made in.
   useEffect(() => {
-    selection.clear();
-    // The cursor goes with it: index 7 in the folder just left points at an
-    // unrelated file here, and that is where the next arrow key would resume.
-    selection.setFocused(-1);
-    hoverPreview.close();
-    peek.close();
+    selection.reset();
+    setMenu(null);
+    scrollRef.current?.scrollTo({ top: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [explorer.search.path, explorer.search.q]);
+  }, [search.path, search.q, search.type, search.recursive]);
 
-  // Landing on an ancestor, put the cursor back on the folder just left, so
-  // stepping out of a deep tree does not lose your place in every level of it.
-  // Focus, not selection: it is where the keyboard resumes from, and it should
-  // not raise the action bar over a folder nobody asked to operate on.
+  // Back on a parent, the cursor lands on the folder just left.
   useEffect(() => {
-    if (explorer.returnedIndex < 0) return;
-    selection.setFocused(explorer.returnedIndex);
-    explorer.claimReturnedIndex();
+    if (!explorer.returningTo || !entries.some(entry => entry.path === explorer.returningTo))
+      return;
+    selection.setFocused(explorer.returningTo);
+    explorer.clearReturningTo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [explorer.returnedIndex]);
+  }, [explorer.returningTo, entries]);
 
-  const operations = useFileOperations({
-    selectedEntries: selection.selectedEntries,
-    currentPath: explorer.search.path,
-    refresh,
-    clearSelection: selection.clear,
+  const open = useCallback(
+    (entry: FileEntry) => {
+      if (entry.isDirectory) explorer.openFolder(entry.path);
+      else if (isPreviewable(entry)) preview.open(entry, entries);
+      else window.location.href = mediaUrls.download(entry.path);
+    },
+    [explorer, preview, entries],
+  );
+
+  const handlers = useMemo(
+    () => ({
+      open,
+      download: operations.download,
+      copy: operations.copy,
+      cut: operations.cut,
+      rename: (entry: FileEntry) => setDialog({ kind: 'rename', entry }),
+      remove: (targets: FileEntry[]) => setDialog({ kind: 'delete', entries: targets }),
+      details: (entry: FileEntry) => setDialog({ kind: 'details', entry }),
+    }),
+    [open, operations],
+  );
+  const permissions = { write: canWrite, delete: canDelete };
+  const selectionActions = actionsFor(selection.selectedEntries, permissions, handlers);
+
+  const eventsFor = useEntryEvents({
+    onPick: (entry, modifiers) => selection.pick(entry.path, modifiers),
+    onOpen: open,
+    onMenu: (entry, x, y) => {
+      // Right-clicking inside the selection acts on all of it; outside, on that one item.
+      const targets = selection.selected.has(entry.path) ? selection.selectedEntries : [entry];
+      if (!selection.selected.has(entry.path)) selection.pick(entry.path);
+      setMenu({ entries: targets, x, y });
+    },
+    isSelecting: selection.selected.size > 0,
   });
 
   const startUpload = useCallback(
-    (files: Array<{ file: File; relativePath: string }>) => {
-      if (files.length > 0) void uploads.start(files, explorer.search.path);
-    },
-    [uploads, explorer.search.path],
+    (files: QueuedFile[]) => files.length > 0 && uploads.start(files, search.path),
+    [uploads, search.path],
   );
 
-  // ── Commands and keyboard ────────────────────────────────────────────────────
-
-  const commands = useExplorerCommands({
-    refresh,
-    goUp: explorer.goUp,
-    atRoot: explorer.atRoot,
-    openDirectory: explorer.openDirectory,
-    selectAll: selection.selectAll,
-    invert: selection.invert,
-    clearSelection: selection.clear,
-    selectedEntries: selection.selectedEntries,
+  const commands = useMemo<Command[]>(() => {
+    const list: Command[] = [
+      {
+        id: 'search',
+        label: 'Search in this folder',
+        icon: SearchIcon,
+        shortcut: '/',
+        run: () => searchRef.current?.focus(),
+      },
+      {
+        id: 'refresh',
+        label: 'Refresh',
+        icon: RefreshCw,
+        shortcut: 'F5',
+        run: () => void explorer.refetch(),
+      },
+      {
+        id: 'up',
+        label: 'Go up one folder',
+        icon: FolderUp,
+        shortcut: 'Alt+↑',
+        run: explorer.goUp,
+      },
+      {
+        id: 'select-all',
+        label: 'Select everything',
+        icon: CheckSquare,
+        shortcut: 'Ctrl+A',
+        run: selection.selectAll,
+      },
+      {
+        id: 'view',
+        label: isGrid ? 'Show as list' : 'Show as covers',
+        icon: isGrid ? List : LayoutGrid,
+        run: () => update('viewMode', isGrid ? 'list' : 'grid'),
+      },
+      {
+        id: 'theme',
+        label: 'Switch between light and dark',
+        icon: document.documentElement.dataset.theme === 'dark' ? SunMedium : Moon,
+        run: () => {
+          const dark =
+            preferences.theme === 'dark' ||
+            (preferences.theme === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          update('theme', dark ? 'light' : 'dark');
+        },
+      },
+      { id: 'settings', label: 'Open settings', icon: Settings, run: shell.openSettings },
+      { id: 'sign-out', label: 'Sign out', icon: LogOut, run: () => void signOut() },
+    ];
+    if (canWrite) {
+      list.splice(
+        2,
+        0,
+        {
+          id: 'new-folder',
+          label: 'New folder',
+          icon: FolderPlus,
+          shortcut: 'Ctrl+Shift+N',
+          run: () => setDialog({ kind: 'new-folder' }),
+        },
+        {
+          id: 'upload',
+          label: 'Upload files',
+          icon: Upload,
+          shortcut: 'Ctrl+U',
+          run: () => filesInput.current?.click(),
+        },
+        {
+          id: 'upload-folder',
+          label: 'Upload a folder',
+          icon: FolderInput,
+          run: () => folderInput.current?.click(),
+        },
+      );
+    }
+    return list;
+  }, [
+    explorer,
+    selection.selectAll,
+    isGrid,
+    update,
+    preferences.theme,
+    shell.openSettings,
+    signOut,
     canWrite,
-    canDelete,
-    clipboardHasItems: operations.hasClipboard,
-    paste: operations.paste,
-    copySelection: operations.copy,
-    cutSelection: operations.cut,
-    downloadSelection: operations.download,
-    openDialog: setDialog,
-    filePickerRef,
-    folderPickerRef,
-    preferences,
-    updatePreference,
-  });
+  ]);
+
+  const blocked =
+    preview.current !== null || dialog.kind !== 'none' || paletteOpen || menu !== null;
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      const ctrl = event.ctrlKey || event.metaKey;
+      const key = event.key;
+      if (ctrl && key.toLowerCase() === 'k') {
         event.preventDefault();
         setPaletteOpen(true);
         return;
       }
-      if (isTypingTarget(event.target)) return;
+      if (blocked || isTypingTarget(event.target) || event.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"], [data-radix-popper-content-wrapper]')) return;
 
-      // Escape belongs to whatever is on top of the explorer — a preview, the
-      // palette, a dialog. Only when nothing is does it fall through to here and
-      // mean "drop the selection".
-      if (event.key === 'Escape' && document.querySelector('[role="dialog"], [role="menu"]')) return;
-
-      const command = matchCommand(commands, event);
-      if (command) {
+      const selected = selection.selectedEntries;
+      const focused = entries[selection.focusedIndex];
+      const modifiers = { shift: event.shiftKey, ctrl };
+      const run = (action: () => void) => {
         event.preventDefault();
-        command.run();
-      }
+        action();
+      };
+
+      if (key === 'ArrowDown') run(() => selection.move(step, modifiers));
+      else if (key === 'ArrowUp' && event.altKey) run(explorer.goUp);
+      else if (key === 'ArrowUp') run(() => selection.move(-step, modifiers));
+      else if (key === 'ArrowRight' && isGrid) run(() => selection.move(1, modifiers));
+      else if (key === 'ArrowLeft' && isGrid) run(() => selection.move(-1, modifiers));
+      else if (key === 'PageDown') run(() => selection.move(PAGE_ROWS * step, modifiers));
+      else if (key === 'PageUp') run(() => selection.move(-PAGE_ROWS * step, modifiers));
+      else if (key === 'Home') run(() => selection.move('start', modifiers));
+      else if (key === 'End') run(() => selection.move('end', modifiers));
+      else if (key === 'Enter' && event.altKey && focused) run(() => handlers.details(focused));
+      else if (key === 'Enter' && focused) run(() => open(focused));
+      else if (key === 'Backspace') run(explorer.goUp);
+      else if (key === 'Escape' && (selected.length > 0 || operations.clipboard))
+        run(() => (selected.length > 0 ? selection.clear() : operations.clearClipboard()));
+      else if (key === ' ' && focused) run(selection.toggleFocused);
+      else if (key === 'F5') run(() => void explorer.refetch());
+      else if (key === '/' || (ctrl && key.toLowerCase() === 'f'))
+        run(() => searchRef.current?.focus());
+      else if (ctrl && key.toLowerCase() === 'a') run(selection.selectAll);
+      else if (ctrl && key.toLowerCase() === 'c' && canWrite && selected.length > 0)
+        run(() => operations.copy(selected));
+      else if (ctrl && key.toLowerCase() === 'x' && canWrite && selected.length > 0)
+        run(() => operations.cut(selected));
+      else if (ctrl && key.toLowerCase() === 'v' && canWrite && operations.clipboard)
+        run(operations.paste);
+      else if (ctrl && event.shiftKey && key.toLowerCase() === 'n' && canWrite)
+        run(() => setDialog({ kind: 'new-folder' }));
+      else if (ctrl && key.toLowerCase() === 'u' && canWrite)
+        run(() => filesInput.current?.click());
+      else if (key === 'Delete' && canDelete && selected.length > 0)
+        run(() => handlers.remove(selected));
+      else if (key === 'F2' && canWrite && selected.length === 1)
+        run(() => handlers.rename(selected[0]!));
+      else if (key.length === 1 && !ctrl && !event.altKey && key !== ' ')
+        run(() => selection.typeTo(key));
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commands]);
-
-  const dropZone = useDropZone(canWrite, startUpload);
-  const selectedEntry = selection.selectedEntries[0];
-
-  /**
-   * One entry is "the subject" of the menus: whatever was right-clicked or
-   * long-pressed. Both surfaces render the same action list built from it, so
-   * neither can quietly offer less than the other.
-   */
-  const actionSubject = peek.target?.entry ?? contextTarget?.entry ?? selectedEntry;
-  const actionSubjectIndex = peek.target?.index;
-
-  const entryActions = useEntryActions({
-    entry: actionSubject,
-    selectionCount: selection.selectedEntries.length,
+  }, [
+    blocked,
+    selection,
+    entries,
+    step,
+    isGrid,
+    explorer,
+    handlers,
+    open,
+    operations,
     canWrite,
     canDelete,
-    isPinned: actionSubject ? (ledger?.pinned.includes(actionSubject.path) ?? false) : false,
-    handlers: useMemo(
-      () => ({
-        onOpen: () => actionSubject && openEntry(actionSubject),
-        onPreview: () =>
-          actionSubject && preview.open(actionSubject, galleryFor(actionSubject, explorer.entries)),
-        onDownload: operations.download,
-        onCopy: operations.copy,
-        onCut: operations.cut,
-        // A dialog acts on the selection, so the subject has to become it first.
-        onRename: () => {
-          if (actionSubjectIndex !== undefined) selection.selectAt(actionSubjectIndex, {});
-          setDialog('rename');
-        },
-        onDelete: () => {
-          if (actionSubjectIndex !== undefined) selection.selectAt(actionSubjectIndex, {});
-          setDialog('delete');
-        },
-        onDetails: () => setDialog('details'),
-        onTogglePin: () => {
-          if (!actionSubject) return;
-          const pinned = ledger?.pinned.includes(actionSubject.path) ?? false;
-          setPinned(actionSubject.path, !pinned);
-        },
-      }),
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [actionSubject, actionSubjectIndex, ledger, operations],
-    ),
-  });
+  ]);
+
+  const listing = {
+    entries,
+    selected: selection.selected,
+    focusedIndex: selection.focusedIndex,
+    rowHeight,
+    bottomInset: DOCK_CLEARANCE,
+    folderCovers: preferences.folderCovers,
+    progressFor,
+    eventsFor,
+    scrollRef,
+  };
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col" {...dropZone.handlers}>
-      <Toolbar
-        path={explorer.search.path}
-        query={explorer.search.q}
-        recursive={explorer.search.recursive}
-        typeFilter={explorer.search.type}
-        viewMode={preferences.viewMode}
-        density={preferences.density}
-        isFetching={explorer.isFetching}
-        canWrite={canWrite}
-        onNavigate={explorer.openDirectory}
-        onBack={() => window.history.back()}
-        onForward={() => window.history.forward()}
-        onUp={explorer.goUp}
-        onRefresh={refresh}
-        onQueryChange={q => explorer.patch({ q })}
-        onRecursiveChange={recursive => explorer.patch({ recursive })}
-        onTypeFilterChange={type => explorer.patch({ type })}
-        onViewModeChange={mode => updatePreference('viewMode', mode)}
-        onDensityChange={density => updatePreference('density', density)}
-        onUpload={() => filePickerRef.current?.click()}
-        onOpenPalette={() => setPaletteOpen(true)}
-        onOpenSettings={() => setDialog('settings')}
-      />
-
-      {/* Home is a landing surface; every other folder is a place you went to
-          on purpose, and a rail there would just be in the way. */}
-      {explorer.search.path === '' && !explorer.isSearching && preferences.showShelves ? (
-        <ContinueRail
-          ledger={ledger}
-          onOpen={openEntry}
-          onHide={() => updatePreference('showShelves', false)}
-        />
-      ) : null}
-
-      <SelectionBar
-        entries={selection.selectedEntries}
-        clipboardCount={operations.clipboardCount}
-        canWrite={canWrite}
-        canDelete={canDelete}
-        onCopy={operations.copy}
-        onCut={operations.cut}
-        onPaste={operations.paste}
-        onDownload={operations.download}
-        onDetails={() => setDialog('details')}
-        onDelete={() => setDialog('delete')}
-        onClear={selection.clear}
-      />
-
-      <ExplorerBody
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      onDragEnter={event => {
+        if (!canWrite || !event.dataTransfer.types.includes('Files')) return;
+        dragDepth.current += 1;
+        setDropping(true);
+      }}
+      onDragOver={event => canWrite && event.preventDefault()}
+      onDragLeave={() => {
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) setDropping(false);
+      }}
+      onDrop={event => {
+        if (!canWrite) return;
+        event.preventDefault();
+        dragDepth.current = 0;
+        setDropping(false);
+        void collectDropped(event.dataTransfer).then(startUpload);
+      }}
+    >
+      <ExplorerHeader
         explorer={explorer}
-        focus={selection}
-        preferences={preferences}
+        rootLabel={shell.rootLabel}
+        viewMode={preferences.viewMode}
         canWrite={canWrite}
-        bottomInset={trayInset}
-        progressFor={progressFor}
-        peekHandlersFor={(entry, index) => ({
-          ...peek.handlersFor(entry, index),
-          ...hoverPreview.handlersFor(entry),
-        })}
-        onSelect={(index, modifiers) => {
-          // The click that ends a long press must not also change the selection
-          // — the press already opened a Peek, and selecting behind it would be
-          // an action the user never asked for.
-          if (peek.consumeSuppressedClick()) return;
-          selection.selectAt(index, modifiers);
-        }}
-        onColumnsChange={setGridColumns}
-        onOpen={openEntry}
-        onContextMenu={(entry, index, event) => {
-          event.preventDefault();
-          selection.focusForContextMenu(index);
-          setContextTarget({ entry, x: event.clientX, y: event.clientY });
-        }}
-        onNewFolder={() => setDialog('newFolder')}
-        onUpload={() => filePickerRef.current?.click()}
+        onViewMode={mode => update('viewMode', mode)}
+        onNewFolder={() => setDialog({ kind: 'new-folder' })}
+        onUploadFiles={() => filesInput.current?.click()}
+        onUploadFolder={() => folderInput.current?.click()}
+        onOpenNav={shell.openNav}
+        searchRef={searchRef}
       />
 
-      <DropOverlay isActive={dropZone.isActive} />
+      {explorer.isTruncated ? (
+        <p className="mx-4 mb-2 rounded-lg bg-glaze-wash px-3 py-1.5 text-[12.5px] text-ink-2 sm:mx-6">
+          Showing the first {entries.length.toLocaleString()} of {explorer.total.toLocaleString()}.
+          Search to narrow this folder down.
+        </p>
+      ) : null}
 
-      <UploadPanel
-        jobs={uploads.jobs}
-        overallProgress={uploads.overallProgress}
-        activeCount={uploads.activeCount}
-        onCancel={uploads.cancel}
-        onDismiss={uploads.clearFinished}
-      />
+      <div
+        ref={scrollRef}
+        className="scroll-thin relative min-h-0 flex-1 overflow-auto border-t border-line"
+        onPointerDown={event => {
+          if (event.target === event.currentTarget) selection.clear();
+        }}
+      >
+        {explorer.isPending ? (
+          <Centered className="py-20">
+            <Spinner />
+          </Centered>
+        ) : explorer.error ? (
+          <Notice
+            icon={<TriangleAlert />}
+            title="This folder could not be opened"
+            body={explorer.error.message}
+            action={
+              <Button variant="outline" onClick={() => void explorer.refetch()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : entries.length === 0 ? (
+          explorer.isSearching ? (
+            <Notice
+              icon={<SearchX />}
+              title="Nothing matches"
+              body={
+                search.recursive
+                  ? 'Try fewer or different words, or clear the type filter.'
+                  : 'Try searching every subfolder too.'
+              }
+            />
+          ) : (
+            <Notice
+              icon={<FolderOpen />}
+              title="This folder is empty"
+              body={canWrite ? 'Drop files here to upload them, or create a folder.' : undefined}
+              action={
+                canWrite ? (
+                  <div className="flex gap-2">
+                    <Button variant="primary" onClick={() => filesInput.current?.click()}>
+                      <Upload /> Upload files
+                    </Button>
+                    <Button variant="outline" onClick={() => setDialog({ kind: 'new-folder' })}>
+                      <FolderPlus /> New folder
+                    </Button>
+                  </div>
+                ) : undefined
+              }
+            />
+          )
+        ) : isGrid ? (
+          <FileGrid {...listing} tileSize={preferences.gridSize} onColumns={setColumns} />
+        ) : (
+          <FileList
+            {...listing}
+            sort={search.sort}
+            direction={search.direction}
+            onSort={explorer.sortBy}
+            showFolder={explorer.isSearching && search.recursive}
+          />
+        )}
+      </div>
 
-      <UploadInputs fileRef={filePickerRef} folderRef={folderPickerRef} onFiles={startUpload} />
+      {dropping ? (
+        <div className="animate-fade pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-3xl border-2 border-dashed border-glaze bg-glaze-wash">
+          <p className="display-title text-[32px] text-glaze-strong">Drop to upload here</p>
+        </div>
+      ) : null}
 
-      {hoverPreview.target ? <HoverPreview target={hoverPreview.target} /> : null}
+      <DockSlot slot="center">
+        <SelectionBar
+          entries={selection.selectedEntries}
+          actions={selectionActions}
+          clipboard={operations.clipboard}
+          canPaste={canWrite && !explorer.isSearching}
+          onPaste={operations.paste}
+          onCancelClipboard={operations.clearClipboard}
+          onClear={selection.clear}
+        />
+      </DockSlot>
+      <DockSlot slot="right">
+        <UploadTray jobs={uploads.jobs} onCancel={uploads.cancel} onClear={uploads.clearFinished} />
+      </DockSlot>
 
-      {peek.target ? (
-        <PeekCard
-          target={peek.target}
-          progress={progressFor(peek.target.entry.path)}
-          actions={entryActions}
-          onClose={peek.close}
-          onSelect={index => {
-            peek.close();
-            // Ctrl semantics: long-pressing a second item adds it, which is how
-            // multi-select is entered on touch now that long-press means Peek.
-            selection.selectAt(index, { ctrl: true });
-          }}
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          title={menu.entries.length === 1 ? menu.entries[0]!.name : `${menu.entries.length} items`}
+          actions={actionsFor(menu.entries, permissions, handlers)}
+          onClose={closeMenu}
         />
       ) : null}
 
-      {contextTarget ? (
-        <EntryContextMenu
-          entry={contextTarget.entry}
-          position={contextTarget}
-          selectionCount={selection.selectedEntries.length}
-          actions={entryActions}
-          onClose={() => setContextTarget(null)}
-        />
-      ) : null}
-
-      <DetailsDialog
-        entry={actionSubject}
-        open={dialog === 'details'}
-        onOpenChange={next => setDialog(next ? 'details' : 'none')}
+      <ExplorerDialogs
+        state={dialog}
+        onClose={() => setDialog({ kind: 'none' })}
+        currentPath={search.path}
+        operations={operations}
+        trashEnabled={trash?.enabled ?? true}
       />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
 
-      <ExplorerModals
-        commands={commands}
-        dialog={dialog}
-        setDialog={setDialog}
-        isPaletteOpen={isPaletteOpen}
-        setPaletteOpen={setPaletteOpen}
-        currentPath={explorer.search.path}
-        selectedName={selectedEntry?.name}
-        selectedPath={selectedEntry?.path}
-        deleteCount={selection.selectedEntries.length}
-        runOperation={operations.run}
-        deleteSelection={operations.remove}
+      <input
+        ref={filesInput}
+        type="file"
+        multiple
+        hidden
+        onChange={event => {
+          startUpload(fromInput(event.target.files));
+          event.target.value = '';
+        }}
+      />
+      <input
+        ref={folderInput}
+        type="file"
+        hidden
+        {...{ webkitdirectory: '' }}
+        onChange={event => {
+          startUpload(fromInput(event.target.files));
+          event.target.value = '';
+        }}
       />
     </div>
   );

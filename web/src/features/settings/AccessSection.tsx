@@ -1,0 +1,170 @@
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import type { PermissionAction, PermissionRule } from '@hearth/shared';
+
+import { api } from '@/lib/api';
+import { cn } from '@/lib/cn';
+import { Button } from '@/ui/Button';
+import { Input, Select, SettingRow, Switch } from '@/ui/Field';
+
+const ACTIONS: PermissionAction[] = ['read', 'write', 'delete', 'admin'];
+
+export function AccessSection() {
+  const queryClient = useQueryClient();
+  const stored = useQuery({ queryKey: ['permission-rules'], queryFn: () => api.permissionRules() });
+  const viewers = useQuery({ queryKey: ['viewer-settings'], queryFn: () => api.viewerSettings() });
+  const [rules, setRules] = useState<PermissionRule[]>([]);
+
+  useEffect(() => {
+    if (stored.data) setRules(stored.data.rules);
+  }, [stored.data]);
+
+  const save = useMutation({
+    mutationFn: () => api.savePermissionRules(rules),
+    onSuccess: data => {
+      queryClient.setQueryData(['permission-rules'], data);
+      toast.success('Rules saved');
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const saveViewers = useMutation({
+    mutationFn: api.saveViewerSettings,
+    onSuccess: data => queryClient.setQueryData(['viewer-settings'], data),
+  });
+
+  const patch = (index: number, changes: Partial<PermissionRule>) =>
+    setRules(current =>
+      current.map((rule, position) => (position === index ? { ...rule, ...changes } : rule)),
+    );
+
+  const dirty = JSON.stringify(rules) !== JSON.stringify(stored.data?.rules ?? []);
+
+  return (
+    <div>
+      <h3 className="text-[14px] font-semibold">Folder rules</h3>
+      <p className="mt-1 max-w-prose text-[12.5px] text-ink-3">
+        Narrow or widen what someone may do below a path. The most specific rule wins; at equal
+        specificity a rule for a named user beats <code>*</code>, and deny beats allow.{' '}
+        <code>/Photos/**</code> covers everything inside Photos.
+      </p>
+
+      <div className="mt-3 flex flex-col gap-2">
+        {rules.map((rule, index) => (
+          <div
+            key={index}
+            className="flex flex-wrap items-center gap-2 rounded-xl border border-line p-2"
+          >
+            <Input
+              value={rule.username}
+              onChange={event => patch(index, { username: event.target.value })}
+              className="w-28"
+              aria-label="User, or * for everyone"
+              placeholder="*"
+            />
+            <Input
+              value={rule.path}
+              onChange={event => patch(index, { path: event.target.value })}
+              className="min-w-40 flex-1"
+              aria-label="Path"
+              placeholder="/Folder/**"
+            />
+            <Select
+              value={rule.effect}
+              onChange={event =>
+                patch(index, { effect: event.target.value as PermissionRule['effect'] })
+              }
+              className="w-24"
+              aria-label="Effect"
+            >
+              <option value="allow">Allow</option>
+              <option value="deny">Deny</option>
+            </Select>
+            <div className="flex gap-1">
+              {ACTIONS.map(action => {
+                const on = rule.permissions.includes(action);
+                return (
+                  <button
+                    key={action}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      patch(index, {
+                        permissions: on
+                          ? rule.permissions.filter(item => item !== action)
+                          : [...rule.permissions, action],
+                      })
+                    }
+                    className={cn(
+                      'h-7 rounded-full border px-2.5 text-[12px] capitalize',
+                      on
+                        ? 'border-glaze bg-glaze-wash text-glaze-strong'
+                        : 'border-line text-ink-3',
+                    )}
+                  >
+                    {action}
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              size="icon"
+              aria-label="Remove rule"
+              className="text-danger"
+              onClick={() => setRules(rules.filter((_, position) => position !== index))}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setRules([
+              ...rules,
+              { username: '*', path: '/', permissions: ['read'], effect: 'allow' },
+            ])
+          }
+        >
+          <Plus /> Add rule
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!dirty || save.isPending}
+          onClick={() => save.mutate()}
+        >
+          Save rules
+        </Button>
+      </div>
+
+      <h3 className="mt-8 text-[14px] font-semibold">Web pages</h3>
+      <div className="divide-y divide-line">
+        <SettingRow
+          title="Open .html files"
+          description="Pages are sanitised and shown in a sandbox without scripts."
+        >
+          <Switch
+            checked={viewers.data?.htmlViewerEnabled ?? false}
+            onChange={value => saveViewers.mutate({ htmlViewerEnabled: value })}
+            label="Open .html files"
+          />
+        </SettingRow>
+        <SettingRow
+          title="Load images from other sites"
+          description="Off keeps a saved page from telling another site that it was opened."
+        >
+          <Switch
+            checked={viewers.data?.htmlExternalResourcesEnabled ?? false}
+            onChange={value => saveViewers.mutate({ htmlExternalResourcesEnabled: value })}
+            label="Load images from other sites"
+          />
+        </SettingRow>
+      </div>
+    </div>
+  );
+}
