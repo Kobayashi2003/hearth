@@ -21,7 +21,7 @@
 # here too. flush_interval -1 streams rather than buffers, so long-lived Range
 # connections are not dropped under backpressure — the whole reason the frontend
 # is a static SPA with nothing of its own in the byte path.
-handle /hearth-api/* {
+handle {$HEARTH_API_PREFIX:/hearth-api}/* {
 	reverse_proxy {$HEARTH_BACKEND_UPSTREAM:127.0.0.1:5111} {
 		flush_interval -1
 	}
@@ -35,13 +35,13 @@ handle /hearth-api/* {
 # resolves those against the document's directory, which is only "/hearth/" when
 # the URL ends in a slash. Without the redirect, /hearth resolves ./assets to
 # the origin root and every asset 404s (a black screen).
-redir /hearth /hearth/ 308
+redir {$HEARTH_WEB_PREFIX:/hearth} {$HEARTH_WEB_PREFIX:/hearth}/ 308
 
 # Everything under /hearth/. handle_path strips the matched /hearth prefix so
 # paths resolve against web/dist; a path that is not a real file falls back to
 # index.html for the hash-routed SPA. It does not match /hearth-api, whose path
 # does not begin with "/hearth/".
-handle_path /hearth/* {
+handle_path {$HEARTH_WEB_PREFIX:/hearth}/* {
 	root * {$HEARTH_WEB_ROOT:./web/dist}
 
 	# Asset filenames carry a content hash, so a given URL never changes meaning:

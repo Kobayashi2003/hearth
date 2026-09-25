@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -8,7 +10,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@hearth/shared': new URL('./packages/shared/src/index.ts', import.meta.url).pathname,
+      '@hearth/shared': fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url)),
+      '@': fileURLToPath(new URL('./web/src', import.meta.url)),
     },
   },
 });

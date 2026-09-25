@@ -18,7 +18,7 @@
 	# Standalone, Hearth is the whole site. (Under app-gateway the root is the
 	# landing page — hence this lives here, not in the snippet.)
 	handle / {
-		redir * /hearth permanent
+		redir * {$HEARTH_WEB_PREFIX:/hearth} permanent
 	}
 
 	# Anything the snippet did not claim. Without this Caddy answers an empty 200,

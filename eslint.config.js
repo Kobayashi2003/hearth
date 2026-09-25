@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', 'web/dist/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', 'web/src/vendor/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -44,9 +44,18 @@ export default tseslint.config(
         'error',
         {
           paths: [
-            { name: 'node:fs', message: 'Routes must go through a service, not touch the filesystem.' },
-            { name: 'node:fs/promises', message: 'Routes must go through a service, not touch the filesystem.' },
-            { name: 'node:child_process', message: 'Routes must not spawn processes; use an adapter.' },
+            {
+              name: 'node:fs',
+              message: 'Routes must go through a service, not touch the filesystem.',
+            },
+            {
+              name: 'node:fs/promises',
+              message: 'Routes must go through a service, not touch the filesystem.',
+            },
+            {
+              name: 'node:child_process',
+              message: 'Routes must not spawn processes; use an adapter.',
+            },
           ],
         },
       ],

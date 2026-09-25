@@ -1,0 +1,6 @@
+node_modules
+**/dist
+web/src/vendor
+package-lock.json
+example
+*.md

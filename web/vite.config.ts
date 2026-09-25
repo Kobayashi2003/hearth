@@ -4,36 +4,33 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-/**
- * The frontend is a static bundle served by the Caddy edge, so nothing here
- * sits in the request path at runtime. In development the API is proxied so the
- * browser sees one origin and the session cookie behaves exactly as it will in
- * production — including for media streams.
- */
+/** In development the API is proxied so the browser sees one origin, as it does behind Caddy. */
 export default defineConfig(({ command, mode }) => {
-  const env = loadEnv(mode, fileURLToPath(new URL('../', import.meta.url)), 'HEARTH_');
-  const apiTarget = env.HEARTH_DEV_API ?? 'http://127.0.0.1:5311';
+  const envDir = fileURLToPath(new URL('../', import.meta.url));
+  // Same files as the server: .env, plus .env.development under `vite` (dev), which lifts every limit.
+  const env = loadEnv(mode, envDir, 'HEARTH_');
+  const apiTarget = env.HEARTH_DEV_API || `http://127.0.0.1:${env.HEARTH_PORT || 5111}`;
+  const apiPrefix = env.HEARTH_API_PREFIX || '/hearth-api';
 
   return {
+    envDir,
+    // Only HEARTH_WEB_* reaches the bundle; everything else in .env stays on the server.
+    envPrefix: 'HEARTH_WEB_',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
-    // Built assets use relative URLs, so one bundle works both standalone and
-    // mounted under an app-gateway prefix — the prefix is discovered at
-    // runtime. The dev server always serves from the origin root.
+    // Relative asset URLs: one bundle works under any mount prefix.
     base: command === 'build' ? './' : '/',
     server: {
-      port: 5110,
+      port: Number(env.HEARTH_DEV_WEB_PORT || 5110),
+      strictPort: true,
       proxy: {
-        // App-scoped prefix, matching the backend and the app-gateway edge.
-        '/hearth-api': {
+        [apiPrefix]: {
           target: apiTarget,
           changeOrigin: false,
-          // Range streams must not be buffered by the dev proxy.
-          ws: true,
         },
       },
     },
@@ -42,8 +39,6 @@ export default defineConfig(({ command, mode }) => {
       sourcemap: true,
       rollupOptions: {
         output: {
-          // The heavy viewers are rarely opened; keeping them out of the entry
-          // chunk is what keeps first paint fast on a phone.
           manualChunks: {
             react: ['react', 'react-dom'],
             router: ['@tanstack/react-router', '@tanstack/react-query'],

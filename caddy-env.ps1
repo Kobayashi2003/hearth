@@ -33,9 +33,19 @@ $backendPort = if ($env:HEARTH_PORT)   { $env:HEARTH_PORT }
                elseif ($dotenv.PORT)    { $dotenv.PORT }
                else                     { 5111 }
 
+function Pick([string]$Name, [string]$Default) {
+    $fromEnv = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if ($fromEnv) { return $fromEnv }
+    if ($dotenv[$Name]) { return $dotenv[$Name] }
+    return $Default
+}
+
 $webRoot = Join-Path $PSScriptRoot 'web\dist'
 
 return @{
     HEARTH_BACKEND_UPSTREAM = "127.0.0.1:$backendPort"
     HEARTH_WEB_ROOT         = $webRoot
+    # Must match what the backend mounts (HEARTH_API_PREFIX) and what the SPA calls.
+    HEARTH_API_PREFIX       = Pick 'HEARTH_API_PREFIX' '/hearth-api'
+    HEARTH_WEB_PREFIX       = Pick 'HEARTH_WEB_PREFIX' '/hearth'
 }

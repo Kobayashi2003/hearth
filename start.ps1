@@ -39,6 +39,10 @@ if (-not $NoCaddy) {
     }
 }
 
+if (-not (Test-Path (Join-Path $root 'node_modules'))) {
+    throw 'Dependencies are not installed. Run `npm install` in the repository root first.'
+}
+
 if ($Build) {
     # npm on Windows is a .cmd shim; name it explicitly so Start-Process resolves it.
     $npm = if ($IsWindows -or $null -eq $IsWindows) { 'npm.cmd' } else { 'npm' }
@@ -70,7 +74,7 @@ $children = @()
 # Every spawn lives inside this try, so a failure part-way through tears down what
 # already started instead of orphaning it, still holding its port.
 try {
-    Write-Host "[START] backend on $($caddyEnv.HEARTH_BACKEND_UPSTREAM)/api" -ForegroundColor Green
+    Write-Host "[START] backend on $($caddyEnv.HEARTH_BACKEND_UPSTREAM)$($caddyEnv.HEARTH_API_PREFIX)" -ForegroundColor Green
     $children += Start-Process -FilePath 'node' -ArgumentList 'server/dist/main.js' `
         -WorkingDirectory $root -NoNewWindow -PassThru
 
@@ -79,7 +83,7 @@ try {
     } else {
         # Caddy tolerates upstreams still coming up (502 until they answer), so it
         # needs no ordering against the backend above.
-        Write-Host "[START] Caddy on $Bind  <- the only public ingress" -ForegroundColor Green
+        Write-Host "[START] Caddy on $Bind$($caddyEnv.HEARTH_WEB_PREFIX)  <- the only public ingress" -ForegroundColor Green
 
         # Start-Process has no -Environment parameter, so set these on this process
         # (children inherit) and restore afterwards.
