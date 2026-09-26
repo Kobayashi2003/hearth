@@ -39,6 +39,7 @@ import { ComicService } from './modules/kiln/comic.service.js';
 import { DocumentService } from './modules/kiln/document.service.js';
 import { StreamService } from './modules/kiln/stream.service.js';
 import { TextService } from './modules/kiln/text.service.js';
+import { SubtitleService } from './modules/kiln/subtitle.service.js';
 import { ThumbnailService } from './modules/kiln/thumbnail.service.js';
 import { FolderCoverService } from './modules/kiln/folder-cover.service.js';
 import { createKilnRoutes } from './modules/kiln/routes.js';
@@ -115,6 +116,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
     ffmpeg,
     text: new TextService(config),
     thumbnails: new ThumbnailService(config, ffmpeg),
+    subtitles: new SubtitleService(config, ffmpeg),
     folderCovers: new FolderCoverService(config),
     comics: new ComicService(config),
     archives: new ArchiveService(config),

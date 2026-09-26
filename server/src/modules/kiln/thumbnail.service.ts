@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 import sharp from 'sharp';
-import { COMIC_EXTENSIONS, EPUB_EXTENSIONS } from '@hearth/shared';
+import { COMIC_EXTENSIONS, EPUB_EXTENSIONS, THUMBNAIL_REVISION } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
@@ -18,8 +18,10 @@ export interface ThumbnailRequest {
   quality: number;
 }
 
-/** Far enough in to skip black leader. */
-const VIDEO_POSTER_SECONDS = 3;
+/** Poster offset: past the opening logos, capped so a long file never seeks far. */
+const POSTER_FRACTION = 0.15;
+const POSTER_MIN_SECONDS = 3;
+const POSTER_MAX_SECONDS = 600;
 
 /** Cached on disk under a key that includes mtime and size, so edits never serve a stale image. */
 export class ThumbnailService {
@@ -73,11 +75,29 @@ export class ThumbnailService {
     const kind = mediaKindOf(mimeType);
 
     if (kind === 'video') {
-      return this.ffmpeg.extractFrame(target, VIDEO_POSTER_SECONDS, request.width, signal);
+      const duration = await this.ffmpeg
+        .probe(target, signal)
+        .then(probe => probe.durationSeconds)
+        .catch(() => null);
+      // A clip shorter than the minimum offset is taken from its middle.
+      const at =
+        duration === null
+          ? POSTER_MIN_SECONDS
+          : Math.min(
+              POSTER_MAX_SECONDS,
+              Math.max(Math.min(POSTER_MIN_SECONDS, duration / 2), duration * POSTER_FRACTION),
+            );
+      const frame = await this.ffmpeg
+        .extractFrame(target, at, request.width, signal)
+        .catch(() => Buffer.alloc(0));
+      return frame.length > 0 ? frame : this.ffmpeg.extractFrame(target, 0, request.width, signal);
     }
 
     if (kind === 'audio') {
-      return embeddedArtwork(target);
+      const embedded = await embeddedArtwork(target);
+      if (embedded) return embedded;
+      const scan = await albumArtwork(path.dirname(target));
+      return scan ? fsp.readFile(scan) : null;
     }
 
     if (path.extname(target).toLowerCase() === '.psd') {
@@ -124,7 +144,9 @@ export class ThumbnailService {
   private keyFor(target: string, mtimeMs: number, size: number, request: ThumbnailRequest): string {
     return crypto
       .createHash('sha1')
-      .update(`${target}|${mtimeMs}|${size}|${request.width}|${request.quality}`)
+      .update(
+        `${THUMBNAIL_REVISION}|${target}|${mtimeMs}|${size}|${request.width}|${request.quality}`,
+      )
       .digest('hex');
   }
 
@@ -149,4 +171,38 @@ async function embeddedArtwork(target: SafePath): Promise<Buffer | null> {
   } catch {
     return null;
   }
+}
+
+/** Names a rip or a download gives its front cover. */
+const COVER_NAME = /^(cover|folder|front|jacket|album|albumart)\b/i;
+/** Subfolders where the scans of the packaging usually live. */
+const SCANS_FOLDER = /^(scans?|artwork|art|covers?|booklet|bk|images?)$/i;
+const ARTWORK_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']);
+const albumCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/** Art kept beside the audio: a cover-named image, then a scans folder, then any image. */
+async function albumArtwork(directory: string): Promise<string | null> {
+  const dirents = await fsp.readdir(directory, { withFileTypes: true }).catch(() => null);
+  if (!dirents) return null;
+  const sorted = dirents.sort((a, b) => albumCollator.compare(a.name, b.name));
+  const images = (entries: typeof sorted) =>
+    entries.filter(
+      dirent => dirent.isFile() && ARTWORK_EXTENSIONS.has(path.extname(dirent.name).toLowerCase()),
+    );
+
+  const here = images(sorted);
+  const named = here.find(dirent => COVER_NAME.test(dirent.name));
+  if (named) return path.join(directory, named.name);
+
+  for (const folder of sorted.filter(d => d.isDirectory() && SCANS_FOLDER.test(d.name))) {
+    const inside = await fsp
+      .readdir(path.join(directory, folder.name), { withFileTypes: true })
+      .catch(() => null);
+    if (!inside) continue;
+    const scans = images(inside.sort((a, b) => albumCollator.compare(a.name, b.name)));
+    const pick = scans.find(dirent => COVER_NAME.test(dirent.name)) ?? scans[0];
+    if (pick) return path.join(directory, folder.name, pick.name);
+  }
+
+  return here[0] ? path.join(directory, here[0].name) : null;
 }

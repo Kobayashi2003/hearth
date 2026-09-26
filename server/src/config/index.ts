@@ -100,6 +100,7 @@ export interface AppConfig {
     readonly thumbnailCacheDirectory: string;
     readonly comicCacheDirectory: string;
     readonly psdCacheDirectory: string;
+    readonly subtitleCacheDirectory: string;
     readonly ffmpegPath: string;
     readonly ffprobePath: string;
     readonly transcodeCrf: number;
@@ -116,6 +117,7 @@ export interface AppConfig {
     readonly thumbnailMaxAgeMs: number;
     readonly comicMaxAgeMs: number;
     readonly psdMaxAgeMs: number;
+    readonly subtitleMaxAgeMs: number;
   };
   readonly ledger: {
     readonly maxProgressEntries: number;
@@ -292,6 +294,7 @@ export function loadConfig(development = false): AppConfig {
       thumbnailCacheDirectory: envPath('THUMBNAIL_CACHE_DIR', './server/temp/thumbnails'),
       comicCacheDirectory: envPath('COMIC_CACHE_DIR', './server/temp/comics'),
       psdCacheDirectory: envPath('PSD_CACHE_DIR', './server/temp/psd'),
+      subtitleCacheDirectory: envPath('SUBTITLE_CACHE_DIR', './server/temp/subtitles'),
       // Bare names resolve on PATH.
       ffmpegPath: envString('FFMPEG_PATH', 'ffmpeg'),
       ffprobePath: envString('FFPROBE_PATH', 'ffprobe'),
@@ -309,6 +312,7 @@ export function loadConfig(development = false): AppConfig {
       thumbnailMaxAgeMs: envLimit('CACHE_THUMBNAIL_DAYS', 30, DAY_MS),
       comicMaxAgeMs: envLimit('CACHE_COMIC_DAYS', 7, DAY_MS),
       psdMaxAgeMs: envLimit('CACHE_PSD_DAYS', 7, DAY_MS),
+      subtitleMaxAgeMs: envLimit('CACHE_SUBTITLE_DAYS', 30, DAY_MS),
     },
     ledger: {
       maxProgressEntries: envLimit('LEDGER_MAX_PROGRESS', 1000),

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { hasCoverArt, type FileEntry, type Progress } from '@hearth/shared';
+import { hasCoverArt, THUMBNAIL_REVISION, type FileEntry, type Progress } from '@hearth/shared';
 
 import { mediaUrls } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -41,7 +41,11 @@ export function EntryVisual({
     <span className={cn('relative grid place-items-center overflow-hidden', className)}>
       {wantsPicture ? (
         <img
-          src={mediaUrls.thumbnail(entry.path, width, `${Date.parse(entry.mtime)}-${entry.size}`)}
+          src={mediaUrls.thumbnail(
+            entry.path,
+            width,
+            `${THUMBNAIL_REVISION}-${Date.parse(entry.mtime)}-${entry.size}`,
+          )}
           alt=""
           loading="lazy"
           decoding="async"

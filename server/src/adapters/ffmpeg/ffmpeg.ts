@@ -123,17 +123,17 @@ export class FfmpegAdapter {
     return child.stdout;
   }
 
-  /** WebVTT is the only subtitle format a browser takes. */
-  async extractSubtitle(
+  /** Several subtitle tracks in one pass: extracting any one reads the whole file. */
+  async extractSubtitles(
     filePath: string,
-    trackIndex: number,
+    outputs: ReadonlyArray<{ track: number; file: string }>,
     signal?: AbortSignal,
-  ): Promise<string> {
-    return this.collect(
-      this.options.ffmpegPath,
-      ['-v', 'quiet', '-i', filePath, '-map', `0:s:${trackIndex}`, '-f', 'webvtt', 'pipe:1'],
-      signal,
-    );
+  ): Promise<void> {
+    const args = ['-v', 'quiet', '-y', '-i', filePath];
+    for (const output of outputs) {
+      args.push('-map', `0:s:${output.track}`, '-f', 'webvtt', output.file);
+    }
+    await this.collect(this.options.ffmpegPath, args, signal);
   }
 
   async extractFrame(
@@ -153,8 +153,9 @@ export class FfmpegAdapter {
         filePath,
         '-frames:v',
         '1',
+        // The most representative of the next 60 frames, not a fade or a black cut.
         '-vf',
-        `scale=${width}:-2`,
+        `thumbnail=60,scale=${width}:-2`,
         '-f',
         'image2',
         '-c:v',

@@ -19,3 +19,13 @@ export function hasCoverArt(entry: Pick<FileEntry, 'name' | 'mimeType' | 'isDire
     entry.mimeType.startsWith('audio/')
   );
 }
+
+/** Subtitle codecs that convert to WebVTT. Bitmap ones (PGS, VobSub, DVB) cannot. */
+const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text']);
+
+export function isTextSubtitle(codec: string | null): boolean {
+  return codec !== null && TEXT_SUBTITLE_CODECS.has(codec);
+}
+
+/** In the server's thumbnail cache key and the client's URLs; bump when thumbnails change. */
+export const THUMBNAIL_REVISION = 2;

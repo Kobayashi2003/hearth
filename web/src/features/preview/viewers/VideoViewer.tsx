@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  AudioLines,
   Captions,
   Gauge,
   Pause,
@@ -12,7 +13,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import type { MediaTrack } from '@hearth/shared';
+import { isTextSubtitle, type MediaTrack } from '@hearth/shared';
 
 import { api, mediaUrls } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -20,7 +21,7 @@ import { formatDuration } from '@/lib/format';
 import { local } from '@/lib/storage';
 import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
-import { Menu, MenuChoice, MenuLabel, MenuSeparator } from '@/ui/Menu';
+import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
 import { Scrubber } from '@/ui/Scrubber';
 import { percentOf, useProgress } from '@/features/progress/progress';
 import { usePlayer } from '../audio/PlayerProvider';
@@ -28,6 +29,13 @@ import { useMediaSession } from '../audio/useMediaSession';
 import { isTypingTarget, useOverlay } from '../PreviewOverlay';
 import { useIdle, ViewerFrame } from '../ViewerFrame';
 import type { ViewerProps } from '../viewers';
+import {
+  preferredAudio,
+  preferredSubtitle,
+  rememberAudio,
+  rememberSubtitle,
+  trackLabels,
+} from './tracks';
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SAVE_EVERY_SECONDS = 5;
@@ -42,10 +50,17 @@ export default function VideoViewer({ entry }: ViewerProps) {
   const { pause: pauseMusic } = usePlayer();
   const idle = useIdle(true);
 
-  const [audioTrack, setAudioTrack] = useState(0);
-  const [subtitle, setSubtitle] = useState<number | null>(null);
+  // Null / undefined until the viewer picks: the language chosen last time applies.
+  const [audioChoice, setAudioChoice] = useState<number | null>(null);
+  const [subtitleChoice, setSubtitleChoice] = useState<number | null | undefined>(undefined);
   // A transcode restarts at an offset to seek; the element's clock counts from there.
   const [offset, setOffset] = useState(0);
+  const trackRef = useRef<HTMLTrackElement | null>(null);
+  const cueTimes = useRef(new WeakMap<TextTrackCue, [number, number]>());
+  // Which subtitle track last finished loading; any other selected one is still on its way.
+  const [subtitleLoaded, setSubtitleLoaded] = useState<{ index: number; failed: boolean } | null>(
+    null,
+  );
   const [state, setState] = useState({
     playing: false,
     time: 0,
@@ -73,10 +88,65 @@ export default function VideoViewer({ entry }: ViewerProps) {
     resumeAt.current = saved?.kind === 'time' && typeof saved.at === 'number' ? saved.at : 0;
   }
 
+  const audioTracks = probe?.audioTracks ?? [];
+  // Bitmap subtitles (PGS, VobSub) have no WebVTT form; offering them would only fail.
+  const subtitleTracks = (probe?.subtitleTracks ?? []).filter(track => isTextSubtitle(track.codec));
+  const audioTrack = audioChoice ?? preferredAudio(audioTracks);
+  const subtitle =
+    subtitleChoice !== undefined ? subtitleChoice : preferredSubtitle(subtitleTracks);
+
+  const subtitleStatus =
+    subtitle === null
+      ? 'ready'
+      : subtitleLoaded?.index !== subtitle
+        ? 'loading'
+        : subtitleLoaded.failed
+          ? 'failed'
+          : 'ready';
+
   // Set when the browser refused the original file despite the probe; the stream is then converted.
   const [forceTranscode, setForceTranscode] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const transcoding = forceTranscode || (probe ? !probe.browserPlayable || audioTrack > 0 : false);
+
+  // Subtitle cues are timed from the start of the film, but a converted stream
+  // restarts its clock at the point it was started from; shift them to match.
+  const alignCues = useCallback(() => {
+    const cues = trackRef.current?.track.cues;
+    if (!cues) return;
+    const shift = transcoding ? offset : 0;
+    for (const cue of Array.from(cues)) {
+      let original = cueTimes.current.get(cue);
+      if (!original) {
+        original = [cue.startTime, cue.endTime];
+        cueTimes.current.set(cue, original);
+      }
+      cue.startTime = original[0] - shift;
+      cue.endTime = original[1] - shift;
+    }
+  }, [transcoding, offset]);
+  useEffect(alignCues, [alignCues]);
+
+  // React does not wire load/error on <track>, so listen natively. A track that
+  // finished before the listener was attached is caught by its readyState.
+  useEffect(() => {
+    const element = trackRef.current;
+    if (!element || subtitle === null) return;
+    const loaded = () => {
+      setSubtitleLoaded({ index: subtitle, failed: false });
+      alignCues();
+    };
+    const failed = () => setSubtitleLoaded({ index: subtitle, failed: true });
+    if (element.readyState === HTMLTrackElement.LOADED) loaded();
+    else if (element.readyState === HTMLTrackElement.ERROR) failed();
+    element.addEventListener('load', loaded);
+    element.addEventListener('error', failed);
+    return () => {
+      element.removeEventListener('load', loaded);
+      element.removeEventListener('error', failed);
+    };
+  }, [subtitle, alignCues]);
+
   const duration = probe?.durationSeconds ?? state.duration;
   const position = offset + state.time;
 
@@ -230,7 +300,13 @@ export default function VideoViewer({ entry }: ViewerProps) {
             }}
           >
             {subtitle !== null ? (
-              <track kind="subtitles" src={mediaUrls.subtitle(path, subtitle)} default />
+              <track
+                key={subtitle}
+                ref={trackRef}
+                kind="subtitles"
+                src={mediaUrls.subtitle(path, subtitle)}
+                default
+              />
             ) : null}
           </video>
         ) : null}
@@ -316,22 +392,31 @@ export default function VideoViewer({ entry }: ViewerProps) {
             value={muted ? 0 : volume}
             onChange={event => applyVolume(Number(event.target.value))}
             aria-label="Volume"
-            className="hidden w-20 accent-[var(--ember)] sm:block"
+            className="hidden w-20 accent-current sm:block"
           />
           <span className="tabular ml-2 text-[12px] text-white/75">
             {formatDuration(position)} / {formatDuration(duration)}
           </span>
           <span className="flex-1" />
           <TrackMenu
-            audioTracks={probe?.audioTracks ?? []}
-            subtitleTracks={probe?.subtitleTracks ?? []}
-            audioTrack={audioTrack}
-            subtitle={subtitle}
-            onAudio={track => {
+            kind="audio"
+            tracks={audioTracks}
+            selected={audioTrack}
+            onSelect={track => {
+              if (track === null || track === audioTrack) return;
+              rememberAudio(audioTracks.find(candidate => candidate.index === track));
               setOffset(position);
-              setAudioTrack(track);
+              setAudioChoice(track);
             }}
-            onSubtitle={setSubtitle}
+          />
+          <TrackMenu
+            kind="subtitle"
+            tracks={subtitleTracks}
+            selected={subtitle}
+            onSelect={track => {
+              rememberSubtitle(subtitleTracks.find(candidate => candidate.index === track));
+              setSubtitleChoice(track);
+            }}
           />
           <Menu
             side="top"
@@ -371,9 +456,13 @@ export default function VideoViewer({ entry }: ViewerProps) {
             </Button>
           ) : null}
         </div>
-        {transcoding ? (
+        {transcoding || subtitleStatus !== 'ready' ? (
           <p className="mt-1 text-[11.5px] text-white/50">
-            Converted on the fly for this browser; seeking restarts the stream.
+            {subtitleStatus === 'loading'
+              ? 'Loading subtitles. The first time reads the whole file, so a long film takes a while.'
+              : subtitleStatus === 'failed'
+                ? 'These subtitles could not be read.'
+                : 'Converted on the fly for this browser; seeking restarts the stream.'}
           </p>
         ) : null}
       </div>
@@ -381,31 +470,22 @@ export default function VideoViewer({ entry }: ViewerProps) {
   );
 }
 
-function trackLabel(track: MediaTrack, kind: string): string {
-  return (
-    track.title ??
-    (track.language
-      ? `${track.language.toUpperCase()} (${track.codec})`
-      : `${kind} ${track.index + 1}`)
-  );
-}
-
+/** One menu per kind: a film can carry a dozen dubs and forty subtitle tracks. */
 function TrackMenu({
-  audioTracks,
-  subtitleTracks,
-  audioTrack,
-  subtitle,
-  onAudio,
-  onSubtitle,
+  kind,
+  tracks,
+  selected,
+  onSelect,
 }: {
-  audioTracks: MediaTrack[];
-  subtitleTracks: MediaTrack[];
-  audioTrack: number;
-  subtitle: number | null;
-  onAudio: (index: number) => void;
-  onSubtitle: (index: number | null) => void;
+  kind: 'audio' | 'subtitle';
+  tracks: MediaTrack[];
+  selected: number | null;
+  onSelect: (index: number | null) => void;
 }) {
-  if (audioTracks.length < 2 && subtitleTracks.length === 0) return null;
+  const isAudio = kind === 'audio';
+  if (isAudio ? tracks.length < 2 : tracks.length === 0) return null;
+  const labels = trackLabels(tracks, isAudio ? 'Track' : 'Subtitle');
+  const title = isAudio ? 'Audio' : 'Subtitles';
   return (
     <Menu
       side="top"
@@ -413,45 +493,30 @@ function TrackMenu({
         <Button
           variant="stage"
           size="icon"
-          aria-label="Audio and subtitles"
-          title="Audio and subtitles"
+          aria-label={title}
+          title={title}
+          className={cn(!isAudio && selected !== null && 'text-white')}
         >
-          <Captions />
+          {isAudio ? <AudioLines /> : <Captions />}
         </Button>
       }
     >
-      {audioTracks.length > 1 ? (
-        <>
-          <MenuLabel>Audio</MenuLabel>
-          {audioTracks.map(track => (
-            <MenuChoice
-              key={track.index}
-              checked={audioTrack === track.index}
-              onSelect={() => onAudio(track.index)}
-            >
-              {trackLabel(track, 'Track')}
-            </MenuChoice>
-          ))}
-        </>
-      ) : null}
-      {subtitleTracks.length > 0 ? (
-        <>
-          {audioTracks.length > 1 ? <MenuSeparator /> : null}
-          <MenuLabel>Subtitles</MenuLabel>
-          <MenuChoice checked={subtitle === null} onSelect={() => onSubtitle(null)}>
-            Off
-          </MenuChoice>
-          {subtitleTracks.map(track => (
-            <MenuChoice
-              key={track.index}
-              checked={subtitle === track.index}
-              onSelect={() => onSubtitle(track.index)}
-            >
-              {trackLabel(track, 'Subtitle')}
-            </MenuChoice>
-          ))}
-        </>
-      ) : null}
+      <MenuLabel>{title}</MenuLabel>
+      {isAudio ? null : (
+        <MenuChoice checked={selected === null} closes onSelect={() => onSelect(null)}>
+          Off
+        </MenuChoice>
+      )}
+      {tracks.map(track => (
+        <MenuChoice
+          key={track.index}
+          checked={selected === track.index}
+          closes
+          onSelect={() => onSelect(track.index)}
+        >
+          {labels.get(track.index)}
+        </MenuChoice>
+      ))}
     </Menu>
   );
 }

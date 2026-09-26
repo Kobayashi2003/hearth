@@ -25,6 +25,10 @@ export class CacheCleanupService {
       { directory: config.media.thumbnailCacheDirectory, maxAgeMs: config.cache.thumbnailMaxAgeMs },
       { directory: config.media.comicCacheDirectory, maxAgeMs: config.cache.comicMaxAgeMs },
       { directory: config.media.psdCacheDirectory, maxAgeMs: config.cache.psdMaxAgeMs },
+      {
+        directory: config.media.subtitleCacheDirectory,
+        maxAgeMs: config.cache.subtitleMaxAgeMs,
+      },
     ].filter(target => Number.isFinite(target.maxAgeMs));
   }
 

@@ -22,6 +22,7 @@ import { contentDisposition } from './stream.service.js';
 import type { DocumentService } from './document.service.js';
 import type { StreamService } from './stream.service.js';
 import type { TextService } from './text.service.js';
+import type { SubtitleService } from './subtitle.service.js';
 import type { ThumbnailService } from './thumbnail.service.js';
 import type { FolderCoverService } from './folder-cover.service.js';
 
@@ -30,6 +31,7 @@ export interface KilnServices {
   streams: StreamService;
   text: TextService;
   thumbnails: ThumbnailService;
+  subtitles: SubtitleService;
   folderCovers: FolderCoverService;
   comics: ComicService;
   archives: ArchiveService;
@@ -53,6 +55,7 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
     streams,
     text,
     thumbnails,
+    subtitles,
     folderCovers,
     comics,
     archives,
@@ -143,12 +146,11 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
       async (request, reply) => {
         const target = request.resolvePath(request.query.path, 'read');
         await listing.assertFile(target);
-        const vtt = await ffmpeg.extractSubtitle(
-          target,
-          request.query.track ?? 0,
-          abortSignalOf(request),
-        );
-        return reply.header('Content-Type', 'text/vtt; charset=utf-8').send(vtt);
+        const vtt = await subtitles.vtt(target, request.query.track ?? 0, abortSignalOf(request));
+        return reply
+          .header('Content-Type', 'text/vtt; charset=utf-8')
+          .header('Cache-Control', 'private, max-age=3600')
+          .send(vtt);
       },
     );
 

@@ -25,7 +25,17 @@ export function Menu({
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>{trigger}</Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content align={align} side={side} sideOffset={6} className={menuSurface}>
+        <Dropdown.Content
+          align={align}
+          side={side}
+          sideOffset={6}
+          collisionPadding={8}
+          // Long lists scroll instead of running off screen.
+          className={cn(
+            menuSurface,
+            'scroll-thin max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto',
+          )}
+        >
           {children}
         </Dropdown.Content>
       </Dropdown.Portal>

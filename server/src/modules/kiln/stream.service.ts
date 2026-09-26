@@ -46,9 +46,14 @@ export class StreamService {
     reply.headers(inlineSafetyHeaders(entry.mimeType));
     reply.header('Last-Modified', new Date(entry.mtime).toUTCString());
     reply.header('Cache-Control', 'private, max-age=0, must-revalidate');
-    if (options.download) {
-      reply.header('Content-Disposition', contentDisposition(options.filename ?? entry.name));
-    }
+    // Inline still names the file: the browser's PDF viewer titles itself from it.
+    reply.header(
+      'Content-Disposition',
+      contentDisposition(
+        options.filename ?? entry.name,
+        options.download ? 'attachment' : 'inline',
+      ),
+    );
 
     const range =
       result.kind === 'satisfiable' ? result.range : { start: 0, end: Math.max(0, size - 1) };
