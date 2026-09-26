@@ -15,7 +15,7 @@ export default function OfficeViewer({ entry }: ViewerProps) {
   });
 
   return (
-    <ViewerFrame entry={entry} className="bg-surface text-ink">
+    <ViewerFrame entry={entry} tone="paper">
       <Loaded query={query} failure="This document could not be opened">
         {data => (
           <div className="scroll-thin absolute inset-0 overflow-auto">

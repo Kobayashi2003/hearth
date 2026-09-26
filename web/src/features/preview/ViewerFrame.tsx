@@ -10,13 +10,15 @@ import { useOverlay } from './PreviewOverlay';
 /**
  * The chrome every viewer shares: name, position in the gallery, the viewer's
  * own controls, download, fullscreen, close. `immersive` floats the bar over
- * the content and hides it while the pointer rests.
+ * the content and hides it while the pointer rests. `paper` suits documents,
+ * where a dark bar over a light page would draw the eye from the text.
  */
 export function ViewerFrame({
   entry,
   children,
   actions,
   immersive = false,
+  tone = 'stage',
   arrows = false,
   subtitle,
   className,
@@ -25,6 +27,7 @@ export function ViewerFrame({
   children: ReactNode;
   actions?: ReactNode;
   immersive?: boolean;
+  tone?: 'stage' | 'paper';
   /** Side buttons for stepping through the gallery. */
   arrows?: boolean;
   subtitle?: ReactNode;
@@ -32,12 +35,15 @@ export function ViewerFrame({
 }) {
   const { close, step, index, total, isFullscreen, toggleFullscreen } = useOverlay();
   const idle = useIdle(immersive);
+  const paper = tone === 'paper';
+  const buttonVariant = paper ? 'quiet' : 'stage';
 
   const bar = (
     <header
       className={cn(
         // Narrow screens put the controls on a second row so the name keeps its width.
         'flex shrink-0 flex-wrap items-center gap-x-2 px-3 py-2 sm:min-h-14 sm:flex-nowrap sm:px-4',
+        paper && 'border-b border-line bg-surface text-ink',
         immersive &&
           'absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent pb-5 transition-opacity duration-300',
         immersive && idle && 'pointer-events-none opacity-0',
@@ -47,12 +53,14 @@ export function ViewerFrame({
         <h2 className="truncate text-[15px] font-semibold" title={entry.name}>
           {entry.name}
         </h2>
-        <p className="tabular truncate text-[12px] text-stage-ink/60">
+        <p
+          className={cn('tabular truncate text-[12px]', paper ? 'text-ink-3' : 'text-stage-ink/60')}
+        >
           {subtitle ?? (total > 1 ? `${index + 1} of ${total}` : null)}
         </p>
       </div>
       <Button
-        variant="stage"
+        variant={buttonVariant}
         size="icon"
         onClick={close}
         aria-label="Close"
@@ -67,12 +75,17 @@ export function ViewerFrame({
           href={mediaUrls.download(entry.path)}
           aria-label="Download"
           title="Download"
-          className="grid size-tap place-items-center rounded-lg text-stage-ink/80 hover:bg-white/10 hover:text-stage-ink [&_svg]:size-[18px]"
+          className={cn(
+            'grid size-tap place-items-center rounded-lg [&_svg]:size-[18px]',
+            paper
+              ? 'text-ink-2 hover:bg-sunken hover:text-ink'
+              : 'text-stage-ink/80 hover:bg-white/10 hover:text-stage-ink',
+          )}
         >
           <Download />
         </a>
         <Button
-          variant="stage"
+          variant={buttonVariant}
           size="icon"
           onClick={toggleFullscreen}
           aria-label="Full screen"
@@ -86,7 +99,11 @@ export function ViewerFrame({
 
   return (
     <div
-      className={cn('relative flex min-h-0 flex-1 flex-col', immersive && idle && 'cursor-none')}
+      className={cn(
+        'relative flex min-h-0 flex-1 flex-col',
+        paper && 'bg-surface text-ink',
+        immersive && idle && 'cursor-none',
+      )}
     >
       {bar}
       <div className={cn('relative min-h-0 flex-1', className)}>{children}</div>

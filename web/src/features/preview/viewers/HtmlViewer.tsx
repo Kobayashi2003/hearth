@@ -18,7 +18,7 @@ export default function HtmlViewer({ entry }: ViewerProps) {
   });
 
   return (
-    <ViewerFrame entry={entry} className="bg-surface text-ink">
+    <ViewerFrame entry={entry} tone="paper">
       <Loaded query={query} failure="This page could not be opened">
         {data => (
           <div className="absolute inset-0 flex flex-col">

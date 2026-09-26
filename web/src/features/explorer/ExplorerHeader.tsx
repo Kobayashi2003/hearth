@@ -171,7 +171,10 @@ export function ExplorerHeader({
 
       <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2 pb-3 [@media(max-height:500px)]:mt-1 [@media(max-height:500px)]:pb-2">
         <h1
-          className="display-title line-clamp-2 min-w-0 max-w-full break-words pb-0.5 text-[clamp(30px,5vw,52px)] [@media(max-height:500px)]:text-[26px]"
+          className={cn(
+            'display-title line-clamp-2 min-w-0 max-w-full break-words pb-0.5 [@media(max-height:500px)]:text-[26px]',
+            TITLE_SIZES[titleScale(title ?? '')],
+          )}
           title={title}
         >
           {title}
@@ -375,4 +378,26 @@ function SearchScope({ explorer }: { explorer: Explorer }) {
       </button>
     </div>
   );
+}
+
+const TITLE_SIZES = {
+  short: 'text-[clamp(30px,5vw,52px)]',
+  medium: 'text-[clamp(26px,3.6vw,40px)]',
+  long: 'text-[clamp(22px,2.6vw,30px)]',
+} as const;
+
+/** Long names step down so a CJK album title does not outweigh the page; a full-width glyph counts double. */
+function titleScale(title: string): keyof typeof TITLE_SIZES {
+  let width = 0;
+  for (const character of title) {
+    width +=
+      /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(
+        character,
+      )
+        ? 1
+        : 0.55;
+  }
+  if (width <= 14) return 'short';
+  if (width <= 26) return 'medium';
+  return 'long';
 }

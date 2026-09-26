@@ -112,7 +112,7 @@ export function VolumeControl({ variant = 'stage' }: { variant?: 'stage' | 'quie
         value={player.muted ? 0 : player.volume}
         onChange={event => player.setVolume(Number(event.target.value))}
         aria-label="Volume"
-        className="w-20 accent-[var(--ember)]"
+        className="w-20 accent-current"
       />
     </div>
   );

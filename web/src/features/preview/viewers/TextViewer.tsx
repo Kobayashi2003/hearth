@@ -126,7 +126,7 @@ export default function TextViewer({ entry }: ViewerProps) {
   const actions =
     draft !== null ? (
       <>
-        <Button variant="stage" size="sm" onClick={() => setDraft(null)}>
+        <Button variant="quiet" size="sm" onClick={() => setDraft(null)}>
           <X /> Discard
         </Button>
         <Button variant="primary" size="sm" onClick={() => void commit()} disabled={isSaving}>
@@ -135,14 +135,14 @@ export default function TextViewer({ entry }: ViewerProps) {
       </>
     ) : (
       <>
-        <Button variant="stage" size="icon" onClick={() => step(-1)} aria-label="Smaller text">
+        <Button variant="quiet" size="icon" onClick={() => step(-1)} aria-label="Smaller text">
           <AArrowDown />
         </Button>
-        <Button variant="stage" size="icon" onClick={() => step(1)} aria-label="Larger text">
+        <Button variant="quiet" size="icon" onClick={() => step(1)} aria-label="Larger text">
           <AArrowUp />
         </Button>
         <Button
-          variant="stage"
+          variant="quiet"
           size="icon"
           onClick={() => setWrap(!wrap)}
           aria-pressed={wrap}
@@ -154,7 +154,7 @@ export default function TextViewer({ entry }: ViewerProps) {
         </Button>
         <Menu
           trigger={
-            <Button variant="stage" size="icon" aria-label="Text encoding" title="Text encoding">
+            <Button variant="quiet" size="icon" aria-label="Text encoding" title="Text encoding">
               <Languages />
             </Button>
           }
@@ -172,7 +172,7 @@ export default function TextViewer({ entry }: ViewerProps) {
         </Menu>
         {can('write') && data && !data.truncated ? (
           <Button
-            variant="stage"
+            variant="quiet"
             size="icon"
             onClick={() => setDraft(data.content)}
             aria-label="Edit"
@@ -185,7 +185,7 @@ export default function TextViewer({ entry }: ViewerProps) {
     );
 
   return (
-    <ViewerFrame entry={entry} actions={actions} className="bg-surface text-ink">
+    <ViewerFrame entry={entry} actions={actions} tone="paper">
       {isPending ? (
         <Centered>
           <Spinner />

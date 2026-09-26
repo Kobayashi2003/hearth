@@ -101,7 +101,7 @@ export default function EpubViewer({ entry }: ViewerProps) {
   );
 
   return (
-    <ViewerFrame entry={entry} className="bg-surface text-ink">
+    <ViewerFrame entry={entry} tone="paper">
       {error ? (
         <Notice icon={<BookOpen />} title="This book could not be opened" body={error} />
       ) : !loaded || !readerOptions ? (

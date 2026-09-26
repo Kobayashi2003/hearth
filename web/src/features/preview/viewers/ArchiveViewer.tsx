@@ -84,10 +84,10 @@ export default function ArchiveViewer({ entry }: ViewerProps) {
     <ViewerFrame
       entry={entry}
       subtitle={summary}
-      className="bg-surface text-ink"
+      tone="paper"
       actions={
         data?.looksLikeComic ? (
-          <Button variant="stage" size="sm" onClick={() => setAsComic(true)}>
+          <Button variant="quiet" size="sm" onClick={() => setAsComic(true)}>
             <BookImage /> Read as comic
           </Button>
         ) : null
