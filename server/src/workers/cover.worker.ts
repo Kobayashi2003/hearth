@@ -1,18 +1,15 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 
 import AdmZip from 'adm-zip';
-import { createExtractorFromData } from 'node-unrar-js';
 
 import {
-  collator,
   coverHrefFrom,
   imageSize,
-  isPage,
+  openRarPages,
   RAR_EXTENSIONS,
   rethrow,
-  zipEntryNames,
+  zipPages,
 } from './comic-pages.js';
 
 /**
@@ -33,36 +30,22 @@ export interface CoverResponse {
 const JACKET_SCAN_DEPTH = 3;
 
 function firstImage(zip: AdmZip): CoverResponse | null {
-  const entries = zip.getEntries();
-  const names = zipEntryNames(entries);
-  const pages = entries
-    .filter(entry => !entry.isDirectory && isPage(names.get(entry)!))
-    .sort((a, b) => collator.compare(names.get(a)!, names.get(b)!));
-
+  const pages = zipPages(zip);
   if (pages.length === 0) return null;
 
-  for (const entry of pages.slice(0, JACKET_SCAN_DEPTH)) {
+  for (const { entry, name } of pages.slice(0, JACKET_SCAN_DEPTH)) {
     const content = entry.getData();
     const size = imageSize(content);
-    if (!size || size.height >= size.width) {
-      return { content, name: names.get(entry)! };
-    }
+    if (!size || size.height >= size.width) return { content, name };
   }
 
   const fallback = pages[0]!;
-  return { content: fallback.getData(), name: names.get(fallback)! };
+  return { content: fallback.entry.getData(), name: fallback.name };
 }
 
 async function rarCover(archivePath: string): Promise<CoverResponse | null> {
-  const file = fs.readFileSync(archivePath);
-  const extractor = await createExtractorFromData({
-    data: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer,
-  });
-
-  const first = [...extractor.getFileList().fileHeaders]
-    .filter(header => !header.flags.directory && isPage(header.name))
-    .map(header => header.name)
-    .sort(collator.compare)[0];
+  const { extractor, pages } = await openRarPages(archivePath);
+  const first = pages[0];
   if (!first) return null;
 
   const extracted = [...extractor.extract({ files: [first] }).files][0];

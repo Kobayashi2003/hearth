@@ -34,7 +34,7 @@ function newSession(username: string, permissions: string, expiryMs: number): Se
   };
 }
 
-export class MemorySessionStore implements SessionStore {
+class MemorySessionStore implements SessionStore {
   readonly kind = 'memory' as const;
   private readonly sessions = new Map<string, Session>();
   private readonly sweeper: NodeJS.Timeout;
@@ -98,7 +98,7 @@ const SESSION_PREFIX = 'hearth:session:';
 const USER_SESSIONS_PREFIX = 'hearth:user-sessions:';
 
 /** Survives restarts; a per-user set allows revoking without scanning keys. */
-export class RedisSessionStore implements SessionStore {
+class RedisSessionStore implements SessionStore {
   readonly kind = 'redis' as const;
 
   constructor(

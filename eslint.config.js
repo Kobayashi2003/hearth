@@ -22,6 +22,17 @@ export default tseslint.config(
     },
   },
   {
+    // Ceilings, not targets: set just above where the code stood when it was last
+    // tidied, so a function only crosses one by growing into a new god function.
+    files: ['server/src/**/*.ts', 'web/src/**/*.{ts,tsx}', 'packages/shared/src/**/*.ts'],
+    rules: {
+      complexity: ['error', 30],
+      'max-lines-per-function': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+      'max-depth': ['error', 4],
+      'max-params': ['error', 5],
+    },
+  },
+  {
     // Development helpers: plain Node scripts that are expected to print.
     files: ['scripts/**/*.mjs'],
     languageOptions: {

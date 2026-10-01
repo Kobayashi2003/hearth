@@ -1,6 +1,9 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
+import type AdmZip from 'adm-zip';
 import type { IZipEntry } from 'adm-zip';
+import { createExtractorFromData } from 'node-unrar-js';
 
 import { decodeText, detectEncoding } from '../lib/charset.js';
 
@@ -125,4 +128,30 @@ export function zipEntryNames(entries: readonly IZipEntry[]): Map<IZipEntry, str
         : decodeText(entry.rawEntryName, encoding),
     ]),
   );
+}
+
+/** A file's bytes as the standalone ArrayBuffer unrar wants (not a view into Node's pool). */
+export function readArchiveFile(archivePath: string): ArrayBuffer {
+  const file = fs.readFileSync(archivePath);
+  return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+}
+
+/** A zip's image pages in reading order, each with its decoded name. */
+export function zipPages(zip: AdmZip): Array<{ entry: IZipEntry; name: string }> {
+  const entries = zip.getEntries();
+  const names = zipEntryNames(entries);
+  return entries
+    .filter(entry => !entry.isDirectory && isPage(names.get(entry)!))
+    .map(entry => ({ entry, name: names.get(entry)! }))
+    .sort((a, b) => collator.compare(a.name, b.name));
+}
+
+/** A RAR opened in memory, and the names of its image pages in reading order. */
+export async function openRarPages(archivePath: string) {
+  const extractor = await createExtractorFromData({ data: readArchiveFile(archivePath) });
+  const pages = [...extractor.getFileList().fileHeaders]
+    .filter(header => !header.flags.directory && isPage(header.name))
+    .map(header => header.name)
+    .sort(collator.compare);
+  return { extractor, pages };
 }

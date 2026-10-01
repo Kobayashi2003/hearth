@@ -82,7 +82,7 @@ export function detectEncoding(input: Uint8Array): string {
   return best;
 }
 
-export function stripByteOrderMark(buffer: Buffer, encoding: string): Buffer {
+function stripByteOrderMark(buffer: Buffer, encoding: string): Buffer {
   const mark = BYTE_ORDER_MARKS.find(candidate => candidate.encoding === encoding);
   return mark && startsWith(buffer, mark.bytes) ? buffer.subarray(mark.bytes.length) : buffer;
 }

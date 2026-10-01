@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 
@@ -6,7 +5,14 @@ import AdmZip from 'adm-zip';
 import { createExtractorFromData } from 'node-unrar-js';
 import type { ArchiveEntry } from '@hearth/shared';
 
-import { collator, isPage, RAR_EXTENSIONS, rethrow, zipEntryNames } from './comic-pages.js';
+import {
+  collator,
+  isPage,
+  RAR_EXTENSIONS,
+  readArchiveFile,
+  rethrow,
+  zipEntryNames,
+} from './comic-pages.js';
 
 /** List an archive's members, or read exactly one. Both libraries are synchronous and whole-file, hence a worker. */
 
@@ -50,11 +56,6 @@ function listZip(archivePath: string): ArchiveEntry[] {
     isDirectory: entry.isDirectory,
     mtime: entry.header.time instanceof Date ? entry.header.time.getTime() : 0,
   }));
-}
-
-function readArchiveFile(archivePath: string): ArrayBuffer {
-  const file = fs.readFileSync(archivePath);
-  return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
 }
 
 async function listRar(archivePath: string): Promise<ArchiveEntry[]> {

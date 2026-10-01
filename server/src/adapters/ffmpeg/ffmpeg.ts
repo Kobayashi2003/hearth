@@ -239,7 +239,7 @@ function toTrack(stream: ProbeStream, ordinal: number): MediaTrack {
  */
 const BROWSER_CONTAINERS = ['mp4', 'mov', 'webm', 'matroska', 'ogg'];
 
-export function isBrowserPlayable(
+function isBrowserPlayable(
   formatName: string | undefined,
   videoCodec: string | undefined,
   audioCodec: string | undefined,

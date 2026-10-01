@@ -89,14 +89,14 @@ export class UserDocuments<T> {
   }
 }
 
-export function encodeUsername(username: string): string {
+function encodeUsername(username: string): string {
   return username.replace(
     /[^A-Za-z0-9._-]/g,
     character => `~${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
   );
 }
 
-export function decodeUsername(encoded: string): string {
+function decodeUsername(encoded: string): string {
   return encoded.replace(/~([0-9a-f]{4})/g, (_, hex: string) =>
     String.fromCharCode(Number.parseInt(hex, 16)),
   );

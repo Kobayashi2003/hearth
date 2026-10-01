@@ -3,9 +3,8 @@ import path from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 
 import AdmZip from 'adm-zip';
-import { createExtractorFromData } from 'node-unrar-js';
 
-import { collator, isPage, RAR_EXTENSIONS, rethrow, zipEntryNames } from './comic-pages.js';
+import { openRarPages, RAR_EXTENSIONS, rethrow, zipPages } from './comic-pages.js';
 
 /** Extracts every page once into a cache directory. */
 export interface ComicRequest {
@@ -36,25 +35,14 @@ function writePages(
 }
 
 function readZip(archivePath: string): Array<{ name: string; content: Uint8Array }> {
-  const entries = new AdmZip(archivePath).getEntries();
-  const names = zipEntryNames(entries);
-  return entries
-    .filter(entry => !entry.isDirectory && isPage(names.get(entry)!))
-    .sort((a, b) => collator.compare(names.get(a)!, names.get(b)!))
-    .map(entry => ({ name: names.get(entry)!, content: entry.getData() }));
+  return zipPages(new AdmZip(archivePath)).map(({ entry, name }) => ({
+    name,
+    content: entry.getData(),
+  }));
 }
 
 async function readRar(archivePath: string): Promise<Array<{ name: string; content: Uint8Array }>> {
-  const file = fs.readFileSync(archivePath);
-  const extractor = await createExtractorFromData({
-    data: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer,
-  });
-
-  const names = [...extractor.getFileList().fileHeaders]
-    .filter(header => !header.flags.directory && isPage(header.name))
-    .map(header => header.name)
-    .sort(collator.compare);
-
+  const { extractor, pages: names } = await openRarPages(archivePath);
   const extracted = [...extractor.extract({ files: names }).files];
   const contentByName = new Map(
     extracted.filter(file => file.extraction).map(file => [file.fileHeader.name, file.extraction!]),
