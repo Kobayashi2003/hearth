@@ -54,7 +54,9 @@ export function Sidebar({
   const currentTop = search.path.split('/')[0] ?? '';
 
   const go = (changes: Partial<typeof search>) => {
-    void navigate({ search: current => ({ ...current, q: '', type: undefined, ...changes }) });
+    void navigate({
+      search: current => ({ ...current, q: '', type: undefined, scope: 'below', ...changes }),
+    });
     onNavigate?.();
   };
 
@@ -127,7 +129,8 @@ export function Sidebar({
           <Item
             key={kind}
             icon={<Icon />}
-            active={search.type === kind && !search.q}
+            // A collection is the whole root; the same filter inside a folder is not it.
+            active={search.type === kind && !search.q && search.path === ''}
             onClick={() => go({ path: '', type: kind })}
           >
             {label}

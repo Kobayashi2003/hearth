@@ -11,6 +11,9 @@ const TYPEAHEAD_RESET_MS = 700;
 export function useSelection(entries: readonly FileEntry[]) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [focused, setFocused] = useState<string | null>(null);
+  // The focus ring is for keyboard users; after a click it would read as a
+  // selection that refuses to go away.
+  const [focusVisible, setFocusVisible] = useState(false);
   const anchor = useRef<string | null>(null);
   const typeahead = useRef({ text: '', at: 0 });
 
@@ -32,6 +35,7 @@ export function useSelection(entries: readonly FileEntry[]) {
   const reset = useCallback(() => {
     clear();
     setFocused(null);
+    setFocusVisible(false);
   }, [clear]);
 
   const range = useCallback(
@@ -46,6 +50,7 @@ export function useSelection(entries: readonly FileEntry[]) {
   const pick = useCallback(
     (path: string, modifiers: { ctrl?: boolean; shift?: boolean } = {}) => {
       setFocused(path);
+      setFocusVisible(false);
       if (modifiers.shift && anchor.current) {
         const extension = range(indexOf(anchor.current), indexOf(path));
         setSelected(current => new Set(modifiers.ctrl ? [...current, ...extension] : extension));
@@ -83,6 +88,7 @@ export function useSelection(entries: readonly FileEntry[]) {
               : Math.max(0, Math.min(entries.length - 1, current + delta));
       const path = entries[target]!.path;
       setFocused(path);
+      setFocusVisible(true);
       if (modifiers.ctrl) return;
       if (modifiers.shift) {
         anchor.current ??= focused ?? path;
@@ -96,7 +102,9 @@ export function useSelection(entries: readonly FileEntry[]) {
   );
 
   const toggleFocused = useCallback(() => {
-    if (focused) pick(focused, { ctrl: true });
+    if (!focused) return;
+    pick(focused, { ctrl: true });
+    setFocusVisible(true);
   }, [focused, pick]);
 
   const selectAll = useCallback(
@@ -129,6 +137,7 @@ export function useSelection(entries: readonly FileEntry[]) {
       const hit = ordered.find(entry => entry.name.toLowerCase().startsWith(prefix));
       if (hit) {
         setFocused(hit.path);
+        setFocusVisible(true);
         anchor.current = hit.path;
         setSelected(new Set([hit.path]));
       }
@@ -141,6 +150,7 @@ export function useSelection(entries: readonly FileEntry[]) {
     selectedEntries,
     focused,
     focusedIndex: indexOf(focused),
+    focusVisible,
     setFocused,
     pick,
     move,

@@ -23,6 +23,8 @@ export function useExplorer() {
   );
 
   const isSearching = search.q.trim().length > 0 || search.type !== undefined;
+  // The root is always searched whole: that is what a collection is.
+  const isRecursive = search.path === '' || search.scope !== 'here';
 
   const query = useQuery<ListResponse | SearchResponse>({
     queryKey: [
@@ -31,7 +33,7 @@ export function useExplorer() {
       search.sort,
       search.direction,
       search.q,
-      search.recursive,
+      search.scope,
       search.type,
     ],
     queryFn: ({ signal }) => {
@@ -39,7 +41,12 @@ export function useExplorer() {
       const common = { path: search.path, sort: search.sort, direction: search.direction };
       return isSearching
         ? api.search(
-            { ...common, q: search.q, recursive: search.recursive, type: search.type },
+            {
+              ...common,
+              q: search.q,
+              recursive: isRecursive,
+              type: search.type,
+            },
             signal,
           )
         : api.list(common, signal);
@@ -51,7 +58,7 @@ export function useExplorer() {
         key &&
         key[1] === search.path &&
         key[4] === search.q &&
-        key[5] === search.recursive &&
+        key[5] === search.scope &&
         key[6] === search.type;
       return sameView ? previous : undefined;
     },
@@ -60,7 +67,7 @@ export function useExplorer() {
   const entries: FileEntry[] = useMemo(() => query.data?.items ?? [], [query.data]);
 
   const openFolder = useCallback(
-    (path: string) => patch({ path, q: '', type: undefined }),
+    (path: string) => patch({ path, q: '', type: undefined, scope: 'below' }),
     [patch],
   );
 
@@ -91,6 +98,7 @@ export function useExplorer() {
     search,
     patch,
     isSearching,
+    isRecursive,
     entries,
     total: query.data?.total ?? 0,
     /** The folder exceeded the response cap and only a prefix is shown. */

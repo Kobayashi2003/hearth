@@ -36,7 +36,7 @@ import {
 import { UploadTray } from '@/features/transfer/UploadTray';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Feedback';
-import { actionsFor } from './actions';
+import { actionsFor, folderActions } from './actions';
 import { CommandPalette, type Command } from './CommandPalette';
 import { ContextMenu } from './ContextMenu';
 import { ExplorerDialogs, type DialogState } from './dialogs';
@@ -64,6 +64,7 @@ export function ExplorerPage() {
   const uploads = useUploads();
 
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
+  // No entries means the folder's own menu, opened on empty space.
   const [menu, setMenu] = useState<{ entries: FileEntry[]; x: number; y: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -95,7 +96,7 @@ export function ExplorerPage() {
     setMenu(null);
     scrollRef.current?.scrollTo({ top: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search.path, search.q, search.type, search.recursive]);
+  }, [search.path, search.q, search.type, search.scope]);
 
   // Back on a parent, the cursor lands on the folder just left.
   useEffect(() => {
@@ -140,6 +141,8 @@ export function ExplorerPage() {
       setMenu({ entries: targets, x, y });
     },
     isSelecting: selection.selected.size > 0,
+    isOnlySelected: entry => selection.selected.size === 1 && selection.selected.has(entry.path),
+    onDeselect: selection.clear,
   });
 
   const startUpload = useCallback(
@@ -314,7 +317,7 @@ export function ExplorerPage() {
   const listing = {
     entries,
     selected: selection.selected,
-    focusedIndex: selection.focusedIndex,
+    focusedIndex: selection.focusVisible ? selection.focusedIndex : -1,
     rowHeight,
     bottomInset: DOCK_CLEARANCE,
     folderCovers: preferences.folderCovers,
@@ -367,8 +370,18 @@ export function ExplorerPage() {
       <div
         ref={scrollRef}
         className="scroll-thin relative min-h-0 flex-1 overflow-auto border-t border-line"
-        onPointerDown={event => {
-          if (event.target === event.currentTarget) selection.clear();
+        // Anywhere that is not an item or a control is empty space: the gaps
+        // between tiles and the end of a row count, not just below the last one.
+        onClick={event => {
+          if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+          if (!isEmptySpace(event.target)) return;
+          selection.clear();
+        }}
+        onContextMenu={event => {
+          if (event.defaultPrevented || !isEmptySpace(event.target)) return;
+          event.preventDefault();
+          selection.clear();
+          setMenu({ entries: [], x: event.clientX, y: event.clientY });
         }}
       >
         {explorer.isPending ? (
@@ -395,9 +408,9 @@ export function ExplorerPage() {
               icon={<SearchX />}
               title="Nothing matches"
               body={
-                search.recursive
-                  ? 'Try fewer or different words, or clear the type filter.'
-                  : 'Try searching every subfolder too.'
+                !explorer.isRecursive
+                  ? 'Try including subfolders too.'
+                  : 'Try fewer or different words, or clear the type filter.'
               }
             />
           ) : (
@@ -427,7 +440,7 @@ export function ExplorerPage() {
             sort={search.sort}
             direction={search.direction}
             onSort={explorer.sortBy}
-            showFolder={explorer.isSearching && search.recursive}
+            showFolder={explorer.isSearching && explorer.isRecursive}
           />
         )}
       </div>
@@ -457,8 +470,24 @@ export function ExplorerPage() {
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          title={menu.entries.length === 1 ? menu.entries[0]!.name : `${menu.entries.length} items`}
-          actions={actionsFor(menu.entries, permissions, handlers)}
+          title={
+            menu.entries.length === 0
+              ? (search.path.split('/').at(-1) ?? '') || 'This folder'
+              : menu.entries.length === 1
+                ? menu.entries[0]!.name
+                : `${menu.entries.length} items`
+          }
+          actions={
+            menu.entries.length === 0
+              ? folderActions(canWrite && !explorer.isSearching, {
+                  newFolder: () => setDialog({ kind: 'new-folder' }),
+                  upload: () => filesInput.current?.click(),
+                  paste: operations.clipboard ? operations.paste : null,
+                  selectAll: selection.selectAll,
+                  refresh: () => void explorer.refetch(),
+                })
+              : actionsFor(menu.entries, permissions, handlers)
+          }
           onClose={closeMenu}
         />
       ) : null}
@@ -493,5 +522,13 @@ export function ExplorerPage() {
         }}
       />
     </div>
+  );
+}
+
+/** Not an item, a button, a link or a field: a click there means "nothing". */
+function isEmptySpace(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    !target.closest('[data-entry], button, a, input, label, [role="columnheader"]')
   );
 }

@@ -25,6 +25,7 @@ import { Button } from '@/ui/Button';
 import { Segmented } from '@/ui/Field';
 import { Kbd } from '@/ui/Feedback';
 import { Menu, MenuChoice, MenuItem, MenuLabel, MenuSeparator } from '@/ui/Menu';
+import type { SearchScope } from '@/router';
 import type { Explorer } from './useExplorer';
 
 const SORTS: ReadonlyArray<[SortField, string]> = [
@@ -134,6 +135,7 @@ export function ExplorerHeader({
             <ArrowUp />
           </Button>
 
+          {/* While filtering the title names the filter, so the folder joins the path. */}
           <nav
             aria-label="Folder path"
             className="ml-1 flex min-w-0 flex-1 items-center overflow-hidden text-[13px] text-ink-3"
@@ -145,7 +147,7 @@ export function ExplorerHeader({
             >
               {rootLabel}
             </button>
-            {segments.slice(0, -1).map((segment, index) => (
+            {(isSearching ? segments : segments.slice(0, -1)).map((segment, index) => (
               <span key={index} className="flex min-w-0 items-center">
                 <ChevronRight className="size-3.5 shrink-0" />
                 <button
@@ -183,7 +185,7 @@ export function ExplorerHeader({
           {explorer.isPending
             ? ' ' // no count yet; keeps the line so nothing shifts when it arrives
             : isSearching
-              ? `${total.toLocaleString()} found ${search.recursive ? 'in' : 'directly in'} ${segments.at(-1) ?? rootLabel}`
+              ? `${total.toLocaleString()} found ${scopePhrase(search.scope, segments.at(-1), rootLabel)}`
               : `${total.toLocaleString()} ${total === 1 ? 'item' : 'items'}`}
         </p>
 
@@ -264,7 +266,7 @@ export function ExplorerHeader({
           ) : null}
         </div>
       </div>
-      {isSearching ? <SearchScope explorer={explorer} /> : null}
+      <FilterBar explorer={explorer} />
     </header>
   );
 }
@@ -343,8 +345,27 @@ function SearchField({
   );
 }
 
-function SearchScope({ explorer }: { explorer: Explorer }) {
-  const { search, patch } = explorer;
+function scopePhrase(scope: SearchScope, folder: string | undefined, rootLabel: string): string {
+  if (!folder) return `in all of ${rootLabel}`;
+  return scope === 'here' ? `directly in ${folder}` : `in ${folder} and its subfolders`;
+}
+
+const chip = (active: boolean) =>
+  cn(
+    'h-7 shrink-0 whitespace-nowrap rounded-full border px-2.5 text-[12.5px]',
+    active
+      ? 'border-glaze bg-glaze-wash text-glaze-strong'
+      : 'border-line text-ink-2 hover:border-ink-3',
+  );
+
+/**
+ * Type filters apply where you are, subfolders included, so "every video under
+ * this folder" is one click. Inside a folder a switch narrows a filter or search
+ * to the folder alone; the whole root is the sidebar's collections.
+ */
+function FilterBar({ explorer }: { explorer: Explorer }) {
+  const { search, patch, isSearching } = explorer;
+
   return (
     <div className="-mx-4 mb-3 flex items-center gap-1 overflow-x-auto px-4 [scrollbar-width:none] sm:-mx-6 sm:px-6">
       {KINDS.map(([kind, label]) => (
@@ -353,29 +374,24 @@ function SearchScope({ explorer }: { explorer: Explorer }) {
           type="button"
           aria-pressed={search.type === kind}
           onClick={() => patch({ type: search.type === kind ? undefined : kind })}
-          className={cn(
-            'h-7 shrink-0 whitespace-nowrap rounded-full border px-2.5 text-[12.5px]',
-            search.type === kind
-              ? 'border-glaze bg-glaze-wash text-glaze-strong'
-              : 'border-line text-ink-2 hover:border-ink-3',
-          )}
+          className={chip(search.type === kind)}
         >
           {label}
         </button>
       ))}
-      <button
-        type="button"
-        aria-pressed={!search.recursive}
-        onClick={() => patch({ recursive: !search.recursive })}
-        className={cn(
-          'h-7 shrink-0 whitespace-nowrap rounded-full border px-2.5 text-[12.5px]',
-          !search.recursive
-            ? 'border-glaze bg-glaze-wash text-glaze-strong'
-            : 'border-line text-ink-2 hover:border-ink-3',
-        )}
-      >
-        Only this folder
-      </button>
+      {isSearching && search.path !== '' ? (
+        <div className="ml-auto shrink-0 pl-2">
+          <Segmented<SearchScope>
+            label="Where to look"
+            value={search.scope}
+            onChange={scope => patch({ scope })}
+            options={[
+              { value: 'here', label: 'Only here' },
+              { value: 'below', label: 'With subfolders' },
+            ]}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

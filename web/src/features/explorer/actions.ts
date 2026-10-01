@@ -1,12 +1,17 @@
 import {
+  ClipboardPaste,
   Copy,
   Download,
   Eye,
   FolderOpen,
+  FolderPlus,
   Info,
   Pencil,
+  RefreshCw,
   Scissors,
+  SquareCheckBig,
   Trash2,
+  Upload,
   type LucideIcon,
 } from 'lucide-react';
 import type { FileEntry } from '@hearth/shared';
@@ -98,5 +103,56 @@ export function actionsFor(
       run: () => handlers.remove(targets),
     });
   }
+  return actions;
+}
+
+export interface FolderHandlers {
+  newFolder: () => void;
+  upload: () => void;
+  paste: (() => void) | null;
+  selectAll: () => void;
+  refresh: () => void;
+}
+
+/** The menu for the folder itself: a right-click (or long-press) on empty space. */
+export function folderActions(canWrite: boolean, handlers: FolderHandlers): EntryAction[] {
+  const actions: EntryAction[] = [];
+  if (canWrite) {
+    actions.push(
+      {
+        id: 'new-folder',
+        label: 'New folder',
+        icon: FolderPlus,
+        shortcut: 'Ctrl+Shift+N',
+        run: handlers.newFolder,
+      },
+      {
+        id: 'upload',
+        label: 'Upload files',
+        icon: Upload,
+        shortcut: 'Ctrl+U',
+        run: handlers.upload,
+      },
+    );
+    if (handlers.paste) {
+      actions.push({
+        id: 'paste',
+        label: 'Paste',
+        icon: ClipboardPaste,
+        shortcut: 'Ctrl+V',
+        run: handlers.paste,
+      });
+    }
+  }
+  actions.push(
+    {
+      id: 'select-all',
+      label: 'Select all',
+      icon: SquareCheckBig,
+      shortcut: 'Ctrl+A',
+      run: handlers.selectAll,
+    },
+    { id: 'refresh', label: 'Refresh', icon: RefreshCw, shortcut: 'F5', run: handlers.refresh },
+  );
   return actions;
 }

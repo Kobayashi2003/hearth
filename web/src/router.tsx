@@ -24,9 +24,13 @@ export interface ExplorerSearch {
   direction: SortDirection;
   /** Empty means browsing, not searching. */
   q: string;
-  recursive: boolean;
+  /** Where a search or filter inside a folder looks; at the root it is always everything. */
+  scope: SearchScope;
   type?: MediaKind;
 }
+
+export type SearchScope = 'here' | 'below';
+const SCOPES: readonly SearchScope[] = ['here', 'below'];
 
 function oneOf<T extends string>(allowed: readonly T[], value: unknown, fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
@@ -48,7 +52,7 @@ export const explorerRoute = createRoute({
     sort: oneOf(SORT_FIELDS, raw.sort, 'name'),
     direction: oneOf(SORT_DIRECTIONS, raw.direction, 'asc'),
     q: typeof raw.q === 'string' ? raw.q : '',
-    recursive: raw.recursive !== false && raw.recursive !== 'false',
+    scope: oneOf(SCOPES, raw.scope, 'below'),
     ...(MEDIA_KINDS.includes(raw.type as MediaKind) ? { type: raw.type as MediaKind } : {}),
   }),
   component: ExplorerPage,
