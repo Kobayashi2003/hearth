@@ -43,7 +43,7 @@ export const apiBase = (
   '/hearth-api'
 ).replace(/\/+$/, '');
 
-export function apiUrl(path: string, params?: Record<string, unknown>): string {
+function apiUrl(path: string, params?: Record<string, unknown>): string {
   return apiBase + withQuery(path, params);
 }
 

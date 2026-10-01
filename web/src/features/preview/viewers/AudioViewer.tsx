@@ -9,7 +9,7 @@ import { usePreview } from '../PreviewProvider';
 import { ViewerFrame } from '../ViewerFrame';
 import { usePlayer } from '../audio/PlayerProvider';
 import { ModeButtons, SkipButtons, VolumeControl } from '../audio/transport';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 
 /** Opening an audio file hands it to the player; this view is the player's full-size face. */
 export default function AudioViewer({ entry }: ViewerProps) {

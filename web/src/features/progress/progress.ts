@@ -16,7 +16,7 @@ let outbox: Record<string, Progress | null> = {};
 let timer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<(map: ProgressMap) => void>();
 
-export async function flushProgress(): Promise<void> {
+async function flushProgress(): Promise<void> {
   if (timer) clearTimeout(timer);
   timer = null;
   if (Object.keys(outbox).length === 0) return;

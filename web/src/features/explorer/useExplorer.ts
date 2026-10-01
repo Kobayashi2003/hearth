@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { FileEntry, ListResponse, SearchResponse, SortField } from '@hearth/shared';
 
 import { api } from '@/lib/api';
 import { childLeadingTo } from '@/lib/format';
-import { explorerRoute, type ExplorerSearch } from '@/router';
+import { explorerRoute, type ExplorerSearch } from './search';
 
 export function useExplorer() {
   const search = explorerRoute.useSearch();
-  const navigate = useNavigate({ from: explorerRoute.fullPath });
+  const navigate = explorerRoute.useNavigate();
 
   const patch = useCallback(
     (changes: Partial<ExplorerSearch>) => {

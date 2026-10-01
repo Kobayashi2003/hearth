@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from 'react';
 
-import { isTypingTarget } from './PreviewOverlay';
+import { useKeyBindings } from '@/lib/keys';
 
 export interface PanZoomView {
   scale: number;
@@ -16,7 +16,7 @@ export interface PanZoomView {
   y: number;
 }
 
-export const FIT_VIEW: PanZoomView = { scale: 1, x: 0, y: 0 };
+const FIT_VIEW: PanZoomView = { scale: 1, x: 0, y: 0 };
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 12;
@@ -30,7 +30,7 @@ const SWIPE_MIN_PX = 60;
 const KEEP_VISIBLE_PX = 96;
 const KEY_PAN_PX = 120;
 
-export function isFitView(view: PanZoomView): boolean {
+function isFitView(view: PanZoomView): boolean {
   return view.scale === 1 && view.x === 0 && view.y === 0;
 }
 
@@ -181,39 +181,21 @@ export function usePanZoom({
     [onWheel],
   );
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (!latest.current.enabled || isTypingTarget(event.target) || event.ctrlKey || event.metaKey)
-        return;
-      const zoomKeys: Record<string, () => void> = {
-        '+': () => zoomAt(1.25),
-        '=': () => zoomAt(1.25),
-        '-': () => zoomAt(0.8),
-        '0': reset,
-      };
-      const zoom = zoomKeys[event.key];
-      if (zoom) {
-        event.preventDefault();
-        zoom();
-        return;
-      }
-      // While zoomed the arrows look around the picture instead of turning it.
-      if (isFitView(latest.current.view)) return;
-      const pans: Record<string, [number, number]> = {
-        ArrowLeft: [KEY_PAN_PX, 0],
-        ArrowRight: [-KEY_PAN_PX, 0],
-        ArrowUp: [0, KEY_PAN_PX],
-        ArrowDown: [0, -KEY_PAN_PX],
-      };
-      const pan = pans[event.key];
-      if (!pan) return;
-      event.preventDefault();
-      panBy(...pan);
-    }
-    // Capture, so a zoomed picture gets the arrows before the gallery does.
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [zoomAt, panBy, reset]);
+  // Capture, so a zoomed picture gets the arrows before the gallery does; at fit
+  // they fall through to it.
+  const zoomed = enabled && !isFitView(view);
+  useKeyBindings(
+    [
+      { key: ['+', '='], ctrl: false, when: enabled, run: () => zoomAt(1.25) },
+      { key: '-', ctrl: false, when: enabled, run: () => zoomAt(0.8) },
+      { key: '0', ctrl: false, when: enabled, run: reset },
+      { key: 'ArrowLeft', ctrl: false, when: zoomed, run: () => panBy(KEY_PAN_PX, 0) },
+      { key: 'ArrowRight', ctrl: false, when: zoomed, run: () => panBy(-KEY_PAN_PX, 0) },
+      { key: 'ArrowUp', ctrl: false, when: zoomed, run: () => panBy(0, KEY_PAN_PX) },
+      { key: 'ArrowDown', ctrl: false, when: zoomed, run: () => panBy(0, -KEY_PAN_PX) },
+    ],
+    { capture: true },
+  );
 
   const handlers = {
     onPointerDown(event: PointerEvent) {

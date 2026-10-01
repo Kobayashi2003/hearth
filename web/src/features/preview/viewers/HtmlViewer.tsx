@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 import { Loaded } from './simple';
 
 /**

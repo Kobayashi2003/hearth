@@ -1,43 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  CheckSquare,
-  FolderInput,
-  FolderPlus,
-  FolderUp,
-  LayoutGrid,
-  List,
-  LogOut,
-  Moon,
-  RefreshCw,
-  Search as SearchIcon,
-  Settings,
-  SunMedium,
-  Upload,
-} from 'lucide-react';
-import { FolderOpen, SearchX, TriangleAlert } from 'lucide-react';
+import { FolderOpen, FolderPlus, SearchX, TriangleAlert, Upload } from 'lucide-react';
 import type { FileEntry } from '@hearth/shared';
 
 import { api, mediaUrls } from '@/lib/api';
+import { useKeyBindings } from '@/lib/keys';
 import { isPreviewable } from '@/lib/file-kind';
 import { useSession } from '@/features/session/session';
 import { usePreferences } from '@/features/preferences/preferences';
 import { useProgress } from '@/features/progress/progress';
 import { usePreview } from '@/features/preview/PreviewProvider';
-import { isTypingTarget } from '@/features/preview/PreviewOverlay';
 import { DOCK_CLEARANCE, DockSlot } from '@/features/shell/Dock';
 import { useShell } from '@/features/shell/shell-context';
-import {
-  collectDropped,
-  fromInput,
-  useUploads,
-  type QueuedFile,
-} from '@/features/transfer/uploads';
+import { useUploads, type QueuedFile } from '@/features/transfer/uploads';
 import { UploadTray } from '@/features/transfer/UploadTray';
+import { useFileDrop, useUploadPickers } from '@/features/transfer/useFilePicking';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Feedback';
 import { actionsFor, folderActions } from './actions';
-import { CommandPalette, type Command } from './CommandPalette';
+import { paletteCommands } from './commands';
+import { CommandPalette } from './CommandPalette';
 import { ContextMenu } from './ContextMenu';
 import { ExplorerDialogs, type DialogState } from './dialogs';
 import { useEntryEvents } from './entryEvents';
@@ -46,11 +28,10 @@ import { FileGrid } from './FileGrid';
 import { FileList, useRowHeight } from './FileList';
 import { ListingSkeleton } from './ListingSkeleton';
 import { SelectionBar } from './SelectionBar';
+import { explorerShortcuts } from './shortcuts';
 import { useExplorer } from './useExplorer';
 import { useFileOperations } from './useFileOperations';
 import { useSelection } from './useSelection';
-
-const PAGE_ROWS = 10;
 
 export function ExplorerPage() {
   const explorer = useExplorer();
@@ -68,14 +49,10 @@ export function ExplorerPage() {
   const [menu, setMenu] = useState<{ entries: FileEntry[]; x: number; y: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [dropping, setDropping] = useState(false);
   const [columns, setColumns] = useState(1);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const filesInput = useRef<HTMLInputElement | null>(null);
-  const folderInput = useRef<HTMLInputElement | null>(null);
-  const dragDepth = useRef(0);
 
   const canWrite = can('write');
   const canDelete = can('delete');
@@ -149,170 +126,62 @@ export function ExplorerPage() {
     (files: QueuedFile[]) => files.length > 0 && uploads.start(files, search.path),
     [uploads, search.path],
   );
+  const pickers = useUploadPickers(startUpload);
+  const drop = useFileDrop(canWrite, startUpload);
 
-  const commands = useMemo<Command[]>(() => {
-    const list: Command[] = [
-      {
-        id: 'search',
-        label: 'Search in this folder',
-        icon: SearchIcon,
-        shortcut: '/',
-        run: () => searchRef.current?.focus(),
-      },
-      {
-        id: 'refresh',
-        label: 'Refresh',
-        icon: RefreshCw,
-        shortcut: 'F5',
-        run: () => void explorer.refetch(),
-      },
-      {
-        id: 'up',
-        label: 'Go up one folder',
-        icon: FolderUp,
-        shortcut: 'Alt+↑',
-        run: explorer.goUp,
-      },
-      {
-        id: 'select-all',
-        label: 'Select everything',
-        icon: CheckSquare,
-        shortcut: 'Ctrl+A',
-        run: selection.selectAll,
-      },
-      {
-        id: 'view',
-        label: isGrid ? 'Show as list' : 'Show as covers',
-        icon: isGrid ? List : LayoutGrid,
-        run: () => update('viewMode', isGrid ? 'list' : 'grid'),
-      },
-      {
-        id: 'theme',
-        label: 'Switch between light and dark',
-        icon: document.documentElement.dataset.theme === 'dark' ? SunMedium : Moon,
-        run: () => {
-          const dark =
-            preferences.theme === 'dark' ||
-            (preferences.theme === 'system' &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
-          update('theme', dark ? 'light' : 'dark');
-        },
-      },
-      { id: 'settings', label: 'Open settings', icon: Settings, run: shell.openSettings },
-      { id: 'sign-out', label: 'Sign out', icon: LogOut, run: () => void signOut() },
-    ];
-    if (canWrite) {
-      list.splice(
-        2,
-        0,
-        {
-          id: 'new-folder',
-          label: 'New folder',
-          icon: FolderPlus,
-          shortcut: 'Ctrl+Shift+N',
-          run: () => setDialog({ kind: 'new-folder' }),
-        },
-        {
-          id: 'upload',
-          label: 'Upload files',
-          icon: Upload,
-          shortcut: 'Ctrl+U',
-          run: () => filesInput.current?.click(),
-        },
-        {
-          id: 'upload-folder',
-          label: 'Upload a folder',
-          icon: FolderInput,
-          run: () => folderInput.current?.click(),
-        },
-      );
-    }
-    return list;
-  }, [
-    explorer,
-    selection.selectAll,
-    isGrid,
-    update,
-    preferences.theme,
-    shell.openSettings,
-    signOut,
-    canWrite,
-  ]);
+  const commands = useMemo(
+    () =>
+      paletteCommands({
+        canWrite,
+        isGrid,
+        theme: preferences.theme,
+        focusSearch: () => searchRef.current?.focus(),
+        refresh: () => void explorer.refetch(),
+        goUp: explorer.goUp,
+        selectAll: selection.selectAll,
+        setViewMode: mode => update('viewMode', mode),
+        setTheme: theme => update('theme', theme),
+        openSettings: shell.openSettings,
+        signOut: () => void signOut(),
+        newFolder: () => setDialog({ kind: 'new-folder' }),
+        uploadFiles: pickers.pickFiles,
+        uploadFolder: pickers.pickFolder,
+      }),
+    [
+      explorer,
+      selection.selectAll,
+      isGrid,
+      update,
+      preferences.theme,
+      shell.openSettings,
+      signOut,
+      canWrite,
+      pickers.pickFiles,
+      pickers.pickFolder,
+    ],
+  );
 
   const blocked =
     preview.current !== null || dialog.kind !== 'none' || paletteOpen || menu !== null;
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const ctrl = event.ctrlKey || event.metaKey;
-      const key = event.key;
-      if (ctrl && key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setPaletteOpen(true);
-        return;
-      }
-      if (blocked || isTypingTarget(event.target) || event.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"], [data-radix-popper-content-wrapper]')) return;
-
-      const selected = selection.selectedEntries;
-      const focused = entries[selection.focusedIndex];
-      const modifiers = { shift: event.shiftKey, ctrl };
-      const run = (action: () => void) => {
-        event.preventDefault();
-        action();
-      };
-
-      if (key === 'ArrowDown') run(() => selection.move(step, modifiers));
-      else if (key === 'ArrowUp' && event.altKey) run(explorer.goUp);
-      else if (key === 'ArrowUp') run(() => selection.move(-step, modifiers));
-      else if (key === 'ArrowRight' && isGrid) run(() => selection.move(1, modifiers));
-      else if (key === 'ArrowLeft' && isGrid) run(() => selection.move(-1, modifiers));
-      else if (key === 'PageDown') run(() => selection.move(PAGE_ROWS * step, modifiers));
-      else if (key === 'PageUp') run(() => selection.move(-PAGE_ROWS * step, modifiers));
-      else if (key === 'Home') run(() => selection.move('start', modifiers));
-      else if (key === 'End') run(() => selection.move('end', modifiers));
-      else if (key === 'Enter' && event.altKey && focused) run(() => handlers.details(focused));
-      else if (key === 'Enter' && focused) run(() => open(focused));
-      else if (key === 'Backspace') run(explorer.goUp);
-      else if (key === 'Escape' && (selected.length > 0 || operations.clipboard))
-        run(() => (selected.length > 0 ? selection.clear() : operations.clearClipboard()));
-      else if (key === ' ' && focused) run(selection.toggleFocused);
-      else if (key === 'F5') run(() => void explorer.refetch());
-      else if (key === '/' || (ctrl && key.toLowerCase() === 'f'))
-        run(() => searchRef.current?.focus());
-      else if (ctrl && key.toLowerCase() === 'a') run(selection.selectAll);
-      else if (ctrl && key.toLowerCase() === 'c' && canWrite && selected.length > 0)
-        run(() => operations.copy(selected));
-      else if (ctrl && key.toLowerCase() === 'x' && canWrite && selected.length > 0)
-        run(() => operations.cut(selected));
-      else if (ctrl && key.toLowerCase() === 'v' && canWrite && operations.clipboard)
-        run(operations.paste);
-      else if (ctrl && event.shiftKey && key.toLowerCase() === 'n' && canWrite)
-        run(() => setDialog({ kind: 'new-folder' }));
-      else if (ctrl && key.toLowerCase() === 'u' && canWrite)
-        run(() => filesInput.current?.click());
-      else if (key === 'Delete' && canDelete && selected.length > 0)
-        run(() => handlers.remove(selected));
-      else if (key === 'F2' && canWrite && selected.length === 1)
-        run(() => handlers.rename(selected[0]!));
-      else if (key.length === 1 && !ctrl && !event.altKey && key !== ' ')
-        run(() => selection.typeTo(key));
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    blocked,
-    selection,
-    entries,
-    step,
-    isGrid,
-    explorer,
-    handlers,
-    open,
-    operations,
-    canWrite,
-    canDelete,
-  ]);
+  useKeyBindings(
+    explorerShortcuts({
+      explorer,
+      selection,
+      operations,
+      handlers,
+      entries,
+      step,
+      isGrid,
+      canWrite,
+      canDelete,
+      blocked,
+      openPalette: () => setPaletteOpen(true),
+      newFolder: () => setDialog({ kind: 'new-folder' }),
+      upload: pickers.pickFiles,
+      focusSearch: () => searchRef.current?.focus(),
+    }),
+  );
 
   const listing = {
     entries,
@@ -327,26 +196,7 @@ export function ExplorerPage() {
   };
 
   return (
-    <div
-      className="relative flex min-h-0 flex-1 flex-col"
-      onDragEnter={event => {
-        if (!canWrite || !event.dataTransfer.types.includes('Files')) return;
-        dragDepth.current += 1;
-        setDropping(true);
-      }}
-      onDragOver={event => canWrite && event.preventDefault()}
-      onDragLeave={() => {
-        dragDepth.current -= 1;
-        if (dragDepth.current <= 0) setDropping(false);
-      }}
-      onDrop={event => {
-        if (!canWrite) return;
-        event.preventDefault();
-        dragDepth.current = 0;
-        setDropping(false);
-        void collectDropped(event.dataTransfer).then(startUpload);
-      }}
-    >
+    <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
       <ExplorerHeader
         explorer={explorer}
         rootLabel={shell.rootLabel}
@@ -354,8 +204,8 @@ export function ExplorerPage() {
         canWrite={canWrite}
         onViewMode={mode => update('viewMode', mode)}
         onNewFolder={() => setDialog({ kind: 'new-folder' })}
-        onUploadFiles={() => filesInput.current?.click()}
-        onUploadFolder={() => folderInput.current?.click()}
+        onUploadFiles={pickers.pickFiles}
+        onUploadFolder={pickers.pickFolder}
         onOpenNav={shell.openNav}
         searchRef={searchRef}
       />
@@ -421,7 +271,7 @@ export function ExplorerPage() {
               action={
                 canWrite ? (
                   <div className="flex gap-2">
-                    <Button variant="primary" onClick={() => filesInput.current?.click()}>
+                    <Button variant="primary" onClick={pickers.pickFiles}>
                       <Upload /> Upload files
                     </Button>
                     <Button variant="outline" onClick={() => setDialog({ kind: 'new-folder' })}>
@@ -445,7 +295,7 @@ export function ExplorerPage() {
         )}
       </div>
 
-      {dropping ? (
+      {drop.dropping ? (
         <div className="animate-fade pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-3xl border-2 border-dashed border-glaze bg-glaze-wash">
           <p className="display-title text-[32px] text-glaze-strong">Drop to upload here</p>
         </div>
@@ -481,7 +331,7 @@ export function ExplorerPage() {
             menu.entries.length === 0
               ? folderActions(canWrite && !explorer.isSearching, {
                   newFolder: () => setDialog({ kind: 'new-folder' }),
-                  upload: () => filesInput.current?.click(),
+                  upload: pickers.pickFiles,
                   paste: operations.clipboard ? operations.paste : null,
                   selectAll: selection.selectAll,
                   refresh: () => void explorer.refetch(),
@@ -501,26 +351,7 @@ export function ExplorerPage() {
       />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
 
-      <input
-        ref={filesInput}
-        type="file"
-        multiple
-        hidden
-        onChange={event => {
-          startUpload(fromInput(event.target.files));
-          event.target.value = '';
-        }}
-      />
-      <input
-        ref={folderInput}
-        type="file"
-        hidden
-        {...{ webkitdirectory: '' }}
-        onChange={event => {
-          startUpload(fromInput(event.target.files));
-          event.target.value = '';
-        }}
-      />
+      {pickers.inputs}
     </div>
   );
 }

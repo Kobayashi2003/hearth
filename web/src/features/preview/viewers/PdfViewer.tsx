@@ -1,6 +1,6 @@
 import { mediaUrls } from '@/lib/api';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 
 /** Every current browser ships a capable PDF viewer; bundling a second one is not worth megabytes. */
 export default function PdfViewer({ entry }: ViewerProps) {

@@ -8,7 +8,7 @@ import { EpubReader, type UseEpubReaderOptions } from '@/vendor/epub-reader/reac
 import type { ReadingSessionRecord, ReadingSessionStorage } from '@/vendor/epub-reader/core';
 import '@/vendor/epub-reader/styles.css';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 
 const SAVE_DEBOUNCE_MS = 1500;
 

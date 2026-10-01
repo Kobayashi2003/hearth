@@ -9,10 +9,10 @@ import { percentOf, useProgress } from '@/features/progress/progress';
 import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
 import { Menu, MenuChoice, MenuLabel, MenuSeparator } from '@/ui/Menu';
-import { isTypingTarget } from '../PreviewOverlay';
+import { useKeyBindings } from '@/lib/keys';
 import { usePanZoom } from '../usePanZoom';
 import { useIdle, ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 
 type Spread = 'single' | 'double';
 type Fit = 'height' | 'width';
@@ -139,29 +139,16 @@ export function ComicReader({ entry }: ViewerProps) {
     }
   }, [data, page, count, perView, path, save]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      // A zoomed page takes the arrows to look around (see usePanZoom).
-      if (event.defaultPrevented || isTypingTarget(event.target)) return;
-      const physicalForward = direction === 'ltr';
-      const keys: Record<string, () => void> = {
-        ArrowRight: () => turn(physicalForward),
-        ArrowLeft: () => turn(!physicalForward),
-        PageDown: () => turn(true),
-        PageUp: () => turn(false),
-        ' ': () => turn(true),
-        Home: () => goTo(0),
-        End: () => goTo(count - 1),
-      };
-      const action = keys[event.key];
-      if (action) {
-        event.preventDefault();
-        action();
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [turn, goTo, count, direction]);
+  // A zoomed page takes the arrows first to look around (see usePanZoom).
+  const forwardIsRight = direction === 'ltr';
+  useKeyBindings([
+    { key: 'ArrowRight', run: () => turn(forwardIsRight) },
+    { key: 'ArrowLeft', run: () => turn(!forwardIsRight) },
+    { key: ['PageDown', ' '], run: () => turn(true) },
+    { key: 'PageUp', run: () => turn(false) },
+    { key: 'Home', run: () => goTo(0) },
+    { key: 'End', run: () => goTo(count - 1) },
+  ]);
 
   const visible = data ? data.pages.slice(page, page + perView) : [];
   const ordered = direction === 'rtl' ? [...visible].reverse() : visible;

@@ -14,7 +14,7 @@ import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
 import { usePlayer } from './PlayerProvider';
 
-export function PlayButton({ className }: { className?: string }) {
+function PlayButton({ className }: { className?: string }) {
   const player = usePlayer();
   return (
     <button

@@ -5,7 +5,7 @@ import type { FileEntry } from '@hearth/shared';
 import { mediaUrls } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
-import { useOverlay } from './PreviewOverlay';
+import { useOverlay } from './overlay';
 
 /**
  * The chrome every viewer shares: name, position in the gallery, the viewer's

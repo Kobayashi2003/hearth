@@ -12,7 +12,7 @@ import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
 import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 import { useHighlighted } from './highlight';
 import { renderMarkdown } from './markdown';
 

@@ -10,7 +10,7 @@ import { formatSize } from '@/lib/format';
 import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 import { ComicReader } from './ComicViewer';
 
 const IMAGE = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;

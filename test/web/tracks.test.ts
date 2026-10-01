@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MediaTrack } from '@hearth/shared';
 
-import { languageName, trackLabels } from '@/features/preview/viewers/tracks';
+import { languageName, trackLabels } from '@/features/preview/viewers/video/tracks';
 
 const track = (
   index: number,

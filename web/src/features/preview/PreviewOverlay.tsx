@@ -1,8 +1,6 @@
 import {
   Component,
-  createContext,
   Suspense,
-  use,
   useCallback,
   useEffect,
   useMemo,
@@ -13,36 +11,14 @@ import {
 import { TriangleAlert } from 'lucide-react';
 
 import { viewerKindFor } from '@/lib/file-kind';
+import { isTypingTarget } from '@/lib/keys';
 import { useProgress } from '@/features/progress/progress';
 import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
+import { OverlayContext, type OverlayValue } from './overlay';
 import { usePreview } from './PreviewProvider';
 import { useBackToClose } from './useBackToClose';
 import { STEPS_WITH_ARROWS, VIEWERS } from './viewers';
-
-interface OverlayValue {
-  close: () => void;
-  step: (delta: number) => void;
-  index: number;
-  total: number;
-  isFullscreen: boolean;
-  toggleFullscreen: () => void;
-}
-
-const OverlayContext = createContext<OverlayValue | null>(null);
-
-export function useOverlay(): OverlayValue {
-  const value = use(OverlayContext);
-  if (!value) throw new Error('useOverlay must be used inside PreviewOverlay');
-  return value;
-}
-
-export function isTypingTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-  );
-}
 
 /** The full-bleed stage a file is shown on. Mounted by the shell, above the routed page. */
 export function PreviewOverlay() {

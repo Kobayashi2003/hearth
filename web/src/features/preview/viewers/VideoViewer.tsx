@@ -1,43 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  AudioLines,
-  Captions,
-  Gauge,
-  Pause,
-  PictureInPicture2,
-  Play,
-  SkipBack,
-  SkipForward,
-  TriangleAlert,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
-import { isTextSubtitle, type MediaTrack } from '@hearth/shared';
+import { TriangleAlert } from 'lucide-react';
 
 import { api, mediaUrls } from '@/lib/api';
-import { cn } from '@/lib/cn';
-import { formatDuration } from '@/lib/format';
+import { useKeyBindings } from '@/lib/keys';
 import { local } from '@/lib/storage';
-import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
-import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
-import { Scrubber } from '@/ui/Scrubber';
 import { percentOf, useProgress } from '@/features/progress/progress';
 import { usePlayer } from '../audio/PlayerProvider';
 import { useMediaSession } from '../audio/useMediaSession';
-import { isTypingTarget, useOverlay } from '../PreviewOverlay';
+import { useOverlay, type ViewerProps } from '../overlay';
 import { useIdle, ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
-import {
-  preferredAudio,
-  preferredSubtitle,
-  rememberAudio,
-  rememberSubtitle,
-  trackLabels,
-} from './tracks';
+import { preferredAudio, rememberAudio } from './video/tracks';
+import { useSubtitles } from './video/useSubtitles';
+import { VideoControls } from './video/VideoControls';
 
-const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SAVE_EVERY_SECONDS = 5;
 const RESUME_MIN_SECONDS = 30;
 const RESUME_END_MARGIN = 20;
@@ -50,17 +27,10 @@ export default function VideoViewer({ entry }: ViewerProps) {
   const { pause: pauseMusic } = usePlayer();
   const idle = useIdle(true);
 
-  // Null / undefined until the viewer picks: the language chosen last time applies.
+  // Null until the viewer picks: the language chosen last time applies.
   const [audioChoice, setAudioChoice] = useState<number | null>(null);
-  const [subtitleChoice, setSubtitleChoice] = useState<number | null | undefined>(undefined);
   // A transcode restarts at an offset to seek; the element's clock counts from there.
   const [offset, setOffset] = useState(0);
-  const trackRef = useRef<HTMLTrackElement | null>(null);
-  const cueTimes = useRef(new WeakMap<TextTrackCue, [number, number]>());
-  // Which subtitle track last finished loading; any other selected one is still on its way.
-  const [subtitleLoaded, setSubtitleLoaded] = useState<{ index: number; failed: boolean } | null>(
-    null,
-  );
   const [state, setState] = useState({
     playing: false,
     time: 0,
@@ -89,63 +59,19 @@ export default function VideoViewer({ entry }: ViewerProps) {
   }
 
   const audioTracks = probe?.audioTracks ?? [];
-  // Bitmap subtitles (PGS, VobSub) have no WebVTT form; offering them would only fail.
-  const subtitleTracks = (probe?.subtitleTracks ?? []).filter(track => isTextSubtitle(track.codec));
   const audioTrack = audioChoice ?? preferredAudio(audioTracks);
-  const subtitle =
-    subtitleChoice !== undefined ? subtitleChoice : preferredSubtitle(subtitleTracks);
-
-  const subtitleStatus =
-    subtitle === null
-      ? 'ready'
-      : subtitleLoaded?.index !== subtitle
-        ? 'loading'
-        : subtitleLoaded.failed
-          ? 'failed'
-          : 'ready';
 
   // Set when the browser refused the original file despite the probe; the stream is then converted.
   const [forceTranscode, setForceTranscode] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const transcoding = forceTranscode || (probe ? !probe.browserPlayable || audioTrack > 0 : false);
 
-  // Subtitle cues are timed from the start of the film, but a converted stream
-  // restarts its clock at the point it was started from; shift them to match.
-  const alignCues = useCallback(() => {
-    const cues = trackRef.current?.track.cues;
-    if (!cues) return;
-    const shift = transcoding ? offset : 0;
-    for (const cue of Array.from(cues)) {
-      let original = cueTimes.current.get(cue);
-      if (!original) {
-        original = [cue.startTime, cue.endTime];
-        cueTimes.current.set(cue, original);
-      }
-      cue.startTime = original[0] - shift;
-      cue.endTime = original[1] - shift;
-    }
-  }, [transcoding, offset]);
-  useEffect(alignCues, [alignCues]);
-
-  // React does not wire load/error on <track>, so listen natively. A track that
-  // finished before the listener was attached is caught by its readyState.
-  useEffect(() => {
-    const element = trackRef.current;
-    if (!element || subtitle === null) return;
-    const loaded = () => {
-      setSubtitleLoaded({ index: subtitle, failed: false });
-      alignCues();
-    };
-    const failed = () => setSubtitleLoaded({ index: subtitle, failed: true });
-    if (element.readyState === HTMLTrackElement.LOADED) loaded();
-    else if (element.readyState === HTMLTrackElement.ERROR) failed();
-    element.addEventListener('load', loaded);
-    element.addEventListener('error', failed);
-    return () => {
-      element.removeEventListener('load', loaded);
-      element.removeEventListener('error', failed);
-    };
-  }, [subtitle, alignCues]);
+  const subtitles = useSubtitles({
+    path,
+    probed: probe?.subtitleTracks ?? [],
+    offset,
+    transcoding,
+  });
 
   const duration = probe?.durationSeconds ?? state.duration;
   const position = offset + state.time;
@@ -193,31 +119,24 @@ export default function VideoViewer({ entry }: ViewerProps) {
     });
   }, [position, duration, path, save]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || isTypingTarget(event.target) || event.ctrlKey || event.metaKey)
-        return;
-      const actions: Record<string, () => void> = {
-        ' ': toggle,
-        k: toggle,
-        ArrowLeft: () => seek(position - 10),
-        ArrowRight: () => seek(position + 10),
-        ArrowUp: () => applyVolume(volume + 0.1),
-        ArrowDown: () => applyVolume(volume - 0.1),
-        m: () => videoRef.current && (videoRef.current.muted = !videoRef.current.muted),
-        f: toggleFullscreen,
-        n: () => step(1),
-        p: () => step(-1),
-      };
-      const action = actions[event.key];
-      if (action) {
-        event.preventDefault();
-        action();
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [toggle, seek, position, applyVolume, volume, toggleFullscreen, step]);
+  const toggleMute = () => {
+    if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
+  };
+  useKeyBindings(
+    (
+      [
+        [[' ', 'k'], toggle],
+        ['ArrowLeft', () => seek(position - 10)],
+        ['ArrowRight', () => seek(position + 10)],
+        ['ArrowUp', () => applyVolume(volume + 0.1)],
+        ['ArrowDown', () => applyVolume(volume - 0.1)],
+        ['m', toggleMute],
+        ['f', toggleFullscreen],
+        ['n', () => step(1)],
+        ['p', () => step(-1)],
+      ] as const
+    ).map(([key, run]) => ({ key, ctrl: false, run })),
+  );
 
   useMediaSession(true, {
     title: entry.name,
@@ -299,14 +218,8 @@ export default function VideoViewer({ entry }: ViewerProps) {
               }
             }}
           >
-            {subtitle !== null ? (
-              <track
-                key={subtitle}
-                ref={trackRef}
-                kind="subtitles"
-                src={mediaUrls.subtitle(path, subtitle)}
-                default
-              />
+            {subtitles.trackProps ? (
+              <track key={subtitles.selected} kind="subtitles" default {...subtitles.trackProps} />
             ) : null}
           </video>
         ) : null}
@@ -330,193 +243,58 @@ export default function VideoViewer({ entry }: ViewerProps) {
         ) : null}
       </div>
 
-      <div
-        className={cn(
-          'absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10 transition-opacity duration-300',
-          controlsHidden && 'pointer-events-none opacity-0',
-        )}
-      >
-        <Scrubber
-          value={position}
-          max={duration}
-          buffered={offset + state.buffered}
-          onChange={seek}
-          label="Seek"
-          className="text-white"
-        />
-        <div className="mt-1 flex items-center gap-1">
-          {total > 1 ? (
-            <Button
-              variant="stage"
-              size="icon"
-              onClick={() => step(-1)}
-              aria-label="Previous video"
-              title="Previous (P)"
-            >
-              <SkipBack />
-            </Button>
-          ) : null}
-          <Button
-            variant="stage"
-            size="icon"
-            onClick={toggle}
-            aria-label={state.playing ? 'Pause' : 'Play'}
-            title="Play/pause (Space)"
-          >
-            {state.playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
-          </Button>
-          {total > 1 ? (
-            <Button
-              variant="stage"
-              size="icon"
-              onClick={() => step(1)}
-              aria-label="Next video"
-              title="Next (N)"
-            >
-              <SkipForward />
-            </Button>
-          ) : null}
-          <Button
-            variant="stage"
-            size="icon"
-            onClick={() => videoRef.current && (videoRef.current.muted = !videoRef.current.muted)}
-            aria-label={muted ? 'Unmute' : 'Mute'}
-          >
-            {muted || volume === 0 ? <VolumeX /> : <Volume2 />}
-          </Button>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={muted ? 0 : volume}
-            onChange={event => applyVolume(Number(event.target.value))}
-            aria-label="Volume"
-            className="hidden w-20 accent-current sm:block"
-          />
-          <span className="tabular ml-2 text-[12px] text-white/75">
-            {formatDuration(position)} / {formatDuration(duration)}
-          </span>
-          <span className="flex-1" />
-          <TrackMenu
-            kind="audio"
-            tracks={audioTracks}
-            selected={audioTrack}
-            onSelect={track => {
-              if (track === null || track === audioTrack) return;
-              rememberAudio(audioTracks.find(candidate => candidate.index === track));
-              setOffset(position);
-              setAudioChoice(track);
-            }}
-          />
-          <TrackMenu
-            kind="subtitle"
-            tracks={subtitleTracks}
-            selected={subtitle}
-            onSelect={track => {
-              rememberSubtitle(subtitleTracks.find(candidate => candidate.index === track));
-              setSubtitleChoice(track);
-            }}
-          />
-          <Menu
-            side="top"
-            trigger={
-              <Button variant="stage" size="icon" aria-label={`Speed ${rate}×`} title="Speed">
-                <Gauge />
-              </Button>
-            }
-          >
-            <MenuLabel>Speed</MenuLabel>
-            {RATES.map(option => (
-              <MenuChoice
-                key={option}
-                checked={rate === option}
-                onSelect={() => {
-                  setRate(option);
-                  if (videoRef.current) videoRef.current.playbackRate = option;
-                }}
-              >
-                {option === 1 ? 'Normal' : `${option}×`}
-              </MenuChoice>
-            ))}
-          </Menu>
-          {document.pictureInPictureEnabled ? (
-            <Button
-              variant="stage"
-              size="icon"
-              aria-label="Picture in picture"
-              title="Picture in picture"
-              onClick={() =>
+      <VideoControls
+        hidden={controlsHidden}
+        position={position}
+        duration={duration}
+        buffered={offset + state.buffered}
+        onSeek={seek}
+        playing={state.playing}
+        onToggle={toggle}
+        onStep={step}
+        canStep={total > 1}
+        muted={muted}
+        volume={volume}
+        onVolume={applyVolume}
+        onToggleMute={toggleMute}
+        audio={{
+          tracks: audioTracks,
+          selected: audioTrack,
+          onSelect: track => {
+            if (track === null || track === audioTrack) return;
+            rememberAudio(audioTracks.find(candidate => candidate.index === track));
+            setOffset(position);
+            setAudioChoice(track);
+          },
+        }}
+        subtitles={{
+          tracks: subtitles.tracks,
+          selected: subtitles.selected,
+          onSelect: subtitles.choose,
+        }}
+        rate={rate}
+        onRate={option => {
+          setRate(option);
+          if (videoRef.current) videoRef.current.playbackRate = option;
+        }}
+        onPictureInPicture={
+          document.pictureInPictureEnabled
+            ? () =>
                 document.pictureInPictureElement
                   ? void document.exitPictureInPicture()
                   : void videoRef.current?.requestPictureInPicture().catch(() => undefined)
-              }
-            >
-              <PictureInPicture2 />
-            </Button>
-          ) : null}
-        </div>
-        {transcoding || subtitleStatus !== 'ready' ? (
-          <p className="mt-1 text-[11.5px] text-white/50">
-            {subtitleStatus === 'loading'
-              ? 'Loading subtitles. The first time reads the whole file, so a long film takes a while.'
-              : subtitleStatus === 'failed'
-                ? 'These subtitles could not be read.'
-                : 'Converted on the fly for this browser; seeking restarts the stream.'}
-          </p>
-        ) : null}
-      </div>
+            : null
+        }
+        note={
+          subtitles.status === 'loading'
+            ? 'Loading subtitles. The first time reads the whole file, so a long film takes a while.'
+            : subtitles.status === 'failed'
+              ? 'These subtitles could not be read.'
+              : transcoding
+                ? 'Converted on the fly for this browser; seeking restarts the stream.'
+                : null
+        }
+      />
     </ViewerFrame>
-  );
-}
-
-/** One menu per kind: a film can carry a dozen dubs and forty subtitle tracks. */
-function TrackMenu({
-  kind,
-  tracks,
-  selected,
-  onSelect,
-}: {
-  kind: 'audio' | 'subtitle';
-  tracks: MediaTrack[];
-  selected: number | null;
-  onSelect: (index: number | null) => void;
-}) {
-  const isAudio = kind === 'audio';
-  if (isAudio ? tracks.length < 2 : tracks.length === 0) return null;
-  const labels = trackLabels(tracks, isAudio ? 'Track' : 'Subtitle');
-  const title = isAudio ? 'Audio' : 'Subtitles';
-  return (
-    <Menu
-      side="top"
-      trigger={
-        <Button
-          variant="stage"
-          size="icon"
-          aria-label={title}
-          title={title}
-          className={cn(!isAudio && selected !== null && 'text-white')}
-        >
-          {isAudio ? <AudioLines /> : <Captions />}
-        </Button>
-      }
-    >
-      <MenuLabel>{title}</MenuLabel>
-      {isAudio ? null : (
-        <MenuChoice checked={selected === null} closes onSelect={() => onSelect(null)}>
-          Off
-        </MenuChoice>
-      )}
-      {tracks.map(track => (
-        <MenuChoice
-          key={track.index}
-          checked={selected === track.index}
-          closes
-          onSelect={() => onSelect(track.index)}
-        >
-          {labels.get(track.index)}
-        </MenuChoice>
-      ))}
-    </Menu>
   );
 }

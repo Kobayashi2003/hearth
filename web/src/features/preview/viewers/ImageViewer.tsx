@@ -5,11 +5,12 @@ import { mediaUrls } from '@/lib/api';
 import { extensionOf } from '@/lib/format';
 import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
-import { isTypingTarget, useOverlay } from '../PreviewOverlay';
+import { useKeyBindings } from '@/lib/keys';
+import { useOverlay } from '../overlay';
 import { usePreview } from '../PreviewProvider';
 import { usePanZoom } from '../usePanZoom';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 
 /** Photoshop files have no browser decoder; the server renders a large thumbnail instead. */
 function sourceFor(path: string): string {
@@ -50,14 +51,7 @@ export default function ImageViewer({ entry }: ViewerProps) {
     }
   }, [gallery, entry.path]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (isTypingTarget(event.target) || event.ctrlKey || event.metaKey) return;
-      if (event.key.toLowerCase() === 'r') rotate();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  useKeyBindings([{ key: 'r', ctrl: false, run: rotate }]);
 
   const changed = !zoom.isFit || rotation % 360 !== 0;
 

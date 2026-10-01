@@ -1,11 +1,6 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import type { FileEntry } from '@hearth/shared';
-
 import type { ViewerKind } from '@/lib/file-kind';
-
-export interface ViewerProps {
-  entry: FileEntry;
-}
+import type { ViewerProps } from './overlay';
 
 /** Lazily loaded: the EPUB, comic and highlighting bundles are large and most sessions open none. */
 export const VIEWERS: Record<

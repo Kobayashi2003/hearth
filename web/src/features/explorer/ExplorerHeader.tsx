@@ -25,7 +25,7 @@ import { Button } from '@/ui/Button';
 import { Segmented } from '@/ui/Field';
 import { Kbd } from '@/ui/Feedback';
 import { Menu, MenuChoice, MenuItem, MenuLabel, MenuSeparator } from '@/ui/Menu';
-import type { SearchScope } from '@/router';
+import type { SearchScope } from './search';
 import type { Explorer } from './useExplorer';
 
 const SORTS: ReadonlyArray<[SortField, string]> = [

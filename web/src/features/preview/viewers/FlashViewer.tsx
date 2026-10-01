@@ -4,7 +4,7 @@ import { Sparkles } from 'lucide-react';
 import { mediaUrls } from '@/lib/api';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
 import { ViewerFrame } from '../ViewerFrame';
-import type { ViewerProps } from '../viewers';
+import type { ViewerProps } from '../overlay';
 
 interface RufflePlayer extends HTMLElement {
   load: (options: { url: string }) => Promise<void>;

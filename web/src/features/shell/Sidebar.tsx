@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
 import { ChevronsUpDown, Film, Folder, Image, LogOut, Music, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import type { MediaKind } from '@hearth/shared';
@@ -7,7 +6,7 @@ import type { MediaKind } from '@hearth/shared';
 import { Wordmark } from '@/brand/Logo';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { explorerRoute } from '@/router';
+import { explorerRoute } from '@/features/explorer/search';
 import { useSession } from '@/features/session/session';
 import { Button } from '@/ui/Button';
 import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
@@ -39,7 +38,7 @@ export function Sidebar({
 }) {
   const { identity, can, signOut } = useSession();
   const search = explorerRoute.useSearch();
-  const navigate = useNavigate({ from: explorerRoute.fullPath });
+  const navigate = explorerRoute.useNavigate();
   const queryClient = useQueryClient();
 
   const roots = useQuery({ queryKey: ['roots'], queryFn: () => api.roots(), staleTime: 60_000 });
