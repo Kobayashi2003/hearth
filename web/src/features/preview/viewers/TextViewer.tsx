@@ -122,6 +122,24 @@ export default function TextViewer({ entry }: ViewerProps) {
       FONT_SIZES[Math.max(0, Math.min(FONT_SIZES.length - 1, (index < 0 ? 2 : index) + delta))]!,
     );
   };
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
+  // Ctrl + wheel (and a trackpad pinch) sizes the text, as it would a page in the browser.
+  useEffect(() => {
+    let travel = 0;
+    function onWheel(event: WheelEvent) {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      travel += event.deltaY;
+      if (Math.abs(travel) < 40) return;
+      stepRef.current(travel < 0 ? 1 : -1);
+      travel = 0;
+    }
+    const element = scrollRef.current;
+    element?.addEventListener('wheel', onWheel, { passive: false });
+    return () => element?.removeEventListener('wheel', onWheel);
+  });
 
   const actions =
     draft !== null ? (

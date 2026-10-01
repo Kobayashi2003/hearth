@@ -64,6 +64,19 @@ export function PreviewOverlay() {
     close();
   }, [close]);
 
+  // Ctrl + wheel over a preview means the preview (viewers that use it take it
+  // first); it must never zoom the whole page behind it.
+  const isShowing = current !== null;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const guard = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) event.preventDefault();
+    };
+    root.addEventListener('wheel', guard, { passive: false });
+    return () => root.removeEventListener('wheel', guard);
+  }, [isShowing]);
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     else void rootRef.current?.requestFullscreen().catch(() => undefined);
