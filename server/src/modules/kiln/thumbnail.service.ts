@@ -3,7 +3,12 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 import sharp from 'sharp';
-import { COMIC_EXTENSIONS, EPUB_EXTENSIONS, THUMBNAIL_REVISION } from '@hearth/shared';
+import {
+  COMIC_EXTENSIONS,
+  EPUB_EXTENSIONS,
+  KINDLE_EXTENSIONS,
+  THUMBNAIL_REVISION,
+} from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
@@ -114,7 +119,9 @@ export class ThumbnailService {
       ? ('comic' as const)
       : EPUB_EXTENSIONS.has(extension)
         ? ('epub' as const)
-        : null;
+        : KINDLE_EXTENSIONS.has(extension)
+          ? ('kindle' as const)
+          : null;
 
     if (bookKind) {
       // A worker failure here means "not really an archive", i.e. no cover.

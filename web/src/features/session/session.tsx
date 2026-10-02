@@ -2,11 +2,15 @@ import { createContext, use, useCallback, useMemo, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Identity, PermissionAction } from '@hearth/shared';
 
-import { api } from '@/lib/api';
+import { api, isUnreachable } from '@/lib/api';
 
 interface SessionValue {
   identity: Identity | null;
   isLoading: boolean;
+  /** The session check could not reach the server at all. */
+  unreachable: boolean;
+  /** Ask again, after starting the server. */
+  retry: () => void;
   adminOnly: boolean;
   /** UI gating only; the server enforces independently. */
   can: (action: PermissionAction) => boolean;
@@ -19,7 +23,7 @@ const SESSION_KEY = ['session'] as const;
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { data, isPending } = useQuery({
+  const { data, isPending, error, refetch } = useQuery({
     queryKey: SESSION_KEY,
     queryFn: () => api.session(),
     // The cookie can expire while the tab sits open.
@@ -53,12 +57,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return {
       identity,
       isLoading: isPending,
+      unreachable: isUnreachable(error),
+      retry: () => void refetch(),
       adminOnly: data?.adminOnly ?? false,
       can: action => identity?.actions.includes(action) ?? false,
       signIn,
       signOut,
     };
-  }, [data, isPending, signIn, signOut]);
+  }, [data, isPending, error, refetch, signIn, signOut]);
 
   return <SessionContext value={value}>{children}</SessionContext>;
 }

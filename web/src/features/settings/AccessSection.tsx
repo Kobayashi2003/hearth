@@ -7,7 +7,7 @@ import type { PermissionAction, PermissionRule } from '@hearth/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
-import { Input, Select, SettingRow, Switch } from '@/ui/Field';
+import { Field, Input, Select, SettingRow, Switch } from '@/ui/Field';
 
 const ACTIONS: PermissionAction[] = ['read', 'write', 'delete', 'admin'];
 
@@ -52,36 +52,37 @@ export function AccessSection() {
 
       <div className="mt-3 flex flex-col gap-2">
         {rules.map((rule, index) => (
-          <div
-            key={index}
-            className="flex flex-wrap items-center gap-2 rounded-xl border border-line p-2"
-          >
-            <Input
-              value={rule.username}
-              onChange={event => patch(index, { username: event.target.value })}
-              className="w-28"
-              aria-label="User, or * for everyone"
-              placeholder="*"
-            />
-            <Input
-              value={rule.path}
-              onChange={event => patch(index, { path: event.target.value })}
-              className="min-w-40 flex-1"
-              aria-label="Path"
-              placeholder="/Folder/**"
-            />
-            <Select
-              value={rule.effect}
-              onChange={event =>
-                patch(index, { effect: event.target.value as PermissionRule['effect'] })
-              }
-              className="w-24"
-              aria-label="Effect"
-            >
-              <option value="allow">Allow</option>
-              <option value="deny">Deny</option>
-            </Select>
-            <div className="flex gap-1">
+          <div key={index} className="flex flex-col gap-2.5 rounded-xl border border-line p-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[8rem_1fr_7rem]">
+              <Field label="User (* for everyone)">
+                <Input
+                  value={rule.username}
+                  onChange={event => patch(index, { username: event.target.value })}
+                  placeholder="*"
+                />
+              </Field>
+              <div className="order-last col-span-2 sm:order-none sm:col-span-1">
+                <Field label="Path">
+                  <Input
+                    value={rule.path}
+                    onChange={event => patch(index, { path: event.target.value })}
+                    placeholder="/Folder/**"
+                  />
+                </Field>
+              </div>
+              <Field label="Effect">
+                <Select
+                  value={rule.effect}
+                  onChange={event =>
+                    patch(index, { effect: event.target.value as PermissionRule['effect'] })
+                  }
+                >
+                  <option value="allow">Allow</option>
+                  <option value="deny">Deny</option>
+                </Select>
+              </Field>
+            </div>
+            <div className="flex items-center gap-1">
               {ACTIONS.map(action => {
                 const on = rule.permissions.includes(action);
                 return (
@@ -107,15 +108,15 @@ export function AccessSection() {
                   </button>
                 );
               })}
+              <Button
+                size="icon"
+                aria-label="Remove rule"
+                className="ml-auto text-danger"
+                onClick={() => setRules(rules.filter((_, position) => position !== index))}
+              >
+                <Trash2 />
+              </Button>
             </div>
-            <Button
-              size="icon"
-              aria-label="Remove rule"
-              className="text-danger"
-              onClick={() => setRules(rules.filter((_, position) => position !== index))}
-            >
-              <Trash2 />
-            </Button>
           </div>
         ))}
       </div>

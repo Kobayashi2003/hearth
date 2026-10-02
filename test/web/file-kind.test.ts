@@ -18,6 +18,8 @@ describe('viewerKindFor', () => {
     expect(viewerKindFor(file('a.cbz', 'application/x-cbz'))).toBe('comic');
     expect(viewerKindFor(file('a.zip', 'application/zip'))).toBe('archive');
     expect(viewerKindFor(file('a.epub', 'application/epub+zip'))).toBe('epub');
+    expect(viewerKindFor(file('a.azw3', 'application/octet-stream'))).toBe('epub');
+    expect(viewerKindFor(file('a.mobi', 'application/x-mobipocket-ebook'))).toBe('epub');
     expect(viewerKindFor(file('a.psd', 'image/vnd.adobe.photoshop'))).toBe('image');
     expect(viewerKindFor(file('a.htm', 'text/html'))).toBe('html');
   });

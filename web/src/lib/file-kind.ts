@@ -19,6 +19,7 @@ import {
   COMIC_BOOK_EXTENSIONS,
   EPUB_EXTENSIONS,
   FLASH_EXTENSIONS,
+  KINDLE_EXTENSIONS,
   OFFICE_EXTENSIONS,
   PDF_EXTENSIONS,
   type FileEntry,
@@ -83,7 +84,7 @@ export function viewerKindFor(
   const extension = extensionOf(entry.name);
   if (COMIC_BOOK_EXTENSIONS.has(extension)) return 'comic';
   if (ARCHIVE_EXTENSIONS.has(extension)) return 'archive';
-  if (EPUB_EXTENSIONS.has(extension)) return 'epub';
+  if (EPUB_EXTENSIONS.has(extension) || KINDLE_EXTENSIONS.has(extension)) return 'epub';
   if (OFFICE_EXTENSIONS.has(extension)) return 'office';
   if (FLASH_EXTENSIONS.has(extension)) return 'flash';
   if (PDF_EXTENSIONS.has(extension)) return 'pdf';

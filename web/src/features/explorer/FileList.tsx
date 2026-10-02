@@ -36,11 +36,13 @@ export function FileList({
   direction,
   onSort,
   showFolder,
+  onReveal,
 }: ListingProps & {
   sort: SortField;
   direction: SortDirection;
   onSort: (field: SortField) => void;
   showFolder: boolean;
+  onReveal: (entry: FileEntry) => void;
 }) {
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -119,9 +121,17 @@ export function FileList({
                       {entry.name}
                     </span>
                     {showFolder ? (
-                      <span className="hidden truncate text-[12px] text-ink-3 sm:inline">
+                      <button
+                        type="button"
+                        title="Show in folder"
+                        onClick={event => {
+                          event.stopPropagation();
+                          onReveal(entry);
+                        }}
+                        className="hidden truncate text-[12px] text-ink-3 hover:text-glaze-strong hover:underline sm:inline"
+                      >
                         /{parentOf(entry.path)}
-                      </span>
+                      </button>
                     ) : null}
                   </div>
                   <ProgressBar progress={progress} className="mt-0.5 w-24" />

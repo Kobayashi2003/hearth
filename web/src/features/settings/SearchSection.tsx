@@ -26,9 +26,8 @@ export function SearchSection() {
       </p>
       {fallbackActive ? (
         <p className="mt-3 rounded-lg bg-sunken px-3 py-2 text-ink-2">
-          Everything at {everything.url} is not answering{note ? ` (${note})` : ''}. Start
-          Everything with its HTTP server on that address to get instant search back; Hearth
-          switches over by itself.
+          Everything is not answering. Start it with its HTTP server on the address below to get
+          instant search back; Hearth switches over by itself.
         </p>
       ) : null}
       <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-y-2 text-[13px]">
@@ -38,6 +37,12 @@ export function SearchSection() {
             ? `reachable${everything.lastLatencyMs !== null ? `, ${everything.lastLatencyMs} ms` : ''}`
             : 'not reachable'}
         </dd>
+        {note && !everything.reachable ? (
+          <>
+            <dt className="text-ink-3">Reason</dt>
+            <dd>{note}</dd>
+          </>
+        ) : null}
         <dt className="text-ink-3">Address</dt>
         <dd className="break-all">{everything.url}</dd>
         <dt className="text-ink-3">Last checked</dt>

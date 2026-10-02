@@ -28,16 +28,18 @@ export function Dialog({
         <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
         <RadixDialog.Content
           className={cn(
-            'animate-rise data-[state=closed]:animate-sink fixed left-1/2 top-[12vh] z-50 flex max-h-[80vh] w-[min(28rem,calc(100vw-2rem))]',
-            '-translate-x-1/2 flex-col rounded-2xl border border-line bg-surface shadow-float outline-none',
+            'animate-rise data-[state=closed]:animate-sink fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-[min(28rem,calc(100vw-2rem))]',
+            '-translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-line bg-surface shadow-float outline-none',
             className,
           )}
         >
           <div className="flex items-start gap-3 px-5 pb-2 pt-4">
             <div className="min-w-0 flex-1">
-              <RadixDialog.Title className="text-[17px] font-semibold">{title}</RadixDialog.Title>
+              <RadixDialog.Title className="break-words text-[17px] font-semibold">
+                {title}
+              </RadixDialog.Title>
               {description ? (
-                <RadixDialog.Description className="mt-1 text-[13px] text-ink-2">
+                <RadixDialog.Description className="mt-1 break-words text-[13px] text-ink-2">
                   {description}
                 </RadixDialog.Description>
               ) : (
@@ -53,7 +55,12 @@ export function Dialog({
           {children ? (
             <div className="scroll-thin min-h-0 overflow-auto px-5 py-2">{children}</div>
           ) : null}
-          {footer ? <div className="flex justify-end gap-2 px-5 pb-4 pt-3">{footer}</div> : null}
+          {footer ? (
+            // On a phone the buttons stack full width, the last (main) action on top.
+            <div className="flex flex-col-reverse gap-2 px-5 pb-4 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              {footer}
+            </div>
+          ) : null}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

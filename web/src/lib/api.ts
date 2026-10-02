@@ -69,21 +69,40 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server could not be reached, as opposed to refusing: no response at all,
+ * or a proxy answering in its place. Hearth itself always answers in JSON, so a
+ * non-JSON 5xx (Caddy's 502, the Vite proxy's empty 500) or a non-JSON 404 (the
+ * API prefix leading nowhere) is the proxy talking.
+ */
+export function isUnreachable(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'UNREACHABLE';
+}
+
 async function request<T>(
   path: string,
   options: { method?: string; body?: unknown; signal?: AbortSignal | undefined } = {},
 ): Promise<T> {
   const { method = 'GET', body, signal } = options;
-  const response = await fetch(apiBase + path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: signal ?? null,
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiBase + path, {
+      method,
+      credentials: 'same-origin',
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: signal ?? null,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new ApiError(0, 'UNREACHABLE', 'No response from the server');
+  }
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as ApiErrorBody | null;
+    if (!payload && (response.status >= 500 || response.status === 404)) {
+      throw new ApiError(response.status, 'UNREACHABLE', 'No response from the server');
+    }
     throw new ApiError(
       response.status,
       payload?.code ?? 'UNKNOWN',

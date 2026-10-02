@@ -1,4 +1,4 @@
-import { COMIC_EXTENSIONS, EPUB_EXTENSIONS } from './constants.js';
+import { COMIC_EXTENSIONS, EPUB_EXTENSIONS, KINDLE_EXTENSIONS } from './constants.js';
 import type { FileEntry } from './entities.js';
 
 /**
@@ -12,6 +12,7 @@ export function hasCoverArt(entry: Pick<FileEntry, 'name' | 'mimeType' | 'isDire
   const extension = name.slice(name.lastIndexOf('.'));
   if (extension === '.psd') return true;
   if (COMIC_EXTENSIONS.has(extension) || EPUB_EXTENSIONS.has(extension)) return true;
+  if (KINDLE_EXTENSIONS.has(extension)) return true;
 
   return (
     entry.mimeType.startsWith('image/') ||

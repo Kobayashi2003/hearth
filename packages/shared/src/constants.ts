@@ -89,6 +89,11 @@ export const READABLE_ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
 ]);
 export const OFFICE_EXTENSIONS: ReadonlySet<string> = new Set(['.docx', '.doc', '.xlsx', '.xls']);
 export const EPUB_EXTENSIONS: ReadonlySet<string> = new Set(['.epub']);
+/**
+ * Kindle books. The EPUB reader opens their KF8 (AZW3) part and explains why it
+ * cannot open the rest (DRM, Mobipocket-only); the cover is read from any of them.
+ */
+export const KINDLE_EXTENSIONS: ReadonlySet<string> = new Set(['.azw3', '.azw', '.mobi']);
 export const PSD_EXTENSIONS: ReadonlySet<string> = new Set(['.psd']);
 export const FLASH_EXTENSIONS: ReadonlySet<string> = new Set(['.swf']);
 export const PDF_EXTENSIONS: ReadonlySet<string> = new Set(['.pdf']);

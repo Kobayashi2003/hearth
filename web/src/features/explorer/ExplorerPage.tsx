@@ -28,7 +28,9 @@ import { FileGrid } from './FileGrid';
 import { FileList, useRowHeight } from './FileList';
 import { ListingSkeleton } from './ListingSkeleton';
 import { SelectionBar } from './SelectionBar';
+import { useRevealInFolder } from './search';
 import { explorerShortcuts } from './shortcuts';
+import { useLanding } from './useLanding';
 import { useExplorer } from './useExplorer';
 import { useFileOperations } from './useFileOperations';
 import { useSelection } from './useSelection';
@@ -75,14 +77,9 @@ export function ExplorerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.path, search.q, search.type, search.scope]);
 
-  // Back on a parent, the cursor lands on the folder just left.
-  useEffect(() => {
-    if (!explorer.returningTo || !entries.some(entry => entry.path === explorer.returningTo))
-      return;
-    selection.setFocused(explorer.returningTo);
-    explorer.clearReturningTo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [explorer.returningTo, entries]);
+  useLanding(explorer, selection, entries);
+
+  const revealInFolder = useRevealInFolder();
 
   const open = useCallback(
     (entry: FileEntry) => {
@@ -102,8 +99,9 @@ export function ExplorerPage() {
       rename: (entry: FileEntry) => setDialog({ kind: 'rename', entry }),
       remove: (targets: FileEntry[]) => setDialog({ kind: 'delete', entries: targets }),
       details: (entry: FileEntry) => setDialog({ kind: 'details', entry }),
+      reveal: explorer.isSearching ? (entry: FileEntry) => revealInFolder(entry.path) : undefined,
     }),
-    [open, operations],
+    [open, operations, explorer.isSearching, revealInFolder],
   );
   const permissions = { write: canWrite, delete: canDelete };
   const selectionActions = actionsFor(selection.selectedEntries, permissions, handlers);
@@ -291,6 +289,7 @@ export function ExplorerPage() {
             direction={search.direction}
             onSort={explorer.sortBy}
             showFolder={explorer.isSearching && explorer.isRecursive}
+            onReveal={entry => revealInFolder(entry.path)}
           />
         )}
       </div>

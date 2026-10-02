@@ -72,11 +72,17 @@ export function SettingsDialog({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setCurrent(item.id)}
+                    onClick={event => {
+                      setCurrent(item.id);
+                      // On a phone the tabs are a scrolling row; bring the chosen one fully in.
+                      event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'center' });
+                    }}
                     aria-current={item.id === tab.id ? 'page' : undefined}
                     className={cn(
-                      'flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-[13.5px] text-ink-2 hover:bg-sunken hover:text-ink [&_svg]:size-4',
-                      item.id === tab.id && 'bg-glaze-wash font-medium text-glaze-strong',
+                      'flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-[13.5px] [&_svg]:size-4',
+                      item.id === tab.id
+                        ? 'bg-glaze-wash font-medium text-glaze-strong'
+                        : 'text-ink-2 hover:bg-sunken hover:text-ink',
                     )}
                   >
                     <Icon />

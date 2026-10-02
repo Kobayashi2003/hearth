@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { getRouteApi } from '@tanstack/react-router';
 import {
   MEDIA_KINDS,
@@ -18,6 +19,8 @@ export interface ExplorerSearch {
   /** Where a search or filter inside a folder looks; at the root it is always everything. */
   scope: SearchScope;
   type?: MediaKind;
+  /** An item to select and scroll to once the folder has loaded; dropped once used. */
+  reveal?: string;
 }
 
 export type SearchScope = 'here' | 'below';
@@ -35,6 +38,7 @@ export function validateExplorerSearch(raw: Record<string, unknown>): ExplorerSe
     q: typeof raw.q === 'string' ? raw.q : '',
     scope: oneOf(SCOPES, raw.scope, 'below'),
     ...(MEDIA_KINDS.includes(raw.type as MediaKind) ? { type: raw.type as MediaKind } : {}),
+    ...(typeof raw.reveal === 'string' && raw.reveal ? { reveal: raw.reveal } : {}),
   };
 }
 
@@ -43,3 +47,27 @@ export function validateExplorerSearch(raw: Record<string, unknown>): ExplorerSe
  * page importing the router back would close a loop.
  */
 export const explorerRoute = getRouteApi('/');
+
+/**
+ * "Show in folder": go to the folder an item lives in, with the item selected
+ * and scrolled into view. A new history entry, so Back returns to the results.
+ */
+export function useRevealInFolder(): (path: string) => void {
+  const navigate = explorerRoute.useNavigate();
+  return useCallback(
+    (path: string) => {
+      const cut = path.lastIndexOf('/');
+      void navigate({
+        search: current => ({
+          ...current,
+          path: cut === -1 ? '' : path.slice(0, cut),
+          q: '',
+          type: undefined,
+          scope: 'below',
+          reveal: path,
+        }),
+      });
+    },
+    [navigate],
+  );
+}

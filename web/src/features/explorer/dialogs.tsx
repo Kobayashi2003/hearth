@@ -158,14 +158,19 @@ function DeleteDialog({
       }
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
           {trashEnabled ? (
-            <Button variant="quiet" className="text-danger" onClick={() => confirm(true)}>
+            // Apart from the safe pair on the right, so it is never hit by habit.
+            <Button
+              variant="quiet"
+              className="text-danger sm:-ml-3 sm:mr-auto"
+              onClick={() => confirm(true)}
+            >
               Delete permanently
             </Button>
           ) : null}
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
           <Button variant="danger" autoFocus onClick={() => confirm(!trashEnabled)}>
             {trashEnabled ? 'Move to recycle bin' : 'Delete'}
           </Button>

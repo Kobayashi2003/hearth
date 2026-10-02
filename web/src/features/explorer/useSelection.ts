@@ -101,6 +101,14 @@ export function useSelection(entries: readonly FileEntry[]) {
     [entries, focused, indexOf, range],
   );
 
+  /** Select one item and bring it into view, as "show in folder" lands on it. */
+  const reveal = useCallback((path: string) => {
+    anchor.current = path;
+    setFocused(path);
+    setSelected(new Set([path]));
+    setFocusVisible(true);
+  }, []);
+
   const toggleFocused = useCallback(() => {
     if (!focused) return;
     pick(focused, { ctrl: true });
@@ -152,6 +160,7 @@ export function useSelection(entries: readonly FileEntry[]) {
     focusedIndex: indexOf(focused),
     focusVisible,
     setFocused,
+    reveal,
     pick,
     move,
     toggleFocused,

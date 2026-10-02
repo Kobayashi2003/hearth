@@ -1,9 +1,19 @@
-import { ChevronLeft, ChevronRight, Download, Maximize, Minimize, X } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FolderSearch,
+  Maximize,
+  Minimize,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { FileEntry } from '@hearth/shared';
 
+import { explorerRoute, useRevealInFolder } from '@/features/explorer/search';
 import { mediaUrls } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { parentOf } from '@/lib/format';
 import { Button } from '@/ui/Button';
 import { useOverlay } from './overlay';
 
@@ -33,7 +43,12 @@ export function ViewerFrame({
   subtitle?: ReactNode;
   className?: string;
 }) {
-  const { close, step, index, total, isFullscreen, toggleFullscreen } = useOverlay();
+  const { close, closeThen, step, index, total, isFullscreen, toggleFullscreen } = useOverlay();
+  const search = explorerRoute.useSearch();
+  const revealInFolder = useRevealInFolder();
+  // Opened from search or a collection, or from a folder that is not its own.
+  const awayFromFolder =
+    search.q.trim() !== '' || search.type !== undefined || parentOf(entry.path) !== search.path;
   const idle = useIdle(immersive);
   const paper = tone === 'paper';
   const buttonVariant = paper ? 'quiet' : 'stage';
@@ -71,6 +86,17 @@ export function ViewerFrame({
       </Button>
       <div className="flex w-full items-center justify-end gap-0.5 overflow-x-auto sm:w-auto">
         {actions}
+        {awayFromFolder ? (
+          <Button
+            variant={buttonVariant}
+            size="icon"
+            onClick={() => closeThen(() => revealInFolder(entry.path))}
+            aria-label="Show in folder"
+            title="Show in folder"
+          >
+            <FolderSearch />
+          </Button>
+        ) : null}
         <a
           href={mediaUrls.download(entry.path)}
           aria-label="Download"

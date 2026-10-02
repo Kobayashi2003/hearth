@@ -11,14 +11,16 @@ import {
   rethrow,
   zipPages,
 } from './comic-pages.js';
+import { kindleCoverOfFile } from './kindle-cover.js';
 
 /**
  * The cover of a book and nothing else — drawing a shelf must not unpack every
- * volume on it. For a zip (CBZ, EPUB) only one entry is inflated.
+ * volume on it. For a zip (CBZ, EPUB) only one entry is inflated; for a Kindle
+ * book only the records leading to the cover are read.
  */
 export interface CoverRequest {
   archivePath: string;
-  kind: 'comic' | 'epub';
+  kind: 'comic' | 'epub' | 'kindle';
 }
 
 export interface CoverResponse {
@@ -77,6 +79,10 @@ function declaredCoverHref(zip: AdmZip): string | null {
 
 async function run(request: CoverRequest): Promise<CoverResponse | null> {
   if (request.kind === 'epub') return epubCover(request.archivePath);
+  if (request.kind === 'kindle') {
+    const content = kindleCoverOfFile(request.archivePath);
+    return content ? { content, name: 'cover' } : null;
+  }
 
   const extension = path.extname(request.archivePath).toLowerCase();
   return RAR_EXTENSIONS.has(extension)

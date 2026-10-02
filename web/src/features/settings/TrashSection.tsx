@@ -56,7 +56,7 @@ export function TrashSection() {
         title="Use the recycle bin"
         description={
           settings.data
-            ? `Deleted items are kept for ${settings.data.retentionDays} days${settings.data.maxSizeMB > 0 ? `, up to ${formatSize(settings.data.maxSizeMB * 1024 * 1024)} in total` : ''}.`
+            ? retentionText(settings.data.retentionDays, settings.data.maxSizeMB)
             : undefined
         }
       >
@@ -125,4 +125,12 @@ export function TrashSection() {
       ) : null}
     </div>
   );
+}
+
+/** 0 is "no limit" for both settings. */
+function retentionText(days: number, maxSizeMB: number): string {
+  const kept =
+    days > 0 ? `kept for ${days} day${days === 1 ? '' : 's'}` : 'kept until you empty the bin';
+  const cap = maxSizeMB > 0 ? `, up to ${formatSize(maxSizeMB * 1024 * 1024)} in total` : '';
+  return `Deleted items are ${kept}${cap}.`;
 }

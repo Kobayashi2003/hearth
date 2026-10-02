@@ -136,7 +136,12 @@ export function createMediaRoutes(services: MediaRouteServices): FastifyPluginAs
         if (request.headers['if-none-match'] === etag) return reply.code(304).send();
 
         const thumbnail = await thumbnails.render(source, size, abortSignalOf(request));
-        if (!thumbnail) return reply.code(204).send();
+        // Not cached: "no picture" can stop being true without the file changing,
+        // for one when the server learns to read a new format.
+        if (!thumbnail) {
+          reply.removeHeader('ETag');
+          return reply.code(204).header('Cache-Control', 'no-store').send();
+        }
         return reply.header('Content-Type', 'image/webp').send(thumbnail);
       },
     );

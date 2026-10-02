@@ -53,6 +53,23 @@ export function PreviewOverlay() {
     return () => root.removeEventListener('wheel', guard);
   }, [isShowing]);
 
+  const closeThen = useCallback(
+    (action: () => void) => {
+      let done = false;
+      const run = () => {
+        if (done) return;
+        done = true;
+        window.removeEventListener('popstate', run);
+        action();
+      };
+      window.addEventListener('popstate', run);
+      // In case there was no entry to step back over.
+      window.setTimeout(run, 400);
+      closeAll();
+    },
+    [closeAll],
+  );
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     else void rootRef.current?.requestFullscreen().catch(() => undefined);
@@ -89,8 +106,8 @@ export function PreviewOverlay() {
   }, [current, kind, closeAll, step]);
 
   const value = useMemo<OverlayValue>(
-    () => ({ close: closeAll, step, index, total, isFullscreen, toggleFullscreen }),
-    [closeAll, step, index, total, isFullscreen, toggleFullscreen],
+    () => ({ close: closeAll, closeThen, step, index, total, isFullscreen, toggleFullscreen }),
+    [closeAll, closeThen, step, index, total, isFullscreen, toggleFullscreen],
   );
 
   // Closing fades out an empty stage; the viewer itself unmounts at once, so

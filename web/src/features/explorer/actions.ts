@@ -5,6 +5,7 @@ import {
   Eye,
   FolderOpen,
   FolderPlus,
+  FolderSearch,
   Info,
   Pencil,
   RefreshCw,
@@ -35,6 +36,8 @@ export interface ActionHandlers {
   rename: (entry: FileEntry) => void;
   remove: (entries: FileEntry[]) => void;
   details: (entry: FileEntry) => void;
+  /** Present in search and collection results, where items are away from their folders. */
+  reveal?: (entry: FileEntry) => void;
 }
 
 /** One declaration for the context menu, the long-press menu and the selection bar. */
@@ -52,6 +55,15 @@ export function actionsFor(
       icon: only.isDirectory ? FolderOpen : Eye,
       shortcut: 'Enter',
       run: () => handlers.open(only),
+    });
+  }
+  if (only && handlers.reveal) {
+    const reveal = handlers.reveal;
+    actions.push({
+      id: 'reveal',
+      label: 'Show in folder',
+      icon: FolderSearch,
+      run: () => reveal(only),
     });
   }
   actions.push({

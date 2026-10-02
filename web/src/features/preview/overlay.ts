@@ -12,6 +12,11 @@ export interface ViewerProps {
 
 export interface OverlayValue {
   close: () => void;
+  /**
+   * Close, then run `action` once the overlay's own history entry has been
+   * stepped back over; navigating any sooner would be undone by that step.
+   */
+  closeThen: (action: () => void) => void;
   step: (delta: number) => void;
   index: number;
   total: number;
