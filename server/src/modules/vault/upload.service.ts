@@ -8,12 +8,15 @@ import { fileTypeFromBuffer } from 'file-type';
 import mimeTypes from 'mime-types';
 
 import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { fromNodeError, HearthError } from '../../lib/errors.js';
 import { mimeForPath } from '../../lib/mime.js';
 import { assertValidEntryName, type SafePath, type Vault } from '../../lib/vault.js';
 import { resolveCollision } from './fileops.service.js';
 
 const MAGIC_NUMBER_SAMPLE_BYTES = 4100;
+
+const MB = 1024 * 1024;
 
 export interface StoredUpload {
   path: string;
@@ -23,6 +26,7 @@ export interface StoredUpload {
 export class UploadService {
   constructor(
     private readonly config: AppConfig,
+    private readonly runtime: RuntimeState,
     private readonly vault: Vault,
   ) {}
 
@@ -47,7 +51,7 @@ export class UploadService {
     const counter = new PassThrough();
     counter.on('data', (chunk: Buffer) => {
       written += chunk.length;
-      if (written > this.config.upload.maxFileSizeBytes) {
+      if (written > this.runtime.get('maxUploadSizeMB') * MB) {
         counter.destroy(
           new HearthError('PAYLOAD_TOO_LARGE', 'That file is larger than the upload limit'),
         );

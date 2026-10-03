@@ -31,7 +31,7 @@ export interface DocumentRouteServices {
   backgrounds: BackgroundService;
 }
 
-/** Files the client renders itself: text, comics, archives, Office and HTML documents. */
+/** Files the client renders itself: text, comics, archives and Office documents. */
 export function createDocumentRoutes(services: DocumentRouteServices): FastifyPluginAsync {
   const { listing, streams, text, comics, archives, documents, backgrounds } = services;
 
@@ -141,15 +141,6 @@ export function createDocumentRoutes(services: DocumentRouteServices): FastifyPl
           abortSignalOf(request),
         );
         return body;
-      },
-    );
-
-    app.get<{ Querystring: { path: string } }>(
-      '/html-proxy',
-      { schema: { querystring: pathQuery() }, config: READ },
-      async request => {
-        const { target } = await openFile(listing, request, request.query.path);
-        return documents.renderHtml(target);
       },
     );
 

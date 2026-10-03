@@ -6,7 +6,7 @@ import { COMIC_EXTENSIONS, type ComicManifest } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
 import { HearthError } from '../../lib/errors.js';
-import { runWorker } from '../../lib/worker.js';
+import { runWorker, unreadable } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
 import type { ComicRequest, ComicResponse } from '../../workers/comic.worker.js';
 
@@ -60,7 +60,12 @@ export class ComicService {
     const cacheDirectory = this.directoryFor(key);
     const request: ComicRequest = { archivePath: target, cacheDirectory };
 
-    const { pages } = await runWorker<ComicRequest, ComicResponse>('comic', request, signal);
+    const { pages } = await runWorker<ComicRequest, ComicResponse>('comic', request, signal).catch(
+      async (error: unknown) => {
+        await fsp.rm(cacheDirectory, { recursive: true, force: true });
+        return unreadable('This comic could not be read; the archive may be damaged')(error);
+      },
+    );
     if (pages.length === 0) {
       await fsp.rm(cacheDirectory, { recursive: true, force: true });
       throw HearthError.badRequest('That archive contains no readable pages');

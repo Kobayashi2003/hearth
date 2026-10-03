@@ -88,6 +88,42 @@ export class Warden {
     return payload.path === relativePath ? { username: payload.sub } : null;
   }
 
+  /**
+   * A token for one folder and everything below it, for an HTML page served
+   * with its own images, styles, frames and linked pages. The `site:` prefix
+   * keeps it from ever passing as a single-file media token.
+   */
+  issueSiteToken(username: string, folder: string): string {
+    return this.mediaTokens.issue(username, `site:${folder}`, this.runtime.get('activeRootId'))
+      .token;
+  }
+
+  /**
+   * Who a site request acts as: the token's user as they are now, since the
+   * token may outlive a change. A removed user gets nothing, admin-only mode
+   * locks others out as it does at sign-in, and their current permissions apply.
+   */
+  siteSession(username: string): Session {
+    const user = this.users.list().find(candidate => candidate.username === username);
+    if (!user) throw HearthError.unauthorized('This page link is no longer valid');
+    if (this.runtime.get('adminOnly') && !user.permissions.includes('a')) {
+      throw HearthError.forbidden('The server is currently limited to administrators');
+    }
+    return {
+      id: 'site',
+      username,
+      permissions: user.permissions,
+      createdAt: Date.now(),
+      expiresAt: null,
+    };
+  }
+
+  verifySiteToken(token: string): { username: string; folder: string } | null {
+    const payload = this.mediaTokens.verify(token, this.runtime.get('activeRootId'));
+    if (!payload?.path.startsWith('site:')) return null;
+    return { username: payload.sub, folder: payload.path.slice('site:'.length) };
+  }
+
   async close(): Promise<void> {
     await this.sessions.close();
   }

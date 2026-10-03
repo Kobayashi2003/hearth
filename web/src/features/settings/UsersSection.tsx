@@ -2,13 +2,15 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ManagedUser } from '@hearth/shared';
 
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useSession } from '@/features/session/session';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
-import { Field, Input, SettingRow, Switch } from '@/ui/Field';
+import { Field, Input, SettingsGroup } from '@/ui/Field';
+import { SettingSwitch } from './admin-settings';
 
 const VERBS: ReadonlyArray<[string, string]> = [
   ['r', 'Read'],
@@ -30,7 +32,6 @@ export function UsersSection() {
   const { identity } = useSession();
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
-  const lockdown = useQuery({ queryKey: ['lockdown'], queryFn: () => api.lockdown() });
   const [pending, setPending] = useState<{
     username: string;
     action: 'password' | 'remove';
@@ -56,103 +57,36 @@ export function UsersSection() {
     onSuccess: refresh,
     onError,
   });
-  const setLockdown = useMutation({
-    mutationFn: (adminOnly: boolean) => api.setLockdown(adminOnly),
-    onSuccess: data => queryClient.setQueryData(['lockdown'], data),
-    onError,
-  });
 
   return (
     <div>
-      <SettingRow
-        title="Administrators only"
-        description="Everyone else is signed out and cannot sign in until this is off."
-      >
-        <Switch
-          checked={lockdown.data?.adminOnly ?? false}
-          onChange={value => setLockdown.mutate(value)}
-          label="Administrators only"
+      <SettingsGroup title="Sign-in">
+        <SettingSwitch
+          name="adminOnly"
+          title="Administrators only"
+          description="Everyone else is signed out and cannot sign in until this is off."
         />
-      </SettingRow>
+      </SettingsGroup>
 
-      <ul className="mt-3 border-t border-line">
-        {users.data?.users.map(user => {
-          const managed = user.createdAt !== undefined;
-          return (
-            <li
-              key={user.username}
-              className="flex flex-wrap items-center gap-3 border-b border-line py-3"
-            >
-              <div className="min-w-0 flex-1 basis-48">
-                <p className="text-[14px] font-medium">
-                  {user.username}
-                  {user.username === identity?.username ? (
-                    <span className="ml-2 text-[12px] font-normal text-ink-3">you</span>
-                  ) : null}
-                </p>
-                {!managed ? (
-                  <p className="text-[12px] text-ink-3">
-                    Defined in the server’s .env; edit it there.
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex gap-1">
-                {VERBS.map(([verb, label]) => {
-                  const on = user.permissions.includes(verb);
-                  return (
-                    <button
-                      key={verb}
-                      type="button"
-                      disabled={!managed}
-                      aria-pressed={on}
-                      onClick={() =>
-                        update.mutate({
-                          username: user.username,
-                          permissions: toggleVerb(user.permissions, verb),
-                        })
-                      }
-                      className={cn(
-                        'h-7 rounded-full border px-2.5 text-[12px] disabled:opacity-60',
-                        on
-                          ? 'border-glaze bg-glaze-wash text-glaze-strong'
-                          : 'border-line text-ink-3',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-              {managed ? (
-                <>
-                  <Button
-                    size="icon"
-                    aria-label={`Set a new password for ${user.username}`}
-                    title="Set a new password"
-                    onClick={() => {
-                      setNewPassword('');
-                      setPending({ username: user.username, action: 'password' });
-                    }}
-                  >
-                    <KeyRound />
-                  </Button>
-                  <Button
-                    size="icon"
-                    className="text-danger"
-                    aria-label={`Remove ${user.username}`}
-                    disabled={user.username === identity?.username}
-                    onClick={() => setPending({ username: user.username, action: 'remove' })}
-                  >
-                    <Trash2 />
-                  </Button>
-                </>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+      <SettingsGroup title="Accounts">
+        {users.data?.users.map(user => (
+          <UserRow
+            key={user.username}
+            user={user}
+            isYou={user.username === identity?.username}
+            onPermissions={permissions => update.mutate({ username: user.username, permissions })}
+            onPassword={() => {
+              setNewPassword('');
+              setPending({ username: user.username, action: 'password' });
+            }}
+            onRemove={() => setPending({ username: user.username, action: 'remove' })}
+          />
+        ))}
+      </SettingsGroup>
 
-      <NewUser onCreated={refresh} />
+      <SettingsGroup title="Add a user">
+        <NewUser onCreated={refresh} />
+      </SettingsGroup>
 
       <Dialog
         open={pending?.action === 'password'}
@@ -238,8 +172,7 @@ function NewUser({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="mt-6 rounded-xl border border-line p-4">
-      <h3 className="mb-3 text-[14px] font-semibold">Add a user</h3>
+    <form onSubmit={submit} className="py-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Username">
           <Input
@@ -260,22 +193,7 @@ function NewUser({ onCreated }: { onCreated: () => void }) {
         </Field>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-1">
-        {VERBS.map(([verb, label]) => (
-          <button
-            key={verb}
-            type="button"
-            aria-pressed={permissions.includes(verb)}
-            onClick={() => setPermissions(toggleVerb(permissions, verb))}
-            className={cn(
-              'h-7 rounded-full border px-2.5 text-[12px]',
-              permissions.includes(verb)
-                ? 'border-glaze bg-glaze-wash text-glaze-strong'
-                : 'border-line text-ink-3',
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        <VerbChips permissions={permissions} onChange={setPermissions} />
         <Button
           type="submit"
           variant="primary"
@@ -287,5 +205,91 @@ function NewUser({ onCreated }: { onCreated: () => void }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** One account: its name, what it may do, and (for accounts made here) password and removal. */
+function UserRow({
+  user,
+  isYou,
+  onPermissions,
+  onPassword,
+  onRemove,
+}: {
+  user: ManagedUser;
+  isYou: boolean;
+  onPermissions: (permissions: string) => void;
+  onPassword: () => void;
+  onRemove: () => void;
+}) {
+  const managed = user.createdAt !== undefined;
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-3">
+      <div className="min-w-0 flex-1 basis-48">
+        <p className="text-[14px] font-medium">
+          {user.username}
+          {isYou ? <span className="ml-2 text-[12px] font-normal text-ink-3">you</span> : null}
+        </p>
+        {!managed ? (
+          <p className="text-[12px] text-ink-3">Defined in the server’s .env; edit it there.</p>
+        ) : null}
+      </div>
+      <VerbChips permissions={user.permissions} onChange={onPermissions} disabled={!managed} />
+      {managed ? (
+        <>
+          <Button
+            size="icon"
+            aria-label={`Set a new password for ${user.username}`}
+            title="Set a new password"
+            onClick={onPassword}
+          >
+            <KeyRound />
+          </Button>
+          <Button
+            size="icon"
+            className="text-danger"
+            aria-label={`Remove ${user.username}`}
+            disabled={isYou}
+            onClick={onRemove}
+          >
+            <Trash2 />
+          </Button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Read, write, delete and admin as toggles over a permission string. */
+function VerbChips({
+  permissions,
+  onChange,
+  disabled,
+}: {
+  permissions: string;
+  onChange: (permissions: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex gap-1">
+      {VERBS.map(([verb, label]) => {
+        const on = permissions.includes(verb);
+        return (
+          <button
+            key={verb}
+            type="button"
+            disabled={disabled}
+            aria-pressed={on}
+            onClick={() => onChange(toggleVerb(permissions, verb))}
+            className={cn(
+              'h-7 rounded-full border px-2.5 text-[12px] disabled:opacity-60',
+              on ? 'border-glaze bg-glaze-wash text-glaze-strong' : 'border-line text-ink-3',
+            )}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

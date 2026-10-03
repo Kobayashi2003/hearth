@@ -12,6 +12,7 @@ import {
   envList,
   envOptional,
   envPath,
+  envPositive,
   envString,
   projectRoot,
 } from './env.js';
@@ -137,7 +138,17 @@ export interface AppConfig {
   };
   readonly viewers: {
     readonly htmlViewerEnabled: boolean;
+    /** Images, styles, frames and pages beside an HTML file, from its own folder down. */
+    readonly htmlLocalResourcesEnabled: boolean;
     readonly htmlExternalResourcesEnabled: boolean;
+    /** The page's own scripts run (in a sandbox with no access to Hearth). */
+    readonly htmlScriptsEnabled: boolean;
+    /** Flash embedded in a page plays through Ruffle. */
+    readonly htmlRuffleEnabled: boolean;
+    /** Video a page embeds for a long-gone plugin plays in <video>, transcoded when the browser cannot. */
+    readonly htmlVideoEnabled: boolean;
+    /** The self-hosted Ruffle build (ruffle.js and its .wasm). */
+    readonly ruffleDirectory: string;
   };
   readonly adminOnly: boolean;
 }
@@ -285,7 +296,7 @@ export function loadConfig(development = false): AppConfig {
       everythingUrl: envString('EVERYTHING_URL', 'http://127.0.0.1:8081'),
       everythingUsername: envOptional('EVERYTHING_USERNAME'),
       everythingPassword: envOptional('EVERYTHING_PASSWORD'),
-      everythingTimeoutMs: envLimit('EVERYTHING_TIMEOUT_MS', 5000),
+      everythingTimeoutMs: envPositive('EVERYTHING_TIMEOUT_MS', 5000),
       maxResults: envLimitRenamed('SEARCH_MAX_RESULTS', 'EVERYTHING_MAX_RESULTS', 10_000),
       maxQueryLength: envLimit('SEARCH_MAX_QUERY_LENGTH', 512),
       probeCooldownMs: envInt('SEARCH_PROBE_COOLDOWN_MS', 5000),
@@ -305,8 +316,8 @@ export function loadConfig(development = false): AppConfig {
       maxTextSaveBytes: envLimit('MAX_TEXT_SAVE_SIZE_MB', 32, MB),
       archiveMaxEntries: envLimit('ARCHIVE_MAX_ENTRIES', 5000),
       archiveMaxMemberBytes: envLimit('ARCHIVE_MAX_MEMBER_SIZE_MB', 64, MB),
-      folderCoverMaxDepth: envLimit('FOLDER_COVER_MAX_DEPTH', 2),
-      folderCoverMaxBranches: envLimit('FOLDER_COVER_MAX_BRANCHES', 6),
+      folderCoverMaxDepth: envPositive('FOLDER_COVER_MAX_DEPTH', 2),
+      folderCoverMaxBranches: envPositive('FOLDER_COVER_MAX_BRANCHES', 6),
     },
     cache: {
       thumbnailMaxAgeMs: envLimit('CACHE_THUMBNAIL_DAYS', 30, DAY_MS),
@@ -332,7 +343,12 @@ export function loadConfig(development = false): AppConfig {
     },
     viewers: {
       htmlViewerEnabled: envBool('HTML_VIEWER_ENABLED', true),
+      htmlLocalResourcesEnabled: envBool('HTML_LOCAL_RESOURCES', true),
       htmlExternalResourcesEnabled: envBool('HTML_EXTERNAL_RESOURCES', false),
+      htmlScriptsEnabled: envBool('HTML_SCRIPTS', false),
+      htmlRuffleEnabled: envBool('HTML_RUFFLE', false),
+      htmlVideoEnabled: envBool('HTML_VIDEO', false),
+      ruffleDirectory: envPath('RUFFLE_DIRECTORY', './web/public/ruffle'),
     },
     adminOnly: envBool('ADMIN_ONLY_MODE', false),
   };

@@ -65,6 +65,11 @@ export function Switch({
 }
 
 /** A labelled row with a control on the right, for settings lists. */
+/**
+ * One setting: what it is on the left, its control on the right. When the two
+ * do not fit side by side (a phone, a wide control) the control drops below,
+ * still against the right edge, so controls line up down a page either way.
+ */
 export function SettingRow({
   title,
   description,
@@ -75,13 +80,40 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4 py-3">
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{title}</div>
-        {description ? <div className="mt-0.5 text-[12.5px] text-ink-3">{description}</div> : null}
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5 py-3.5">
+      <div className="min-w-0 flex-[1_1_15rem]">
+        <div className="text-[13.5px] font-medium">{title}</div>
+        {description ? (
+          <div className="mt-0.5 text-[12.5px] leading-relaxed text-ink-3">{description}</div>
+        ) : null}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="ml-auto flex shrink-0 items-center">{children}</div>
     </div>
+  );
+}
+
+/** A titled card of rows: the unit every settings page is built from. */
+export function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title?: string;
+  description?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="mb-7 last:mb-0">
+      {title ? <h3 className="mb-1.5 px-1 text-[13px] font-semibold text-ink-2">{title}</h3> : null}
+      {description ? (
+        <p className="mb-2.5 max-w-prose px-1 text-[12.5px] leading-relaxed text-ink-3">
+          {description}
+        </p>
+      ) : null}
+      <div className="divide-y divide-line rounded-xl border border-line bg-surface px-4">
+        {children}
+      </div>
+    </section>
   );
 }
 

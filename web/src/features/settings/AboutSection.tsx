@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { LogoMark } from '@/brand/Logo';
 import { api } from '@/lib/api';
 import { Kbd } from '@/ui/Feedback';
+import { SettingsGroup } from '@/ui/Field';
 
 const SHORTCUTS: ReadonlyArray<[string, string]> = [
   ['Ctrl K', 'All commands'],
@@ -20,27 +21,26 @@ const SHORTCUTS: ReadonlyArray<[string, string]> = [
 export function AboutSection() {
   const version = useQuery({ queryKey: ['version'], queryFn: () => api.version() });
   return (
-    <div>
-      <div className="flex items-center gap-4">
-        <LogoMark className="size-14" />
-        <div>
-          <p className="display-title text-[34px]">hearth</p>
-          <p className="text-[13px] text-ink-3">
-            Version {version.data?.version ?? '…'}. Your files, at home.
-          </p>
+    <>
+      <SettingsGroup>
+        <div className="flex items-center gap-4 py-4">
+          <LogoMark className="size-14 shrink-0" />
+          <div>
+            <p className="display-title text-[34px] leading-none">hearth</p>
+            <p className="mt-1 text-[13px] text-ink-3">
+              Version {version.data?.version ?? '…'}. Your files, at home.
+            </p>
+          </div>
         </div>
-      </div>
-      <h3 className="mb-2 mt-8 text-[14px] font-semibold">Keyboard</h3>
-      <dl className="grid max-w-md grid-cols-[9rem_1fr] gap-y-2 text-[13px]">
+      </SettingsGroup>
+      <SettingsGroup title="Keyboard">
         {SHORTCUTS.map(([keys, action]) => (
-          <div key={keys} className="contents">
-            <dt>
-              <Kbd>{keys}</Kbd>
-            </dt>
-            <dd className="text-ink-2">{action}</dd>
+          <div key={keys} className="flex items-center justify-between gap-4 py-2.5 text-[13px]">
+            <span className="text-ink-2">{action}</span>
+            <Kbd>{keys}</Kbd>
           </div>
         ))}
-      </dl>
-    </div>
+      </SettingsGroup>
+    </>
   );
 }

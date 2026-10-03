@@ -66,6 +66,7 @@ export function ExplorerPage() {
     queryKey: ['trash-settings'],
     queryFn: () => api.trashSettings(),
     staleTime: 60_000,
+    enabled: canDelete,
   });
   const operations = useFileOperations(search.path, selection.clear);
 

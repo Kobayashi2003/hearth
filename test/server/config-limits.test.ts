@@ -69,7 +69,6 @@ describe('limit variables', () => {
       config.upload.zipLinkTtlMs,
       config.trash.retentionDays,
       config.trash.maxSizeBytes,
-      config.search.everythingTimeoutMs,
       config.search.maxResults,
       config.search.maxQueryLength,
       config.media.thumbnailMaxWidth,
@@ -77,8 +76,6 @@ describe('limit variables', () => {
       config.media.maxTextSaveBytes,
       config.media.archiveMaxEntries,
       config.media.archiveMaxMemberBytes,
-      config.media.folderCoverMaxDepth,
-      config.media.folderCoverMaxBranches,
       ...Object.values(config.cache),
       ...Object.values(config.ledger),
       ...Object.values(config.rateLimits).map(bucket => bucket.max),
@@ -99,5 +96,20 @@ describe('limit variables', () => {
     process.env.HEARTH_ROOT_DIRECTORIES = './example';
     process.env.HEARTH_ARCHIVE_MAX_ENTRIES = '-1';
     expect(() => loadConfig()).toThrow(/zero \(unlimited\) or positive/);
+  });
+
+  it('keeps the safeguards finite, even in development, and refuses to lift them', () => {
+    for (const key of Object.keys(process.env))
+      if (key.startsWith('HEARTH_')) delete process.env[key];
+    Object.assign(process.env, parseEnv(read('.env.development')), {
+      HEARTH_ROOT_DIRECTORIES: './example',
+    });
+    const config = loadConfig(true);
+    expect(config.search.everythingTimeoutMs).toBe(5000);
+    expect(config.media.folderCoverMaxDepth).toBe(2);
+    expect(config.media.folderCoverMaxBranches).toBe(6);
+
+    process.env.HEARTH_FOLDER_COVER_MAX_DEPTH = '0';
+    expect(() => loadConfig(true)).toThrow(/positive integer/);
   });
 });

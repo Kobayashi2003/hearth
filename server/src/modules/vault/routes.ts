@@ -43,7 +43,7 @@ export function createVaultRoutes(listing: ListingService): FastifyPluginAsync {
           ...paginate(
             sorted,
             request.query.page,
-            pageSize(request.query.limit, app.hearth.config.listing.maxEntries),
+            pageSize(request.query.limit, app.hearth.runtime.get('listingMaxEntries')),
           ),
           path: request.relativePath(directory),
         };

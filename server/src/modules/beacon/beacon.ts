@@ -31,8 +31,8 @@ export class Beacon {
     vault: Vault,
     private readonly logger: Logger,
   ) {
-    this.everything = new EverythingProvider(config, vault);
-    this.walk = new WalkProvider(config, vault);
+    this.everything = new EverythingProvider(config, runtime, vault);
+    this.walk = new WalkProvider(runtime, vault);
 
     // A new root may be on a volume Everything does not index.
     runtime.onChange(change => {

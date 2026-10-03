@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 
 import { hasCoverArt, isHiddenSystemEntry } from '@hearth/shared';
 
-import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { mimeForPath } from '../../lib/mime.js';
 import { imageSize } from '../../workers/comic-pages.js';
 import type { SafePath } from '../../lib/vault.js';
@@ -25,7 +25,7 @@ export class FolderCoverService {
   private readonly memo = new Map<string, Memo>();
 
   /** Depth 2 follows `Series/Volume 1/001.jpg`; branches bound how many subfolders are tried per level. */
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly runtime: RuntimeState) {}
 
   /** Memoised against the folder's mtime, so adding a file re-resolves. */
   async sourceFor(directory: SafePath, signal?: AbortSignal): Promise<SafePath | null> {
@@ -35,7 +35,7 @@ export class FolderCoverService {
     const cached = this.memo.get(directory);
     if (cached && cached.mtimeMs === stats.mtimeMs) return cached.source;
 
-    const source = await this.search(directory, this.config.media.folderCoverMaxDepth, signal);
+    const source = await this.search(directory, this.runtime.get('folderCoverMaxDepth'), signal);
 
     if (this.memo.size >= MEMO_LIMIT) {
       const oldest = this.memo.keys().next().value;
@@ -77,7 +77,7 @@ export class FolderCoverService {
     let branches = 0;
     for (const dirent of visible) {
       if (!dirent.isDirectory()) continue;
-      if (branches >= this.config.media.folderCoverMaxBranches) break;
+      if (branches >= this.runtime.get('folderCoverMaxBranches')) break;
       branches += 1;
 
       const found = await this.search(

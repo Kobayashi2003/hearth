@@ -1,12 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BookImage, Download, FileArchive, Folder, Search } from 'lucide-react';
+import {
+  ArrowLeft,
+  BookImage,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileArchive,
+  Folder,
+  Search,
+} from 'lucide-react';
 import type { ArchiveEntry } from '@hearth/shared';
 
 import { mediaUrls } from '@/lib/api';
 import { api } from '@/lib/api';
 import { iconFor } from '@/lib/file-kind';
 import { formatSize } from '@/lib/format';
+import { useKeyBindings } from '@/lib/keys';
 import { Button } from '@/ui/Button';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
 import { ViewerFrame } from '../ViewerFrame';
@@ -74,6 +84,19 @@ export default function ArchiveViewer({ entry }: ViewerProps) {
       .map(item => ({ name: item.name, path: item.name, isDirectory: false, size: item.size }));
   }, [data, folder, filter]);
 
+  // The enlarged image steps through the images in view, in their listed order.
+  const images = useMemo(
+    () => rows.filter(row => !row.isDirectory && IMAGE.test(row.name)).map(row => row.path),
+    [rows],
+  );
+
+  // Capture phase, ahead of the overlay: Escape in the search clears it rather
+  // than closing the whole preview.
+  useKeyBindings(
+    [{ key: 'Escape', inFields: true, when: () => filter !== '', run: () => setFilter('') }],
+    { capture: true },
+  );
+
   if (asComic) return <ComicReader entry={entry} />;
 
   const summary = data
@@ -127,6 +150,11 @@ export default function ArchiveViewer({ entry }: ViewerProps) {
               />
             </label>
           </div>
+          {filter && data?.hasMore ? (
+            <p className="border-b border-line bg-sunken px-4 py-1.5 text-[12.5px] text-ink-2">
+              Only the {data.entries.length.toLocaleString()} listed items are searched.
+            </p>
+          ) : null}
           <ul className="scroll-thin min-h-0 flex-1 overflow-auto py-1">
             {rows.map(row => {
               const Icon = row.isDirectory
@@ -161,7 +189,7 @@ export default function ArchiveViewer({ entry }: ViewerProps) {
                         href={mediaUrls.archiveEntry(entry.path, row.path)}
                         download={row.name.split('/').pop()}
                         aria-label={`Download ${row.name}`}
-                        className="grid size-7 place-items-center rounded-md text-ink-3 opacity-0 hover:bg-bg hover:text-ink group-hover:opacity-100"
+                        className="grid size-7 place-items-center rounded-md text-ink-3 opacity-0 hover:bg-bg hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
                       >
                         <Download className="size-4" />
                       </a>
@@ -175,19 +203,91 @@ export default function ArchiveViewer({ entry }: ViewerProps) {
       )}
 
       {image ? (
-        <button
-          type="button"
-          aria-label="Close image"
-          onClick={() => setImage(null)}
-          className="animate-fade absolute inset-0 z-30 grid place-items-center bg-stage/95 p-4"
-        >
-          <img
-            src={mediaUrls.archiveEntry(entry.path, image)}
-            alt={image}
-            className="max-h-full max-w-full object-contain"
-          />
-        </button>
+        <ArchiveImage
+          archive={entry.path}
+          images={images}
+          current={image}
+          onShow={setImage}
+          onClose={() => setImage(null)}
+        />
       ) : null}
     </ViewerFrame>
+  );
+}
+
+/**
+ * An image from the archive, enlarged over the listing; it steps through the
+ * images in view. Its keys take the capture phase, ahead of the overlay, so
+ * Escape closes the image rather than the whole preview.
+ */
+function ArchiveImage({
+  archive,
+  images,
+  current,
+  onShow,
+  onClose,
+}: {
+  archive: string;
+  images: string[];
+  current: string;
+  onShow: (image: string) => void;
+  onClose: () => void;
+}) {
+  const index = images.indexOf(current);
+  const show = (delta: number) => {
+    const next = images[index + delta];
+    if (index !== -1 && next) onShow(next);
+  };
+  useKeyBindings(
+    [
+      { key: 'Escape', run: onClose },
+      { key: 'ArrowLeft', run: () => show(-1) },
+      { key: 'ArrowRight', run: () => show(1) },
+    ],
+    { capture: true },
+  );
+
+  return (
+    <div className="animate-fade absolute inset-0 z-30 bg-stage/95">
+      <button
+        type="button"
+        aria-label="Close image"
+        onClick={onClose}
+        className="absolute inset-0 grid place-items-center p-4"
+      >
+        <img
+          src={mediaUrls.archiveEntry(archive, current)}
+          alt={current}
+          className="max-h-full max-w-full object-contain"
+        />
+      </button>
+      {images.length > 1 ? (
+        <>
+          <Button
+            variant="stage"
+            size="icon"
+            aria-label="Previous image"
+            disabled={index <= 0}
+            onClick={() => show(-1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/45"
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="stage"
+            size="icon"
+            aria-label="Next image"
+            disabled={index >= images.length - 1}
+            onClick={() => show(1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/45"
+          >
+            <ChevronRight />
+          </Button>
+          <p className="tabular absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-2.5 py-0.5 text-[12px] text-stage-ink">
+            {index + 1} / {images.length}
+          </p>
+        </>
+      ) : null}
+    </div>
   );
 }

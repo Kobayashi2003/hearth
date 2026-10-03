@@ -7,14 +7,13 @@ import type { PermissionAction, PermissionRule } from '@hearth/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
-import { Field, Input, Select, SettingRow, Switch } from '@/ui/Field';
+import { Field, Input, Select, SettingsGroup } from '@/ui/Field';
 
 const ACTIONS: PermissionAction[] = ['read', 'write', 'delete', 'admin'];
 
 export function AccessSection() {
   const queryClient = useQueryClient();
   const stored = useQuery({ queryKey: ['permission-rules'], queryFn: () => api.permissionRules() });
-  const viewers = useQuery({ queryKey: ['viewer-settings'], queryFn: () => api.viewerSettings() });
   const [rules, setRules] = useState<PermissionRule[]>([]);
 
   useEffect(() => {
@@ -29,10 +28,6 @@ export function AccessSection() {
     },
     onError: (error: Error) => toast.error(error.message),
   });
-  const saveViewers = useMutation({
-    mutationFn: api.saveViewerSettings,
-    onSuccess: data => queryClient.setQueryData(['viewer-settings'], data),
-  });
 
   const patch = (index: number, changes: Partial<PermissionRule>) =>
     setRules(current =>
@@ -43,16 +38,23 @@ export function AccessSection() {
 
   return (
     <div>
-      <h3 className="text-[14px] font-semibold">Folder rules</h3>
-      <p className="mt-1 max-w-prose text-[12.5px] text-ink-3">
-        Narrow or widen what someone may do below a path. The most specific rule wins; at equal
-        specificity a rule for a named user beats <code>*</code>, and deny beats allow.{' '}
-        <code>/Photos/**</code> covers everything inside Photos.
-      </p>
-
-      <div className="mt-3 flex flex-col gap-2">
+      <SettingsGroup
+        title="Folder rules"
+        description={
+          <>
+            Narrow or widen what someone may do below a path. The most specific rule wins; at equal
+            specificity a rule for a named user beats <code>*</code>, and deny beats allow.{' '}
+            <code>/Photos/**</code> covers everything inside Photos.
+          </>
+        }
+      >
+        {rules.length === 0 ? (
+          <p className="py-4 text-[13px] text-ink-3">
+            No rules: everyone can do what their account allows, everywhere.
+          </p>
+        ) : null}
         {rules.map((rule, index) => (
-          <div key={index} className="flex flex-col gap-2.5 rounded-xl border border-line p-3">
+          <div key={index} className="flex flex-col gap-2.5 py-3.5">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-[8rem_1fr_7rem]">
               <Field label="User (* for everyone)">
                 <Input
@@ -119,8 +121,8 @@ export function AccessSection() {
             </div>
           </div>
         ))}
-      </div>
-      <div className="mt-3 flex gap-2">
+      </SettingsGroup>
+      <div className="-mt-4 flex flex-wrap justify-end gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -141,30 +143,6 @@ export function AccessSection() {
         >
           Save rules
         </Button>
-      </div>
-
-      <h3 className="mt-8 text-[14px] font-semibold">Web pages</h3>
-      <div className="divide-y divide-line">
-        <SettingRow
-          title="Open .html files"
-          description="Pages are sanitised and shown in a sandbox without scripts."
-        >
-          <Switch
-            checked={viewers.data?.htmlViewerEnabled ?? false}
-            onChange={value => saveViewers.mutate({ htmlViewerEnabled: value })}
-            label="Open .html files"
-          />
-        </SettingRow>
-        <SettingRow
-          title="Load images from other sites"
-          description="Off keeps a saved page from telling another site that it was opened."
-        >
-          <Switch
-            checked={viewers.data?.htmlExternalResourcesEnabled ?? false}
-            onChange={value => saveViewers.mutate({ htmlExternalResourcesEnabled: value })}
-            label="Load images from other sites"
-          />
-        </SettingRow>
       </div>
     </div>
   );

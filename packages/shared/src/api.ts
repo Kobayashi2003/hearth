@@ -222,14 +222,34 @@ export interface UpdateUserRequest {
   permissions?: string;
 }
 
+/**
+ * An HTML file to preview: on its own as one sanitised document, or (when an
+ * administrator lets pages use their local files) served with its folder at
+ * `url` (under the API base), where its frames, linked pages and, if allowed,
+ * scripts and Flash work.
+ */
+export type HtmlPreview =
+  | { mode: 'document'; html: string; externalResources: boolean; blockedResources: number }
+  /** `sandboxed` when scripts (the page's own, or Ruffle) run, sealed off from Hearth. */
+  | { mode: 'site'; url: string; sandboxed: boolean };
+
+/** The viewer's frame a site is shown in; a site's `_top` and `_parent` mean this frame. */
+export const SITE_FRAME_NAME = 'hearth-site';
+
+/**
+ * Posted up through a sandboxed site's frames for a link aimed at another
+ * frame, which the sandbox will not let a frame navigate itself.
+ */
+export interface SiteNavigateMessage {
+  type: 'hearth-site-navigate';
+  target: string;
+  url: string;
+}
+
 export interface UsersResponse {
   users: ManagedUser[];
 }
 
 export interface PermissionRulesResponse {
   rules: PermissionRule[];
-}
-
-export interface LockdownSettings {
-  adminOnly: boolean;
 }

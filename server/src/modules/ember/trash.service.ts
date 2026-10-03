@@ -25,6 +25,7 @@ interface TrashRecord {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MB = 1024 * 1024;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 /** Ember: deleted items move to a store outside the served tree, described by an index file. */
@@ -52,9 +53,7 @@ export class TrashService {
   settings(): TrashSettings {
     return {
       enabled: this.enabled,
-      retentionDays: capOrZero(this.config.trash.retentionDays),
-      maxSizeMB: capOrZero(this.config.trash.maxSizeBytes / (1024 * 1024)),
-      autoCleanup: this.config.trash.autoCleanup,
+      retentionDays: capOrZero(this.runtime.get('trashRetentionDays')),
     };
   }
 
@@ -160,7 +159,8 @@ export class TrashService {
 
   /** Past the retention window first, then oldest-first until under the size cap. */
   async cleanup(): Promise<void> {
-    const { retentionDays, maxSizeBytes } = this.config.trash;
+    const retentionDays = this.runtime.get('trashRetentionDays');
+    const maxSizeBytes = this.runtime.get('trashMaxSizeMB') * MB;
     const records = [...this.index.read().items].sort((a, b) =>
       a.deletedAt.localeCompare(b.deletedAt),
     );

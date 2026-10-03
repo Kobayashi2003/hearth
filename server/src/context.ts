@@ -38,5 +38,11 @@ declare module 'fastify' {
     auth?: 'session' | 'public' | 'media-token';
     /** Verb enforced against the user's global permissions before the handler runs. */
     permission?: PermissionAction;
+    /**
+     * Served into frames whose parent has an opaque origin (a sandboxed page's
+     * own frameset), which X-Frame-Options: SAMEORIGIN would refuse; such
+     * routes send their own CSP instead.
+     */
+    framable?: boolean;
   }
 }

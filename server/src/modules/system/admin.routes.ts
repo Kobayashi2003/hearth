@@ -1,14 +1,16 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type {
+  AdminSettingsPatch,
+  AdminSettingsResponse,
   CreateUserRequest,
-  LockdownSettings,
   PermissionRule,
   PermissionRulesResponse,
+  SettingKey,
   UpdateUserRequest,
   UsersResponse,
-  ViewerSettings,
 } from '@hearth/shared';
 
+import { parseSetting, SETTING_KEYS } from '../../config/settings.js';
 import { HearthError } from '../../lib/errors.js';
 import { maxItems } from '../../lib/limits.js';
 import type { Warden } from '../warden/warden.js';
@@ -63,21 +65,14 @@ const schemasFor = (batch: number) =>
         },
       },
     },
-    lockdown: {
-      body: {
-        type: 'object',
-        required: ['adminOnly'],
-        properties: { adminOnly: { type: 'boolean' } },
-      },
-    },
-    viewers: {
+    settings: {
       body: {
         type: 'object',
         minProperties: 1,
-        properties: {
-          htmlViewerEnabled: { type: 'boolean' },
-          htmlExternalResourcesEnabled: { type: 'boolean' },
-        },
+        additionalProperties: false,
+        properties: Object.fromEntries(
+          SETTING_KEYS.map(key => [key, { type: ['boolean', 'number', 'null'] }]),
+        ),
       },
     },
   }) as const;
@@ -139,42 +134,30 @@ export function createAdminRoutes(warden: Warden): FastifyPluginAsync {
       },
     );
 
-    app.get('/admin/lockdown', { config: adminOnly }, async () => {
-      const body: LockdownSettings = { adminOnly: runtime.get('adminOnly') };
+    /** Every setting an administrator can change, with its .env default. */
+    app.get('/admin/settings', { config: adminOnly }, async () => {
+      const body: AdminSettingsResponse = { settings: runtime.describe() };
       return body;
     });
 
-    app.put<{ Body: LockdownSettings }>(
-      '/admin/lockdown',
-      { schema: schemas.lockdown, config: adminOnly },
+    /** Several at once; a value of null puts the setting back to its .env default. */
+    app.patch<{ Body: AdminSettingsPatch }>(
+      '/admin/settings',
+      { schema: schemas.settings, config: adminOnly },
       async request => {
-        runtime.set('adminOnly', request.body.adminOnly);
-        const body: LockdownSettings = { adminOnly: runtime.get('adminOnly') };
+        const entries = Object.entries(request.body) as Array<
+          [SettingKey, boolean | number | null]
+        >;
+        // All or nothing: check every value before applying any.
+        for (const [key, value] of entries) {
+          const parsed = value === null ? null : parseSetting(key, value);
+          if (typeof parsed === 'string') throw HearthError.badRequest(parsed);
+        }
+        for (const [key, value] of entries) runtime.set(key, value);
+        request.log.info({ settings: request.body }, 'settings changed');
+        const body: AdminSettingsResponse = { settings: runtime.describe() };
         return body;
       },
     );
-
-    app.get('/admin/viewers', { config: { permission: 'read' } }, async () => viewerSettings());
-
-    app.put<{ Body: Partial<ViewerSettings> }>(
-      '/admin/viewers',
-      { schema: schemas.viewers, config: adminOnly },
-      async request => {
-        if (request.body.htmlViewerEnabled !== undefined) {
-          runtime.set('htmlViewerEnabled', request.body.htmlViewerEnabled);
-        }
-        if (request.body.htmlExternalResourcesEnabled !== undefined) {
-          runtime.set('htmlExternalResourcesEnabled', request.body.htmlExternalResourcesEnabled);
-        }
-        return viewerSettings();
-      },
-    );
-
-    function viewerSettings(): ViewerSettings {
-      return {
-        htmlViewerEnabled: runtime.get('htmlViewerEnabled'),
-        htmlExternalResourcesEnabled: runtime.get('htmlExternalResourcesEnabled'),
-      };
-    }
   };
 }

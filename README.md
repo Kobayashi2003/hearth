@@ -117,6 +117,7 @@ how you like things set.
 | `npm run format` | Format the code with Prettier (`format:check` to verify) |
 | `npm run typecheck` | Typecheck every workspace |
 | `npm run lint` | Lint the whole repository |
+| `npm run ruffle` | Download the pinned Ruffle build into `web/public/ruffle/`, for .swf files and Flash in old web pages |
 | `.\start.ps1 -Build` | Production: build, then run backend + Caddy |
 | `.\start.ps1 -NoCaddy` | Run the backend only; a shared gateway owns the port |
 

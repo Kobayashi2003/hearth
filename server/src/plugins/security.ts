@@ -14,10 +14,10 @@ const securityPlugin: FastifyPluginAsync = async app => {
     credentials: true,
   });
 
-  app.addHook('onSend', async (_request, reply, payload) => {
+  app.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
-    reply.header('X-Frame-Options', 'SAMEORIGIN');
+    if (!request.routeOptions.config.framable) reply.header('X-Frame-Options', 'SAMEORIGIN');
     return payload;
   });
 };

@@ -9,6 +9,7 @@ import type { Logger } from 'pino';
 import type { ChunkedUploadSession } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { HearthError } from '../../lib/errors.js';
 import { JsonDocument } from '../../lib/json-store.js';
 import type { SafePath, Vault } from '../../lib/vault.js';
@@ -37,12 +38,15 @@ const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
  * Resumable upload: each chunk is its own part file, `complete` concatenates
  * them in order, and `status` reports which chunks already landed.
  */
+const MB = 1024 * 1024;
+
 export class ChunkedUploadService {
   private readonly index: JsonDocument<SessionIndex>;
   private sweepTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly config: AppConfig,
+    private readonly runtime: RuntimeState,
     private readonly vault: Vault,
     private readonly uploads: UploadService,
     private readonly logger: Logger,
@@ -64,7 +68,7 @@ export class ChunkedUploadService {
     size: number,
     requestedChunkSize: number,
   ): Promise<ChunkedUploadSession> {
-    if (size > this.config.upload.maxFileSizeBytes) {
+    if (size > this.runtime.get('maxUploadSizeMB') * MB) {
       throw new HearthError('PAYLOAD_TOO_LARGE', 'That file is larger than the upload limit');
     }
     splitRelativeName(relativePath);

@@ -3,21 +3,23 @@ import fsp from 'node:fs/promises';
 import iconv from 'iconv-lite';
 import type { TextContentResponse } from '@hearth/shared';
 
-import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { decodeText, detectEncoding } from '../../lib/charset.js';
 import { fromNodeError, HearthError } from '../../lib/errors.js';
 import type { SafePath } from '../../lib/vault.js';
 
+const MB = 1024 * 1024;
+
 /** Decoded explicitly (GB18030, Shift_JIS… are common); the viewer can override the detected encoding. */
 export class TextService {
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly runtime: RuntimeState) {}
 
   async read(target: SafePath, requestedEncoding?: string): Promise<TextContentResponse> {
     const stats = await fsp.stat(target).catch(error => {
       throw fromNodeError(error, 'Could not read that file');
     });
 
-    const limit = this.config.media.maxTextBytes;
+    const limit = this.runtime.get('maxTextSizeMB') * MB;
     const truncated = stats.size > limit;
 
     const handle = await fsp.open(target, 'r');

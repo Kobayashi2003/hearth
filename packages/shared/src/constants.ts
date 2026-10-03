@@ -13,8 +13,23 @@ export const HIDDEN_SYSTEM_NAMES: ReadonlySet<string> = new Set([
   '$windows.~ws',
 ]);
 
+/**
+ * What other systems leave beside files: macOS's `._name` resource forks and
+ * folder records, Windows's thumbnail caches and folder settings. Never
+ * content, and in a listing they read as files that will not open.
+ */
+const METADATA_NAMES: ReadonlySet<string> = new Set([
+  '.ds_store',
+  '.appledouble',
+  '__macosx',
+  'thumbs.db',
+  'ehthumbs.db',
+  'desktop.ini',
+]);
+
 export function isHiddenSystemEntry(name: string): boolean {
-  return HIDDEN_SYSTEM_NAMES.has(name.toLowerCase());
+  const lower = name.toLowerCase();
+  return HIDDEN_SYSTEM_NAMES.has(lower) || METADATA_NAMES.has(lower) || name.startsWith('._');
 }
 
 /** Applied ahead of the `mime-types` database, which gets these wrong. */

@@ -68,6 +68,8 @@ export async function buildApp({ config, logger }: BuildOptions) {
     genReqId: () => crypto.randomUUID(),
     bodyLimit: bodyLimit(config.server.bodyLimitBytes),
     trustProxy: true,
+    // A site token carries its folder's path; Fastify's default of 100 would refuse most.
+    maxParamLength: 4096,
   });
 
   const runtime = new RuntimeState(config);
@@ -100,8 +102,8 @@ export async function buildApp({ config, logger }: BuildOptions) {
   const beacon = new Beacon(config, runtime, vault, logger);
   const fileOps = new FileOpsService(vault);
   const trash = new TrashService(config, runtime, vault, logger);
-  const uploads = new UploadService(config, vault);
-  const chunked = new ChunkedUploadService(config, vault, uploads, logger);
+  const uploads = new UploadService(config, runtime, vault);
+  const chunked = new ChunkedUploadService(config, runtime, vault, uploads, logger);
   const downloads = new DownloadService(vault, config.upload.zipLinkTtlMs);
 
   const ffmpeg = new FfmpegAdapter({
@@ -114,24 +116,20 @@ export async function buildApp({ config, logger }: BuildOptions) {
     listing,
     streams,
     ffmpeg,
-    text: new TextService(config),
+    text: new TextService(runtime),
     thumbnails: new ThumbnailService(config, ffmpeg),
     subtitles: new SubtitleService(config, ffmpeg),
-    folderCovers: new FolderCoverService(config),
+    folderCovers: new FolderCoverService(runtime),
     comics: new ComicService(config),
-    archives: new ArchiveService(config),
-    documents: new DocumentService(runtime),
+    archives: new ArchiveService(runtime),
+    documents: new DocumentService(runtime, config.viewers.ruffleDirectory),
     backgrounds: new BackgroundService(config),
   };
   const caches = new CacheCleanupService(config, logger);
 
-  await app.register(multipart, {
-    limits: {
-      fileSize: Number.isFinite(config.upload.maxFileSizeBytes)
-        ? config.upload.maxFileSizeBytes
-        : Infinity,
-    },
-  });
+  // The upload size cap can change while running, so the upload service checks
+  // it as bytes arrive rather than the multipart parser at startup.
+  await app.register(multipart, { limits: { fileSize: Infinity } });
 
   await app.register(
     async api => {

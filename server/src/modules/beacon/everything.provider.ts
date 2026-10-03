@@ -6,6 +6,7 @@ import { EverythingClient } from '../../adapters/everything/client.js';
 import { buildSearchExpression, everythingSortField } from '../../adapters/everything/query.js';
 import type { EverythingResult } from '../../adapters/everything/parse.js';
 import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { sortEntries } from '../../lib/listing.js';
 import { DIRECTORY_MIME, extensionsForMediaKind, mimeForPath } from '../../lib/mime.js';
 import type { Vault } from '../../lib/vault.js';
@@ -18,13 +19,14 @@ export class EverythingProvider implements SearchProvider {
 
   constructor(
     private readonly config: AppConfig,
+    private readonly runtime: RuntimeState,
     private readonly vault: Vault,
   ) {
     this.client = new EverythingClient({
       url: config.search.everythingUrl,
       username: config.search.everythingUsername,
       password: config.search.everythingPassword,
-      timeoutMs: config.search.everythingTimeoutMs,
+      timeoutMs: () => runtime.get('everythingTimeoutMs'),
     });
   }
 
@@ -57,7 +59,7 @@ export class EverythingProvider implements SearchProvider {
       {
         expression,
         offset: Number.isFinite(limit) ? index * limit : 0,
-        count: Math.min(limit, this.config.search.maxResults),
+        count: Math.min(limit, this.runtime.get('searchMaxResults')),
         sort: everythingSortField(query.sort.field),
         ascending: query.sort.direction === 'asc',
       },

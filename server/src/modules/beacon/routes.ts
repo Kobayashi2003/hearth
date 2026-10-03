@@ -51,7 +51,7 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
       recursive: request.query.recursive ?? true,
       sort: { field: request.query.sort ?? 'name', direction: request.query.direction ?? 'asc' },
       page: request.query.page ?? 1,
-      limit: pageSize(request.query.limit, appConfig.listing.maxEntries),
+      limit: pageSize(request.query.limit, app.hearth.runtime.get('listingMaxEntries')),
     });
 
     app.get<{ Querystring: SearchQueryString }>(
@@ -116,7 +116,8 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
       },
     );
 
-    app.get('/system/search-status', { config: { permission: 'read' } }, async () =>
+    // Everything's address and health are for an administrator, like the rest of the settings.
+    app.get('/system/search-status', { config: { permission: 'admin' } }, async () =>
       beacon.status(),
     );
   };

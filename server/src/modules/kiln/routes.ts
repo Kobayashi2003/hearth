@@ -2,8 +2,9 @@ import type { FastifyPluginAsync } from 'fastify';
 
 import { createDocumentRoutes, type DocumentRouteServices } from './document.routes.js';
 import { createMediaRoutes, type MediaRouteServices } from './media.routes.js';
+import { createSiteRoutes, type SiteRouteServices } from './site.routes.js';
 
-export type KilnServices = MediaRouteServices & DocumentRouteServices;
+export type KilnServices = MediaRouteServices & DocumentRouteServices & SiteRouteServices;
 
 /**
  * Kiln turns files into something a browser can show: media bytes, and
@@ -14,5 +15,6 @@ export function createKilnRoutes(services: KilnServices): FastifyPluginAsync {
   return async (app, options) => {
     await createMediaRoutes(services)(app, options);
     await createDocumentRoutes(services)(app, options);
+    await createSiteRoutes(services)(app, options);
   };
 }

@@ -10,6 +10,21 @@ const workerDirectory = path.resolve(thisFile, '../../workers');
 const workerExtension = path.extname(thisFile);
 
 /**
+ * For a worker reading a user's file: an exception thrown on its content (a
+ * damaged archive, a format the library does not know, a file too large for
+ * it) is that file's problem, not the server's, so it becomes a 400 that says
+ * so. Hearth's own errors, an abort among them, pass through.
+ */
+export function unreadable(message: string): (error: unknown) => never {
+  return error => {
+    if (error instanceof HearthError) throw error;
+    throw HearthError.badRequest(message, {
+      cause: error instanceof Error ? error.message : String(error),
+    });
+  };
+}
+
+/**
  * Run one CPU-bound job on a fresh worker thread. Jobs are seconds long and
  * rare, so a pool is not worth its lifecycle. Aborting terminates the worker,
  * the only reliable way to stop synchronous work already in progress.

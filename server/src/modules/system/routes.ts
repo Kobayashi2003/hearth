@@ -40,7 +40,7 @@ export const systemRoutes: FastifyPluginAsync = async app => {
       const target = config.storage.roots.find(root => root.id === request.body.id);
       if (!target) throw HearthError.notFound('No such root');
 
-      runtime.set('activeRootId', target.id);
+      runtime.setActiveRoot(target.id);
       request.log.info({ root: target.label }, 'active root changed');
       return describeRoots();
     },

@@ -19,8 +19,6 @@ const config = {
     everythingUrl: 'http://127.0.0.1:8081',
     everythingUsername: undefined,
     everythingPassword: undefined,
-    everythingTimeoutMs: 1000,
-    everythingMaxResults: 1000,
   },
 } as unknown as AppConfig;
 
@@ -53,9 +51,10 @@ beforeAll(() => {
   const runtime = {
     activeRoot: { id: 'test', absolutePath: rootDirectory, label: 'root' },
     onChange: () => () => {},
+    get: (key: string) => ({ everythingTimeoutMs: 1000, searchMaxResults: 1000 })[key],
   } as unknown as RuntimeState;
 
-  provider = new EverythingProvider(config, new Vault(runtime));
+  provider = new EverythingProvider(config, runtime, new Vault(runtime));
 });
 
 afterEach(() => {

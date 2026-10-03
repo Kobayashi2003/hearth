@@ -1,4 +1,6 @@
 import type {
+  AdminSettingsPatch,
+  AdminSettingsResponse,
   ApiErrorBody,
   ArchiveListing,
   ChunkedUploadSession,
@@ -6,8 +8,8 @@ import type {
   CreateUserRequest,
   HobDocument,
   HobPatch,
+  HtmlPreview,
   ListResponse,
-  LockdownSettings,
   MediaKind,
   MediaProbe,
   OfficeContentResponse,
@@ -29,7 +31,6 @@ import type {
   UploadResponse,
   UsersResponse,
   VersionResponse,
-  ViewerSettings,
   ZipTokenResponse,
 } from '@hearth/shared';
 
@@ -175,8 +176,7 @@ export const api = {
     get<ArchiveListing>('/archive', { path }, signal),
   readOffice: (path: string, signal?: AbortSignal) =>
     get<OfficeContentResponse>('/office', { path }, signal),
-  readHtml: (path: string) =>
-    get<{ html: string; externalResources: boolean }>('/html-proxy', { path }),
+  readHtml: (path: string) => get<HtmlPreview>('/html-proxy', { path }),
   backgrounds: () => get<{ backgrounds: string[] }>('/backgrounds'),
 
   progress: () => get<ProgressMap>('/ledger/progress'),
@@ -197,7 +197,6 @@ export const api = {
   purgeFromTrash: (id: string) => send<{ ok: boolean }>('DELETE', `/trash/${id}`),
   emptyTrash: () => send<{ removed: number }>('DELETE', '/trash'),
   trashSettings: () => get<TrashSettings>('/trash/settings'),
-  setTrashEnabled: (enabled: boolean) => send<TrashSettings>('PUT', '/trash/settings', { enabled }),
 
   version: () => get<VersionResponse>('/system/version'),
   roots: () => get<RootsResponse>('/system/roots'),
@@ -213,12 +212,9 @@ export const api = {
   permissionRules: () => get<PermissionRulesResponse>('/admin/permissions'),
   savePermissionRules: (rules: PermissionRule[]) =>
     send<PermissionRulesResponse>('PUT', '/admin/permissions', { rules }),
-  lockdown: () => get<LockdownSettings>('/admin/lockdown'),
-  setLockdown: (adminOnly: boolean) =>
-    send<LockdownSettings>('PUT', '/admin/lockdown', { adminOnly }),
-  viewerSettings: () => get<ViewerSettings>('/admin/viewers'),
-  saveViewerSettings: (body: Partial<ViewerSettings>) =>
-    send<ViewerSettings>('PUT', '/admin/viewers', body),
+  adminSettings: () => get<AdminSettingsResponse>('/admin/settings'),
+  changeSettings: (patch: AdminSettingsPatch) =>
+    send<AdminSettingsResponse>('PATCH', '/admin/settings', patch),
 };
 
 /** URLs for elements that fetch their own bytes; same origin, so the cookie authenticates them. */

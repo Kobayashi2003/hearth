@@ -86,6 +86,17 @@ export function envLimit(name: string, fallback: number, scale = 1): number {
   return value === 0 ? Number.POSITIVE_INFINITY : value * scale;
 }
 
+/**
+ * A safeguard rather than a cap on what people can do: a positive number with
+ * no "unlimited", because lifting it only lets the server wait or scan forever.
+ * It stays in force under `npm run dev` too.
+ */
+export function envPositive(name: string, fallback: number): number {
+  const value = envInt(name, fallback);
+  if (value <= 0) throw new ConfigError(name, 'must be a positive integer');
+  return value;
+}
+
 /** Like `envLimit`, for a variable that was renamed. */
 export function envLimitRenamed(
   name: string,

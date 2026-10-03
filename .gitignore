@@ -24,3 +24,6 @@ desktop.ini
 # Agent and tooling scratch
 .claude/
 *.local.json
+
+# Fetched by `npm run ruffle`, not committed
+web/public/ruffle/

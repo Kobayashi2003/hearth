@@ -125,11 +125,11 @@ export interface TrashItem {
   isDirectory: boolean;
 }
 
+/** What everyone who can delete needs to know: whether deleting can be undone. */
 export interface TrashSettings {
   enabled: boolean;
+  /** 0 when items are kept until the bin is emptied. */
   retentionDays: number;
-  maxSizeMB: number;
-  autoCleanup: boolean;
 }
 
 // ── Beacon: search backend health ───────────────────────────────────────────
@@ -159,9 +159,4 @@ export interface RootDescriptor {
   /** Display label (the directory's own name). */
   label: string;
   active: boolean;
-}
-
-export interface ViewerSettings {
-  htmlViewerEnabled: boolean;
-  htmlExternalResourcesEnabled: boolean;
 }

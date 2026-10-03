@@ -33,17 +33,28 @@ export interface ArchiveReadResponse {
   content: Uint8Array;
   found: boolean;
   tooLarge: boolean;
+  /** Password-protected; Hearth has no way to ask for the password. */
+  encrypted: boolean;
 }
 
 export type ArchiveResponse = ArchiveListResponse | ArchiveReadResponse;
+
+const empty = { kind: 'read', content: new Uint8Array() } as const;
+const MISSING: ArchiveReadResponse = { ...empty, found: false, tooLarge: false, encrypted: false };
+const TOO_LARGE: ArchiveReadResponse = { ...empty, found: true, tooLarge: true, encrypted: false };
+const ENCRYPTED: ArchiveReadResponse = { ...empty, found: true, tooLarge: false, encrypted: true };
 
 function byPlaceInTree(a: ArchiveEntry, b: ArchiveEntry): number {
   if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
   return collator.compare(a.name, b.name);
 }
 
+/** Backslashes from Windows tools, and a leading `/` or `./` that would show as a nameless folder. */
 function normaliseName(name: string): string {
-  return name.replace(/\\/g, '/').replace(/\/+$/, '');
+  return name
+    .replace(/\\/g, '/')
+    .replace(/^(\.\/|\/)+/, '')
+    .replace(/\/+$/, '');
 }
 
 function listZip(archivePath: string): ArchiveEntry[] {
@@ -80,11 +91,19 @@ function readZipEntry(
     entry => !entry.isDirectory && normaliseName(names.get(entry)!) === entryName,
   );
 
-  if (!found) return { kind: 'read', content: new Uint8Array(), found: false, tooLarge: false };
+  if (!found) return MISSING;
+  // Bit 0 of the general-purpose flags marks an encrypted entry.
+  if ((found.header.flags & 1) === 1) return ENCRYPTED;
   if (found.header.size > maxBytes) {
-    return { kind: 'read', content: new Uint8Array(), found: true, tooLarge: true };
+    return TOO_LARGE;
   }
-  return { kind: 'read', content: found.getData(), found: true, tooLarge: false };
+  return {
+    kind: 'read',
+    content: found.getData(),
+    found: true,
+    tooLarge: false,
+    encrypted: false,
+  };
 }
 
 async function readRarEntry(
@@ -97,9 +116,10 @@ async function readRarEntry(
   const header = [...extractor.getFileList().fileHeaders].find(
     candidate => !candidate.flags.directory && normaliseName(candidate.name) === entryName,
   );
-  if (!header) return { kind: 'read', content: new Uint8Array(), found: false, tooLarge: false };
+  if (!header) return MISSING;
+  if (header.flags.encrypted) return ENCRYPTED;
   if (header.unpSize > maxBytes) {
-    return { kind: 'read', content: new Uint8Array(), found: true, tooLarge: true };
+    return TOO_LARGE;
   }
 
   // Extract by the original (possibly backslashed) name, not the normalised one.
@@ -110,6 +130,7 @@ async function readRarEntry(
     content: content ?? new Uint8Array(),
     found: content !== undefined,
     tooLarge: false,
+    encrypted: false,
   };
 }
 

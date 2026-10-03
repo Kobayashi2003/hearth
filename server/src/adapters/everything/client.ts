@@ -5,7 +5,8 @@ export interface EverythingClientOptions {
   url: string;
   username?: string | undefined;
   password?: string | undefined;
-  timeoutMs: number;
+  /** Read on each query, so a changed setting applies at once. */
+  timeoutMs: number | (() => number);
 }
 
 export interface EverythingRequest {
@@ -19,6 +20,11 @@ export interface EverythingRequest {
 /** Thin client for Everything's HTTP server; nothing above this knows its wire format. */
 export class EverythingClient {
   constructor(private readonly options: EverythingClientOptions) {}
+
+  private timeoutMs(): number {
+    const { timeoutMs } = this.options;
+    return typeof timeoutMs === 'function' ? timeoutMs() : timeoutMs;
+  }
 
   get url(): string {
     return this.options.url;
@@ -52,9 +58,7 @@ export class EverythingClient {
   private async fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
     const signals = [
       signal,
-      Number.isFinite(this.options.timeoutMs)
-        ? AbortSignal.timeout(this.options.timeoutMs)
-        : undefined,
+      Number.isFinite(this.timeoutMs()) ? AbortSignal.timeout(this.timeoutMs()) : undefined,
     ].filter((candidate): candidate is AbortSignal => candidate !== undefined);
     const combined = signals.length > 0 ? AbortSignal.any(signals) : undefined;
 

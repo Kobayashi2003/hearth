@@ -22,13 +22,8 @@ const restoreSchema = (batch: number) =>
     },
   }) as const;
 
-const settingsSchema = {
-  body: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' } } },
-} as const;
-
 export function createEmberRoutes(trash: TrashService, ledger: LedgerService): FastifyPluginAsync {
   return async app => {
-    const { runtime } = app.hearth;
     const rateLimits = buildRateLimits(app.hearth.config);
     const deleteConfig = { permission: 'delete' as const, rateLimit: rateLimits.write };
 
@@ -73,16 +68,13 @@ export function createEmberRoutes(trash: TrashService, ledger: LedgerService): F
 
     app.delete('/trash', { config: deleteConfig }, async () => ({ removed: await trash.empty() }));
 
-    app.get('/trash/settings', { config: { permission: 'read' } }, async () => trash.settings());
-
-    app.put<{ Body: { enabled: boolean } }>(
-      '/trash/settings',
-      { schema: settingsSchema, config: { permission: 'admin' } },
-      async request => {
-        runtime.set('trashEnabled', request.body.enabled);
-        const body: TrashSettings = trash.settings();
-        return body;
-      },
-    );
+    /**
+     * What a delete will do, for anyone who can delete; the settings themselves
+     * are changed by an administrator through /admin/settings.
+     */
+    app.get('/trash/settings', { config: { permission: 'delete' } }, async () => {
+      const body: TrashSettings = trash.settings();
+      return body;
+    });
   };
 }

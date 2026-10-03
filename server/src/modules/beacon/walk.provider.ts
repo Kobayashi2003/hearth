@@ -1,6 +1,6 @@
 import { type FileEntry, type SearchProviderName } from '@hearth/shared';
 
-import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { paginate, sortEntries } from '../../lib/listing.js';
 import { DIRECTORY_MIME, extensionsForMediaKind, mimeForPath } from '../../lib/mime.js';
 import type { Vault } from '../../lib/vault.js';
@@ -13,7 +13,7 @@ export class WalkProvider implements SearchProvider {
   readonly name: SearchProviderName = 'walk';
 
   constructor(
-    private readonly config: AppConfig,
+    private readonly runtime: RuntimeState,
     private readonly vault: Vault,
   ) {}
 
@@ -32,7 +32,7 @@ export class WalkProvider implements SearchProvider {
         .map(term => term.toLowerCase()),
       extensions: query.type ? [...extensionsForMediaKind(query.type)] : [],
       recursive: query.recursive,
-      maxResults: this.config.search.maxResults,
+      maxResults: this.runtime.get('searchMaxResults'),
     };
 
     const response = await runWorker<WalkRequest, WalkResponse>('walk', request, signal);

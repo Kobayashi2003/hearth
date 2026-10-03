@@ -6,9 +6,9 @@ import {
   type ArchiveListing,
 } from '@hearth/shared';
 
-import type { AppConfig } from '../../config/index.js';
+import type { RuntimeState } from '../../config/runtime-state.js';
 import { HearthError } from '../../lib/errors.js';
-import { runWorker } from '../../lib/worker.js';
+import { runWorker, unreadable } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
 import type {
   ArchiveListResponse,
@@ -16,18 +16,22 @@ import type {
   ArchiveRequest,
 } from '../../workers/archive.worker.js';
 
+const MB = 1024 * 1024;
+const DAMAGED =
+  'This archive could not be read; it may be damaged or in a format Hearth cannot open';
+
 /** An archive's listing and single members. Unlike comics, nothing is cached or unpacked to disk. */
 export class ArchiveService {
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly runtime: RuntimeState) {}
 
   async list(target: SafePath, signal?: AbortSignal): Promise<ArchiveListing> {
     this.assertReadable(target);
 
     const response = await runWorker<ArchiveRequest, ArchiveListResponse>(
       'archive',
-      { kind: 'list', archivePath: target, limit: this.config.media.archiveMaxEntries },
+      { kind: 'list', archivePath: target, limit: this.runtime.get('archiveMaxEntries') },
       signal,
-    );
+    ).catch(unreadable(DAMAGED));
 
     return {
       entries: response.entries,
@@ -51,12 +55,17 @@ export class ArchiveService {
         kind: 'read',
         archivePath: target,
         entryName,
-        maxBytes: this.config.media.archiveMaxMemberBytes,
+        maxBytes: this.runtime.get('archiveMaxMemberSizeMB') * MB,
       },
       signal,
-    );
+    ).catch(unreadable(DAMAGED));
 
     if (!response.found) throw HearthError.notFound('That file is not in this archive');
+    if (response.encrypted) {
+      throw HearthError.badRequest(
+        'That file is password-protected; download the archive to open it',
+      );
+    }
     if (response.tooLarge) {
       throw HearthError.badRequest('That file is too large to open from inside the archive');
     }
