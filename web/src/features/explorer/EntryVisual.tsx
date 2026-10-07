@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { hasCoverArt, THUMBNAIL_REVISION, type FileEntry, type Progress } from '@hearth/shared';
 
 import { mediaUrls } from '@/lib/api';
+import { useThumbnail } from '@/lib/thumbnails';
 import { cn } from '@/lib/cn';
 import { iconFor, viewerKindFor } from '@/lib/file-kind';
 
@@ -31,35 +32,24 @@ export function EntryVisual({
   className?: string;
   iconClassName?: string;
 }) {
-  const [failed, setFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
   const Icon = iconFor(entry);
-  const wantsPicture =
-    width > 0 && !failed && (hasCoverArt(entry) || (entry.isDirectory && folderCovers));
-
+  const picture = useTilePicture(thumbnailUrl(entry, width, folderCovers));
+  const { thumbnail, shown, wantsPicture } = picture;
   return (
     <span className={cn('relative grid place-items-center overflow-hidden', className)}>
-      {wantsPicture ? (
+      {picture.drawable ? (
         <img
-          src={mediaUrls.thumbnail(
-            entry.path,
-            width,
-            `${THUMBNAIL_REVISION}-${Date.parse(entry.mtime)}-${entry.size}`,
-          )}
+          src={thumbnail.src!}
           alt=""
-          loading="lazy"
           decoding="async"
           draggable={false}
-          // A cached image is complete on mount and skips the fade, so tiles
-          // scrolled back into view do not flash.
-          ref={image => {
-            if (image?.complete && image.naturalWidth > 0) setLoaded(true);
-          }}
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
+          onLoad={picture.onLoad}
+          onError={picture.onError}
           className={cn(
-            'absolute inset-0 size-full object-cover transition-opacity duration-200',
-            loaded ? 'opacity-100' : 'opacity-0',
+            'absolute inset-0 size-full object-cover',
+            // One remembered from earlier in the session does not fade in again.
+            !thumbnail.instant && 'transition-opacity duration-200',
+            shown ? 'opacity-100' : 'opacity-0',
           )}
         />
       ) : null}
@@ -68,12 +58,12 @@ export function EntryVisual({
         className={cn(
           'shrink-0',
           entry.isDirectory ? 'fill-glaze/15 text-glaze' : 'text-ink-3',
-          wantsPicture && (loaded ? 'invisible' : 'opacity-35'),
+          wantsPicture && (shown ? 'invisible' : 'opacity-35'),
           iconClassName,
         )}
         strokeWidth={1.6}
       />
-      {wantsPicture && badge && viewerKindFor(entry) !== 'image' ? (
+      {shown && badge && viewerKindFor(entry) !== 'image' ? (
         <span
           aria-hidden
           className={cn(
@@ -86,6 +76,36 @@ export function EntryVisual({
       ) : null}
     </span>
   );
+}
+
+/**
+ * The thumbnail and how far it has got. Load and decode failure are tracked per
+ * picture: a tile handed another file must not show the new one before it
+ * decodes, and one the browser cannot decode falls back to the icon, as if it
+ * had never been there.
+ */
+function useTilePicture(url: string | null) {
+  const thumbnail = useThumbnail(url);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const broken = thumbnail.src !== null && thumbnail.src === brokenSrc;
+  return {
+    thumbnail,
+    drawable: thumbnail.src !== null && !broken,
+    wantsPicture: !broken && (thumbnail.status === 'loading' || thumbnail.status === 'ready'),
+    shown: thumbnail.status === 'ready' && (loadedSrc === thumbnail.src || thumbnail.instant),
+    onLoad: () => setLoadedSrc(thumbnail.src),
+    onError: () => setBrokenSrc(thumbnail.src),
+  };
+}
+
+/** Where the tile's picture comes from, or null when it shows only its icon. */
+function thumbnailUrl(entry: FileEntry, width: number, folderCovers: boolean): string | null {
+  const hasPicture = hasCoverArt(entry) || (entry.isDirectory && folderCovers);
+  if (width <= 0 || !hasPicture) return null;
+  // The file's version lets the browser keep the picture until the file changes.
+  const version = `${THUMBNAIL_REVISION}-${Date.parse(entry.mtime)}-${entry.size}`;
+  return mediaUrls.thumbnail(entry.path, width, version);
 }
 
 /** Shown only for something started and not finished. */

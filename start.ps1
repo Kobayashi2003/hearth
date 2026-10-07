@@ -7,13 +7,13 @@
 #
 # There is no frontend process any more: the SPA is static assets Caddy serves
 # directly from web/dist. The backend binds loopback because a single public port
-# may front several apps — run with -NoCaddy to let that shared gateway own the
+# may front several apps — run with -NoCaddy to let a shared edge own the
 # port instead.
 #
 # Usage:
 #   .\start.ps1            # start with whatever is already built
 #   .\start.ps1 -Build     # npm run build first
-#   .\start.ps1 -NoCaddy   # skip the edge (app-gateway owns the port)
+#   .\start.ps1 -NoCaddy   # skip the edge (an external edge owns the port)
 #   .\start.ps1 -Bind :8080
 # ============================================================================
 
@@ -31,11 +31,11 @@ if (-not $NoCaddy) {
     if (-not (Get-Command caddy -ErrorAction SilentlyContinue)) {
         throw 'caddy is not on PATH (https://caddyserver.com/download), or pass -NoCaddy if another edge owns the port.'
     }
-    # This edge and app-gateway want the same port, by design. Say so plainly
+    # This edge and any shared edge want the same port, by design. Say so plainly
     # rather than letting Caddy fail to bind and bury the reason in its JSON log.
     $bindPort = [int]($Bind -split ':')[-1]
     if (Get-NetTCPConnection -LocalPort $bindPort -State Listen -ErrorAction SilentlyContinue) {
-        throw "Port $bindPort is already in use — another edge (app-gateway, or an earlier run) owns it. Stop it first, or pass -NoCaddy."
+        throw "Port $bindPort is already in use — another edge (a shared one, or an earlier run) owns it. Stop it first, or pass -NoCaddy."
     }
 }
 

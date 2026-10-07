@@ -80,14 +80,17 @@ export function MenuChoice({
   children,
   onSelect,
   closes = false,
+  disabled,
 }: {
   checked: boolean;
   children: ReactNode;
   onSelect: () => void;
   closes?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Dropdown.Item
+      disabled={disabled}
       onSelect={event => {
         if (!closes) event.preventDefault();
         onSelect();

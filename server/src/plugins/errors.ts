@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import type { ApiErrorBody } from '@hearth/shared';
 
 import { HearthError, isAbortError } from '../lib/errors.js';
+import { loggableUrl } from '../lib/logger.js';
 
 /** The one place an error becomes a response; internal messages and host paths never reach a client. */
 const errorsPlugin: FastifyPluginAsync = async app => {
@@ -17,10 +18,11 @@ const errorsPlugin: FastifyPluginAsync = async app => {
       return;
     }
 
+    // The request's own log line reports the refusal; it needs only the reason.
     if (error instanceof HearthError) {
       const body: ApiErrorBody = { code: error.code, message: error.message };
       if (error.details !== undefined) body.details = error.details;
-      request.log.info({ code: error.code, msg: error.message }, 'request rejected');
+      request.failure = `${error.code}: ${error.message}`;
       void reply.status(error.statusCode).send(body);
       return;
     }
@@ -32,11 +34,12 @@ const errorsPlugin: FastifyPluginAsync = async app => {
         message: error.message,
       };
       if (error.validation) body.details = error.validation;
+      request.failure = `${body.code}: ${error.message}`;
       void reply.status(status).send(body);
       return;
     }
 
-    request.log.error({ err: error }, 'unhandled error');
+    request.log.error({ err: error, url: loggableUrl(request.url) }, 'unhandled error');
     const body: ApiErrorBody = { code: 'INTERNAL', message: 'Something went wrong' };
     void reply.status(500).send(body);
   });

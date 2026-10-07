@@ -1,19 +1,19 @@
 # Route definitions for Hearth — the single source of truth, imported by every
-# edge that fronts it: ./Caddyfile (standalone) and app-gateway (several apps
+# edge that fronts it: ./Caddyfile (standalone) and any shared edge (several apps
 # sharing one public port).
 #
 # 127.0.0.1, not localhost: on Windows localhost resolves to ::1 first, and each
 # cold connection to an IPv4-only listener would eat a ~20 s IPv6 timeout.
 #
 # Rules for anything added here:
-#   - No matcher-less `handle`. Under app-gateway the catch-all is the landing
-#     page, and one here would swallow the other apps' traffic.
-#   - Prefix named matchers with the app (@hearth_*). Under app-gateway every
+#   - No matcher-less `handle`. Behind a shared edge the catch-all is that
+#     edge's own, and one here would swallow the other apps' traffic.
+#   - Prefix named matchers with the app (@hearth_*). On a shared edge every
 #     app's snippet is imported into one site block, and matcher names are scoped.
 
 # Backend API. Binds loopback and is reachable only through here. The prefix is
-# app-scoped (/hearth-api) rather than a generic /api because under the
-# app-gateway every app's snippet is imported into one site block on one origin,
+# app-scoped (/hearth-api) rather than a generic /api because on a shared
+# edge every app's snippet is imported into one site block on one origin,
 # and a generic prefix would collide. It is NOT stripped — the backend mounts
 # its routes under /hearth-api.
 #
@@ -22,7 +22,7 @@
 # connections are not dropped under backpressure — the whole reason the frontend
 # is a static SPA with nothing of its own in the byte path.
 handle {$HEARTH_API_PREFIX:/hearth-api}/* {
-	reverse_proxy {$HEARTH_BACKEND_UPSTREAM:127.0.0.1:5111} {
+	reverse_proxy {$HEARTH_BACKEND_UPSTREAM:127.0.0.1:17010} {
 		flush_interval -1
 	}
 }

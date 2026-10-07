@@ -42,7 +42,7 @@ cp .env.example .env
 
 # Development: backend + Vite dev server, hot-reloading, one command.
 npm run dev
-#   → http://localhost:5110
+#   → http://localhost:17011
 
 # Production: backend + Caddy edge serving the built SPA.
 .\start.ps1 -Build
@@ -58,7 +58,7 @@ The default login for the example config is `admin` / `hearth` — change
 
 ```
 Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → static SPA (web/dist)
-                                             └─► /hearth-api/* → backend :5111 (loopback)
+                                             └─► /hearth-api/* → backend :17010 (loopback)
 ```
 
 - The backend binds **loopback only**. Every request, media byte streams
@@ -67,9 +67,9 @@ Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → 
   frontend server process, and nothing sits between the browser and a byte range.
   A `<video>` points at `/hearth-api/media/raw?…` and Caddy streams it straight through.
 - The SPA is served under a **path prefix** (`/hearth`), because the same public
-  port may also front sibling apps via a shared app-gateway. Standalone,
-  `start.ps1` runs its own Caddy; under the gateway, `start.ps1 -NoCaddy` lets the
-  gateway own the port. The build discovers its own prefix at runtime, so one
+  port may also front sibling apps through a shared edge. Standalone,
+  `start.ps1` runs its own Caddy; behind a shared edge, `start.ps1 -NoCaddy` lets
+  that edge own the port. The build discovers its own prefix at runtime, so one
   artifact works either way.
 
 ---
@@ -79,7 +79,7 @@ Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → 
 ```
 Hearth/
 ├── start.ps1 · caddy-env.ps1      # launcher; Caddy upstreams from .env
-├── Caddyfile · Caddyfile.snippet  # standalone edge; routes shared with the gateway
+├── Caddyfile · Caddyfile.snippet  # standalone edge; routes any edge can import
 ├── .env.example                   # every configuration variable, with defaults
 ├── docs/                          # 前端代码结构 · 后端代码结构 · 已实现功能 · 拟实现功能
 ├── packages/shared/src/           # @hearth/shared — types both tiers compile against
@@ -119,7 +119,7 @@ how you like things set.
 | `npm run lint` | Lint the whole repository |
 | `npm run ruffle` | Download the pinned Ruffle build into `web/public/ruffle/`, for .swf files and Flash in old web pages |
 | `.\start.ps1 -Build` | Production: build, then run backend + Caddy |
-| `.\start.ps1 -NoCaddy` | Run the backend only; a shared gateway owns the port |
+| `.\start.ps1 -NoCaddy` | Run the backend only; an external edge owns the port |
 
 Configuration lives in `.env` at the repository root. Every variable is optional
 and listed in [`.env.example`](.env.example) and `docs/后端代码结构.md`; the

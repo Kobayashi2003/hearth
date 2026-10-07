@@ -11,6 +11,7 @@ export type ErrorCode =
   | 'RATE_LIMITED'
   | 'ABORTED'
   | 'UPSTREAM_UNAVAILABLE'
+  | 'ROOT_UNAVAILABLE'
   | 'INTERNAL';
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -25,6 +26,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   RATE_LIMITED: 429,
   ABORTED: 499,
   UPSTREAM_UNAVAILABLE: 502,
+  ROOT_UNAVAILABLE: 503,
   INTERNAL: 500,
 };
 

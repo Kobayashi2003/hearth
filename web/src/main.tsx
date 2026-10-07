@@ -14,9 +14,11 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 15_000,
       refetchOnWindowFocus: false,
-      // A 4xx will not succeed on retry; retrying only delays the message.
+      // A 4xx will not succeed on retry, nor will a root whose drive is gone;
+      // retrying only delays the message.
       retry: (failures, error) =>
-        !(error instanceof ApiError && error.status < 500) && failures < 2,
+        !(error instanceof ApiError && (error.status < 500 || error.code === 'ROOT_UNAVAILABLE')) &&
+        failures < 2,
     },
   },
 });

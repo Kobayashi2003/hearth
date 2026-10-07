@@ -2,7 +2,7 @@
 # Returns a hashtable.
 #
 # Owned here, not by the callers, so every edge agrees on where Hearth listens:
-# start.ps1 (standalone) and app-gateway (several apps behind one port) both
+# start.ps1 (standalone) and any shared edge (several apps behind one port) both
 # source this file rather than restating ports. The .env file stays the authority
 # for the backend port — it is what the backend actually binds.
 
@@ -25,13 +25,13 @@ $dotenv = Read-DotEnv (Join-Path $PSScriptRoot '.env')
 
 # The environment outranks .env, because the backend reads HEARTH_PORT from its
 # own environment and dotenv does not overwrite what is already there: a caller
-# that places the port (app-gateway does, so it can guarantee no two apps collide)
+# that places the port (a supervisor running several apps does, to keep them apart)
 # would otherwise have the edge and the backend disagreeing about it.
 # HEARTH_PORT is the prefixed name; the bare PORT is accepted for one release.
 $backendPort = if ($env:HEARTH_PORT)   { $env:HEARTH_PORT }
                elseif ($dotenv.HEARTH_PORT) { $dotenv.HEARTH_PORT }
                elseif ($dotenv.PORT)    { $dotenv.PORT }
-               else                     { 5111 }
+               else                     { 17010 }
 
 function Pick([string]$Name, [string]$Default) {
     $fromEnv = [Environment]::GetEnvironmentVariable($Name, 'Process')

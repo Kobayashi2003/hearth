@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { HearthError } from './errors.js';
+import { rootAvailable } from '../config/index.js';
 import type { RuntimeState } from '../config/runtime-state.js';
 
 /**
@@ -79,11 +80,35 @@ export function assertValidEntryName(name: string): void {
   }
 }
 
+/** How long "the root is there" is trusted before looking again. */
+const ROOT_CHECK_MS = 3000;
+
 /** The single choke point from user paths to filesystem paths. Reads the active root on every use. */
 export class Vault {
   private readonly canonicalRoots = new Map<string, string>();
+  private rootSeen = { path: '', at: 0 };
 
   constructor(private readonly runtime: RuntimeState) {}
+
+  /**
+   * A root on a drive that is not connected answers every path with "not
+   * found", which reads as files having vanished; say what is really wrong.
+   */
+  private assertRootAvailable(): void {
+    const root = this.runtime.activeRoot;
+    if (this.rootSeen.path === root.absolutePath && Date.now() - this.rootSeen.at < ROOT_CHECK_MS) {
+      return;
+    }
+    if (!rootAvailable(root)) {
+      // A canonical path learned while the drive was mounted may differ when it returns.
+      this.canonicalRoots.delete(root.absolutePath);
+      throw new HearthError(
+        'ROOT_UNAVAILABLE',
+        `${root.label} is not available right now; is its drive connected?`,
+      );
+    }
+    this.rootSeen = { path: root.absolutePath, at: Date.now() };
+  }
 
   get rootPath(): string {
     return this.runtime.activeRoot.absolutePath;
@@ -111,6 +136,7 @@ export class Vault {
       throw HearthError.badRequest('Invalid path');
     }
 
+    this.assertRootAvailable();
     const root = this.rootPath;
     const resolved = raw.trim() === '' ? root : path.resolve(root, raw);
     if (!containedIn(resolved, root)) {

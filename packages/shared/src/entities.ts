@@ -159,4 +159,6 @@ export interface RootDescriptor {
   /** Display label (the directory's own name). */
   label: string;
   active: boolean;
+  /** False while its folder or drive cannot be reached; it is served again once it can. */
+  available: boolean;
 }

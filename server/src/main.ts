@@ -1,6 +1,6 @@
 import { buildApp } from './app.js';
 import { ConfigError, consumeLegacyEnvNames, loadEnvFiles } from './config/env.js';
-import { loadConfig } from './config/index.js';
+import { loadConfig, rootAvailable } from './config/index.js';
 import { createLogger } from './lib/logger.js';
 
 /** `npm run dev` passes --development; it layers .env.development, which lifts every limit. */
@@ -32,6 +32,17 @@ async function main(): Promise<void> {
     );
   }
 
+  // Not fatal: a drive mounted after Hearth starts is served as soon as it is there.
+  const missing = config.storage.roots.filter(root => !rootAvailable(root));
+  if (missing.length > 0) {
+    logger.warn(
+      { roots: missing.map(root => root.absolutePath) },
+      missing.length === config.storage.roots.length
+        ? 'no root directory is available yet; Hearth starts and serves each as it appears'
+        : 'some root directories are not available; they are served once they appear',
+    );
+  }
+
   const app = await buildApp({ config, logger });
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -45,10 +56,11 @@ async function main(): Promise<void> {
   await app.listen({ port: config.server.port, host: config.server.host });
   logger.info(
     {
-      root: config.storage.roots.length,
-      api: config.server.apiPrefix,
+      api: `http://${config.server.host}:${config.server.port}${config.server.apiPrefix}`,
+      roots: `${config.storage.roots.length - missing.length} of ${config.storage.roots.length} available`,
+      serving: app.hearth.runtime.activeRoot.absolutePath,
     },
-    'hearth-server ready',
+    'Hearth is ready',
   );
 }
 

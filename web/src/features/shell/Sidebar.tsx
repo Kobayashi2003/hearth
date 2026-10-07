@@ -41,7 +41,14 @@ export function Sidebar({
   const navigate = explorerRoute.useNavigate();
   const queryClient = useQueryClient();
 
-  const roots = useQuery({ queryKey: ['roots'], queryFn: () => api.roots(), staleTime: 60_000 });
+  const roots = useQuery({
+    queryKey: ['roots'],
+    queryFn: () => api.roots(),
+    staleTime: 60_000,
+    // A root whose drive is not connected is greyed out; notice when it comes back.
+    refetchInterval: query =>
+      query.state.data?.roots.some(root => !root.available) ? 30_000 : false,
+  });
   const top = useQuery({
     queryKey: ['listing', '', 'name', 'asc', '', true, undefined],
     queryFn: ({ signal }) => api.list({ path: '', sort: 'name', direction: 'asc' }, signal),
@@ -113,11 +120,13 @@ export function Sidebar({
               key={root.id}
               checked={root.active}
               closes
+              disabled={!root.available && !root.active}
               onSelect={() => {
                 if (!root.active) void switchRoot(root.id);
               }}
             >
               {root.label}
+              {root.available ? null : <span className="ml-2 text-ink-3">not connected</span>}
             </MenuChoice>
           ))}
         </Menu>

@@ -39,7 +39,7 @@ export interface AppConfig {
     readonly port: number;
     readonly host: string;
     readonly corsOrigins: readonly string[];
-    /** App-scoped rather than `/api`: under a shared gateway every app shares one origin. */
+    /** App-scoped rather than `/api`: behind a shared edge every app shares one origin. */
     readonly apiPrefix: string;
     readonly bodyLimitBytes: number;
   };
@@ -133,6 +133,8 @@ export interface AppConfig {
   };
   readonly logging: {
     readonly level: string;
+    /** `pretty` for a person reading the console, `json` for a collector. The file is always JSON. */
+    readonly format: 'pretty' | 'json';
     readonly directory: string;
     readonly toFile: boolean;
   };
@@ -195,6 +197,16 @@ function rootIdFor(absolutePath: string): string {
   return crypto.createHash('sha1').update(absolutePath.toLowerCase()).digest('hex').slice(0, 12);
 }
 
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'];
+
+function logLevel(): string {
+  const level = envString('LOG_LEVEL', 'info').toLowerCase();
+  if (!LOG_LEVELS.includes(level)) {
+    throw new ConfigError('LOG_LEVEL', `expected one of ${LOG_LEVELS.join(', ')}`);
+  }
+  return level;
+}
+
 function parseRoots(): RootConfig[] {
   const configured = envList('ROOT_DIRECTORIES');
   const fallback = envPath('BASE_DIRECTORY', './example');
@@ -241,9 +253,9 @@ export function loadConfig(development = false): AppConfig {
     projectRoot,
     development,
     server: {
-      port: envInt('PORT', 5111),
+      port: envInt('PORT', 17010),
       host: envString('HOST', '127.0.0.1'),
-      corsOrigins: envList('CORS_ORIGIN', ['http://localhost:5110']),
+      corsOrigins: envList('CORS_ORIGIN', ['http://localhost:17011']),
       apiPrefix: envString('API_PREFIX', '/hearth-api'),
       bodyLimitBytes: envLimit('API_BODY_LIMIT_MB', 2, MB),
     },
@@ -337,7 +349,8 @@ export function loadConfig(development = false): AppConfig {
       login: rateBucket('LOGIN', 10, 5),
     },
     logging: {
-      level: envString('LOG_LEVEL', 'info'),
+      level: logLevel(),
+      format: envString('LOG_FORMAT', 'pretty') === 'json' ? 'json' : 'pretty',
       directory: envPath('LOG_DIRECTORY', './server/logs'),
       toFile: envBool('LOG_TO_FILE', true),
     },
@@ -353,23 +366,19 @@ export function loadConfig(development = false): AppConfig {
     adminOnly: envBool('ADMIN_ONLY_MODE', false),
   };
 
-  assertRootsExist(config);
   return deepFreeze(config);
 }
 
-function assertRootsExist(config: AppConfig): void {
-  const missing = config.storage.roots.filter(root => {
-    try {
-      return !fs.statSync(root.absolutePath).isDirectory();
-    } catch {
-      return true;
-    }
-  });
-  if (missing.length > 0) {
-    throw new ConfigError(
-      'ROOT_DIRECTORIES',
-      `not a readable directory: ${missing.map(r => r.absolutePath).join(', ')}`,
-    );
+/**
+ * Whether a root can be served right now. A missing root does not stop Hearth
+ * from starting: a drive that is not mounted yet, or a disconnected one, is
+ * reported as unavailable and served as soon as it is back.
+ */
+export function rootAvailable(root: RootConfig): boolean {
+  try {
+    return fs.statSync(root.absolutePath).isDirectory();
+  } catch {
+    return false;
   }
 }
 

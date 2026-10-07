@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => {
   const envDir = fileURLToPath(new URL('../', import.meta.url));
   // Same files as the server: .env, plus .env.development under `vite` (dev), which lifts every limit.
   const env = loadEnv(mode, envDir, 'HEARTH_');
-  const apiTarget = env.HEARTH_DEV_API || `http://127.0.0.1:${env.HEARTH_PORT || 5111}`;
+  const apiTarget = env.HEARTH_DEV_API || `http://127.0.0.1:${env.HEARTH_PORT || 17010}`;
   const apiPrefix = env.HEARTH_API_PREFIX || '/hearth-api';
 
   return {
@@ -25,7 +25,7 @@ export default defineConfig(({ command, mode }) => {
     // Relative asset URLs: one bundle works under any mount prefix.
     base: command === 'build' ? './' : '/',
     server: {
-      port: Number(env.HEARTH_DEV_WEB_PORT || 5110),
+      port: Number(env.HEARTH_DEV_WEB_PORT || 17011),
       strictPort: true,
       proxy: {
         [apiPrefix]: {

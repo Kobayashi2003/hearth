@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import type { SettingKey, SettingState } from '@hearth/shared';
 
-import type { AppConfig, RootConfig } from './index.js';
+import { rootAvailable, type AppConfig, type RootConfig } from './index.js';
 import {
   kindOf,
   parseSetting,
@@ -52,9 +52,7 @@ export class RuntimeState {
     ) as SettingValues;
 
     const saved = this.load();
-    this.activeRootId = config.storage.roots.some(root => root.id === saved.activeRootId)
-      ? saved.activeRootId!
-      : config.storage.defaultRootId;
+    this.activeRootId = startingRoot(config, saved.activeRootId);
   }
 
   private load(): StateFile {
@@ -142,6 +140,21 @@ export class RuntimeState {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
+}
+
+/**
+ * The root to serve at startup: the one served last time, else the configured
+ * default, whichever is there now; when neither is, the first that is. Not
+ * persisted, so the usual root returns once its drive does.
+ */
+function startingRoot(config: AppConfig, saved: string | undefined): string {
+  const { roots, defaultRootId } = config.storage;
+  const preferred = [saved, defaultRootId]
+    .map(id => roots.find(root => root.id === id))
+    .filter((root): root is RootConfig => root !== undefined);
+  const choice =
+    preferred.find(rootAvailable) ?? roots.find(rootAvailable) ?? preferred[0] ?? roots[0]!;
+  return choice.id;
 }
 
 function legacy(raw: Record<string, unknown>): Record<string, unknown> {

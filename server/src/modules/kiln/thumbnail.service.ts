@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 import sharp from 'sharp';
@@ -12,6 +13,7 @@ import {
 
 import type { AppConfig } from '../../config/index.js';
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
+import { Gate } from '../../lib/gate.js';
 import { mediaKindOf, mimeForPath } from '../../lib/mime.js';
 import { runWorker } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
@@ -30,6 +32,12 @@ const POSTER_MAX_SECONDS = 600;
 
 /** Cached on disk under a key that includes mtime and size, so edits never serve a stale image. */
 export class ThumbnailService {
+  /**
+   * Decoding is CPU work (sharp, ffmpeg, a worker per book); a folder of
+   * thousands asks for it all at once. One per core keeps the server answering.
+   */
+  private readonly decoding = new Gate(Math.max(2, os.availableParallelism()));
+
   constructor(
     private readonly config: AppConfig,
     private readonly ffmpeg: FfmpegAdapter,
@@ -47,19 +55,11 @@ export class ThumbnailService {
     const cached = await fsp.readFile(cachePath).catch(() => null);
     if (cached) return cached;
 
-    const source = await this.decodeSource(target, stats.size, request, signal);
-    if (!source) return null;
-
-    let thumbnail: Buffer;
-    try {
-      thumbnail = await sharp(source, { animated: false })
-        .rotate() // EXIF orientation
-        .resize({ width: request.width, withoutEnlargement: true })
-        .webp({ quality: request.quality })
-        .toBuffer();
-    } catch {
-      return null;
-    }
+    const thumbnail = await this.decoding.run(
+      () => this.draw(target, stats.size, request, signal),
+      signal,
+    );
+    if (!thumbnail) return null;
 
     await fsp.mkdir(path.dirname(cachePath), { recursive: true });
     const temporaryPath = `${cachePath}.${process.pid}.tmp`;
@@ -67,6 +67,25 @@ export class ThumbnailService {
     await fsp.rename(temporaryPath, cachePath);
 
     return thumbnail;
+  }
+
+  private async draw(
+    target: SafePath,
+    size: number,
+    request: ThumbnailRequest,
+    signal?: AbortSignal,
+  ): Promise<Buffer | null> {
+    const source = await this.decodeSource(target, size, request, signal);
+    if (!source) return null;
+    try {
+      return await sharp(source, { animated: false })
+        .rotate() // EXIF orientation
+        .resize({ width: request.width, withoutEnlargement: true })
+        .webp({ quality: request.quality })
+        .toBuffer();
+    } catch {
+      return null;
+    }
   }
 
   /** Decode whatever the source is into bytes sharp can resize, or null. */

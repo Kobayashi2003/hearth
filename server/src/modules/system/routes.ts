@@ -8,6 +8,7 @@ import type {
 } from '@hearth/shared';
 
 import { HEARTH_VERSION } from '../../config/env.js';
+import { rootAvailable } from '../../config/index.js';
 import { HearthError } from '../../lib/errors.js';
 
 const switchRootSchema = {
@@ -39,6 +40,12 @@ export const systemRoutes: FastifyPluginAsync = async app => {
     async request => {
       const target = config.storage.roots.find(root => root.id === request.body.id);
       if (!target) throw HearthError.notFound('No such root');
+      if (!rootAvailable(target)) {
+        throw new HearthError(
+          'ROOT_UNAVAILABLE',
+          `${target.label} is not available right now; is its drive connected?`,
+        );
+      }
 
       runtime.setActiveRoot(target.id);
       request.log.info({ root: target.label }, 'active root changed');
@@ -52,6 +59,7 @@ export const systemRoutes: FastifyPluginAsync = async app => {
       id: root.id,
       label: root.label,
       active: root.id === activeId,
+      available: rootAvailable(root),
     }));
     return { roots };
   }

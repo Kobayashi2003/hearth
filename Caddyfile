@@ -1,22 +1,29 @@
 # Standalone edge — Hearth alone behind frp on :30709.
 #
 # Routes live in ./Caddyfile.snippet; this file is just the site block around
-# them. Started by start.ps1, and skipped under `start.ps1 -NoCaddy`, when the
-# app-gateway owns the port instead.
+# them. Started by start.ps1, and skipped under `start.ps1 -NoCaddy`, when an
+# external edge owns the port instead.
 {
 	auto_https off
 
 	# Never used, and leaving it on binds 127.0.0.1:2019 — which collides with any
 	# second Caddy on the box.
 	admin off
+
+	# Caddy shares the console with Hearth. Its start-up chatter (and the two
+	# warnings about the choices above) would bury Hearth's own lines; a real
+	# fault, such as the port being taken, is an error and still shows.
+	log {
+		level ERROR
+	}
 }
 
 {$CADDY_BIND::30709} {
 	import Caddyfile.snippet
 
 	# The frontend lives under its prefix, so the bare root serves nothing.
-	# Standalone, Hearth is the whole site. (Under app-gateway the root is the
-	# landing page — hence this lives here, not in the snippet.)
+	# Standalone, Hearth is the whole site. (Behind a shared edge the root belongs
+	# to that edge — hence this lives here, not in the snippet.)
 	handle / {
 		redir * {$HEARTH_WEB_PREFIX:/hearth} permanent
 	}

@@ -27,6 +27,9 @@ declare module 'fastify' {
 
     /** Root-relative, forward-slash form of an absolute path inside the root. */
     relativePath(absolute: string): string;
+
+    /** Why the request was refused, for its log line. */
+    failure?: string;
   }
 
   interface FastifyContextConfig {
