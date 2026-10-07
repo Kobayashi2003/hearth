@@ -88,10 +88,16 @@ function inFolder(folder: string, rest: string): string {
  * beneath it unchanged.
  */
 export function createSiteRoutes(services: SiteRouteServices): FastifyPluginAsync {
-  const { listing, streams, documents, ffmpeg } = services;
-
   return async app => {
-    const { runtime, warden, vault, config } = app.hearth;
+    await app.register(htmlProxyRoute(services));
+    await app.register(siteRoute(services));
+  };
+}
+
+/** How to show an .html file: on its own, or as a page of a site served from its folder. */
+function htmlProxyRoute({ listing, documents }: SiteRouteServices): FastifyPluginAsync {
+  return async app => {
+    const { runtime, warden, vault } = app.hearth;
 
     app.get<{ Querystring: { path: string } }>(
       '/html-proxy',
@@ -115,6 +121,12 @@ export function createSiteRoutes(services: SiteRouteServices): FastifyPluginAsyn
         return body;
       },
     );
+  };
+}
+
+function siteRoute({ listing, streams, documents, ffmpeg }: SiteRouteServices): FastifyPluginAsync {
+  return async app => {
+    const { runtime, warden, vault, config } = app.hearth;
 
     app.get<{ Params: { token: string; '*': string }; Querystring: { hearth?: string } }>(
       '/site/:token/*',
@@ -134,15 +146,7 @@ export function createSiteRoutes(services: SiteRouteServices): FastifyPluginAsyn
           .header('Referrer-Policy', 'no-referrer');
         if (rest.startsWith(RUFFLE_PREFIX)) return sendRuffle(reply, rest);
 
-        // The same folder rules as a signed-in request, for the user the link was made for.
-        const session = warden.siteSession(scope.username);
-        let target = vault.resolve(inFolder(scope.folder, rest));
-        if ((await listing.require(target)).isDirectory) {
-          const index = await documents.indexPage(target);
-          if (!index) throw HearthError.notFound('This folder has no index page');
-          target = index;
-        }
-        warden.assertCan(session, 'read', vault.relativize(target));
+        const target = await siteTarget(scope, rest);
 
         if (PAGE.test(target)) {
           const base = `${config.server.apiPrefix}/site/${request.params.token}/`;
@@ -156,9 +160,26 @@ export function createSiteRoutes(services: SiteRouteServices): FastifyPluginAsyn
         if (request.query.hearth === 'video' && runtime.get('htmlVideo')) {
           return sendEmbeddedVideo(request, reply, target, file);
         }
-        return streams.send(request, reply, target, file);
+        return streams.send(request, reply, { target, entry: file });
       },
     );
+
+    /**
+     * The file the path names inside the token's folder (a folder's index page
+     * for a folder), checked with the same folder rules as a signed-in
+     * request, for the user the link was made for.
+     */
+    async function siteTarget(scope: { username: string; folder: string }, rest: string) {
+      const session = warden.siteSession(scope.username);
+      let target = vault.resolve(inFolder(scope.folder, rest));
+      if ((await listing.require(target)).isDirectory) {
+        const index = await documents.indexPage(target);
+        if (!index) throw HearthError.notFound('This folder has no index page');
+        target = index;
+      }
+      warden.assertCan(session, 'read', vault.relativize(target));
+      return target;
+    }
 
     function sendRuffle(reply: FastifyReply, rest: string) {
       if (!runtime.get('htmlRuffle')) throw HearthError.notFound('Ruffle is turned off');
@@ -194,7 +215,7 @@ export function createSiteRoutes(services: SiteRouteServices): FastifyPluginAsyn
       }
       // A browser plays H.264 in a QuickTime box, but not when it is labelled as one.
       const entry = /\.(mov|qt)$/i.test(target) ? { ...file, mimeType: 'video/mp4' } : file;
-      return streams.send(request, reply, target, entry);
+      return streams.send(request, reply, { target, entry });
     }
   };
 }

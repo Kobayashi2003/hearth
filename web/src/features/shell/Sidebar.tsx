@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronsUpDown, Film, Folder, Image, LogOut, Music, Settings } from 'lucide-react';
 import { toast } from 'sonner';
-import type { MediaKind } from '@hearth/shared';
+import type { MediaKind, RootDescriptor } from '@hearth/shared';
 
 import { Wordmark } from '@/brand/Logo';
 import { api } from '@/lib/api';
@@ -39,8 +39,6 @@ export function Sidebar({
   const { identity, can, signOut } = useSession();
   const search = explorerRoute.useSearch();
   const navigate = explorerRoute.useNavigate();
-  const queryClient = useQueryClient();
-
   const roots = useQuery({
     queryKey: ['roots'],
     queryFn: () => api.roots(),
@@ -66,29 +64,7 @@ export function Sidebar({
     onNavigate?.();
   };
 
-  const switchRoot = async (id: string) => {
-    try {
-      queryClient.setQueryData(['roots'], await api.switchRoot(id));
-      // Listings and file contents are keyed by root-relative path, so the old
-      // root's would pass for the new one's: drop them rather than refetch, and
-      // leave the old path before anything asks for it again.
-      queryClient.removeQueries({
-        predicate: query => ROOT_SCOPED.has(String(query.queryKey[0])),
-      });
-      // A collection is not tied to a root: keep showing it, from the new one.
-      go({ path: '', type: search.type });
-      await queryClient.invalidateQueries({
-        predicate: query => {
-          const family = String(query.queryKey[0]);
-          return family !== 'roots' && !ROOT_SCOPED.has(family);
-        },
-      });
-    } catch (error) {
-      toast.error('The root could not be switched', {
-        description: error instanceof Error ? error.message : undefined,
-      });
-    }
-  };
+  const switchRoot = useRootSwitch(() => go({ path: '', type: search.type }));
 
   return (
     <nav aria-label="Places" className="flex h-full flex-col gap-5 px-3 pb-3 pt-4">
@@ -101,35 +77,8 @@ export function Sidebar({
         <Wordmark />
       </button>
 
-      {can('admin') && (roots.data?.roots.length ?? 0) > 1 ? (
-        <Menu
-          align="start"
-          trigger={
-            <button
-              type="button"
-              className="flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-left text-[13px] hover:border-ink-3"
-            >
-              <span className="min-w-0 flex-1 truncate">{active?.label ?? 'Root'}</span>
-              <ChevronsUpDown className="size-4 text-ink-3" />
-            </button>
-          }
-        >
-          <MenuLabel>Serve from</MenuLabel>
-          {roots.data?.roots.map(root => (
-            <MenuChoice
-              key={root.id}
-              checked={root.active}
-              closes
-              disabled={!root.available && !root.active}
-              onSelect={() => {
-                if (!root.active) void switchRoot(root.id);
-              }}
-            >
-              {root.label}
-              {root.available ? null : <span className="ml-2 text-ink-3">not connected</span>}
-            </MenuChoice>
-          ))}
-        </Menu>
+      {can('admin') && roots.data && roots.data.roots.length > 1 ? (
+        <RootSwitcher roots={roots.data.roots} onSwitch={id => void switchRoot(id)} />
       ) : null}
 
       <Section title="Collections">
@@ -162,18 +111,11 @@ export function Sidebar({
         ) : null}
       </Section>
 
-      <div className="flex items-center gap-1 border-t border-line pt-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-glaze-wash text-[13px] font-semibold uppercase text-glaze-strong">
-          {identity?.username.slice(0, 1)}
-        </span>
-        <span className="min-w-0 flex-1 truncate px-1 text-[13px]">{identity?.username}</span>
-        <Button size="icon" onClick={onSettings} aria-label="Settings" title="Settings">
-          <Settings />
-        </Button>
-        <Button size="icon" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">
-          <LogOut />
-        </Button>
-      </div>
+      <UserBar
+        username={identity?.username ?? ''}
+        onSettings={onSettings}
+        onSignOut={() => void signOut()}
+      />
     </nav>
   );
 }
@@ -219,5 +161,100 @@ function Item({
       {icon}
       <span className="truncate">{children}</span>
     </button>
+  );
+}
+
+/**
+ * Switching roots: listings and file contents are keyed by root-relative
+ * path, so the old root's would pass for the new one's. They are dropped
+ * rather than refetched, and `leave` moves off the old path before anything
+ * asks for it again; everything else is refetched from the new root.
+ */
+function useRootSwitch(leave: () => void) {
+  const queryClient = useQueryClient();
+  return async (id: string) => {
+    try {
+      queryClient.setQueryData(['roots'], await api.switchRoot(id));
+      queryClient.removeQueries({
+        predicate: query => ROOT_SCOPED.has(String(query.queryKey[0])),
+      });
+      leave();
+      await queryClient.invalidateQueries({
+        predicate: query => {
+          const family = String(query.queryKey[0]);
+          return family !== 'roots' && !ROOT_SCOPED.has(family);
+        },
+      });
+    } catch (error) {
+      toast.error('The root could not be switched', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+}
+
+/** Which root to serve; one whose drive is not connected cannot be chosen until it is. */
+function RootSwitcher({
+  roots,
+  onSwitch,
+}: {
+  roots: RootDescriptor[];
+  onSwitch: (id: string) => void;
+}) {
+  const active = roots.find(root => root.active);
+  return (
+    <Menu
+      align="start"
+      trigger={
+        <button
+          type="button"
+          className="flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-left text-[13px] hover:border-ink-3"
+        >
+          <span className="min-w-0 flex-1 truncate">{active?.label ?? 'Root'}</span>
+          <ChevronsUpDown className="size-4 text-ink-3" />
+        </button>
+      }
+    >
+      <MenuLabel>Serve from</MenuLabel>
+      {roots.map(root => (
+        <MenuChoice
+          key={root.id}
+          checked={root.active}
+          closes
+          disabled={!root.available && !root.active}
+          onSelect={() => {
+            if (!root.active) onSwitch(root.id);
+          }}
+        >
+          {root.label}
+          {root.available ? null : <span className="ml-2 text-ink-3">not connected</span>}
+        </MenuChoice>
+      ))}
+    </Menu>
+  );
+}
+
+function UserBar({
+  username,
+  onSettings,
+  onSignOut,
+}: {
+  username: string;
+  onSettings: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 border-t border-line pt-3">
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-glaze-wash text-[13px] font-semibold uppercase text-glaze-strong">
+        {username.slice(0, 1)}
+      </span>
+      <span className="min-w-0 flex-1 truncate px-1 text-[13px]">{username}</span>
+      <Button size="icon" onClick={onSettings} aria-label="Settings" title="Settings">
+        <Settings />
+      </Button>
+      <Button size="icon" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+        <LogOut />
+      </Button>
+    </div>
   );
 }

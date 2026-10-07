@@ -22,12 +22,11 @@ export interface UploadJob {
 
 /** One chunk over XHR, because fetch cannot report upload progress. */
 function sendChunk(
-  uploadId: string,
-  index: number,
-  blob: Blob,
+  chunk: { uploadId: string; index: number; blob: Blob },
   onProgress: (loaded: number) => void,
   signal: AbortSignal,
 ) {
+  const { uploadId, index, blob } = chunk;
   return new Promise<void>((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', `${apiBase}/upload/chunked/${uploadId}/${index}`);
@@ -84,9 +83,11 @@ export function useUploads() {
         for (let index = 0; index < session.totalChunks; index += 1) {
           const start = index * session.chunkSize;
           await sendChunk(
-            session.uploadId,
-            index,
-            file.slice(start, start + session.chunkSize),
+            {
+              uploadId: session.uploadId,
+              index,
+              blob: file.slice(start, start + session.chunkSize),
+            },
             loaded => patch(job.id, { sent: Math.min(file.size, start + loaded) }),
             controller.signal,
           );

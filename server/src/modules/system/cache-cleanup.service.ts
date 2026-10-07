@@ -60,33 +60,28 @@ export class CacheCleanupService {
 
 /** Removes files last modified before `deadline`, then any directory left empty. */
 async function pruneOlderThan(directory: string, deadline: number): Promise<number> {
-  let entries;
-  try {
-    entries = await fsp.readdir(directory, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-
+  const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(() => []);
   let removed = 0;
   for (const entry of entries) {
     const target = path.join(directory, entry.name);
-    try {
-      if (entry.isDirectory()) {
-        removed += await pruneOlderThan(target, deadline);
-        const remaining = await fsp.readdir(target);
-        if (remaining.length === 0) await fsp.rmdir(target).catch(() => undefined);
-        continue;
-      }
-
-      const stats = await fsp.stat(target);
-      if (stats.mtimeMs < deadline) {
-        await fsp.rm(target, { force: true });
-        removed += 1;
-      }
-    } catch {
-      // Removed concurrently; nothing to do.
-    }
+    // Something removed concurrently is simply gone already.
+    removed += await (
+      entry.isDirectory() ? pruneFolder(target, deadline) : pruneFile(target, deadline)
+    ).catch(() => 0);
   }
-
   return removed;
+}
+
+async function pruneFolder(folder: string, deadline: number): Promise<number> {
+  const removed = await pruneOlderThan(folder, deadline);
+  const remaining = await fsp.readdir(folder);
+  if (remaining.length === 0) await fsp.rmdir(folder).catch(() => undefined);
+  return removed;
+}
+
+async function pruneFile(file: string, deadline: number): Promise<number> {
+  const stats = await fsp.stat(file);
+  if (stats.mtimeMs >= deadline) return 0;
+  await fsp.rm(file, { force: true });
+  return 1;
 }

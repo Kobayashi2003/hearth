@@ -54,6 +54,10 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
       limit: pageSize(request.query.limit, app.hearth.runtime.get('listingMaxEntries')),
     });
 
+    /** Search as this user: results they may not read are left out, and leaving stops the search. */
+    const searchFor = (request: FastifyRequest, query: SearchQuery): Promise<SearchResponse> =>
+      beacon.search(query, readFilterFor(request), abortSignalOf(request));
+
     app.get<{ Querystring: SearchQueryString }>(
       '/search',
       { schema: { querystring: querySchema }, config },
@@ -61,12 +65,7 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
         const query = queryFrom(request);
         if (!query.text.trim() && !query.type)
           throw HearthError.badRequest('Type something to search for');
-        const body: SearchResponse = await beacon.search(
-          query,
-          readFilterFor(request),
-          abortSignalOf(request),
-        );
-        return body;
+        return searchFor(request, query);
       },
     );
 
@@ -74,48 +73,24 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
     app.get<{ Params: { kind: string }; Querystring: SearchQueryString }>(
       '/media/:kind',
       { schema: { querystring: querySchema }, config },
-      async request => {
-        const query = { ...queryFrom(request, parseMediaKind(request.params.kind)), text: '' };
-        const body: SearchResponse = await beacon.search(
-          query,
-          readFilterFor(request),
-          abortSignalOf(request),
-        );
-        return body;
-      },
+      async request =>
+        searchFor(request, {
+          ...queryFrom(request, parseMediaKind(request.params.kind)),
+          text: '',
+        }),
     );
 
-    /** Two lookups — the size of the collection, then one entry at a random offset — so the set is never materialised. */
     app.get<{ Params: { kind: string }; Querystring: { path?: string } }>(
       '/media/:kind/random',
       { config },
       async request => {
         const kind = parseMediaKind(request.params.kind);
-        const base: SearchQuery = {
-          text: '',
-          scope: request.relativePath(request.resolvePath(request.query.path, 'read')),
-          type: kind,
-          recursive: true,
-          sort: { field: 'name', direction: 'asc' },
-          page: 1,
-          limit: 1,
-        };
-        const canRead = readFilterFor(request);
-        const signal = abortSignalOf(request);
-
-        const probe = await beacon.search(base, canRead, signal);
-        if (probe.total === 0) throw HearthError.notFound(`No ${kind} files here`);
-        const picked = await beacon.search(
-          { ...base, page: Math.floor(Math.random() * probe.total) + 1 },
-          canRead,
-          signal,
-        );
-        const entry = picked.items[0] ?? probe.items[0];
+        const scope = request.relativePath(request.resolvePath(request.query.path, 'read'));
+        const entry = await randomEntry(kind, scope, query => searchFor(request, query));
         if (!entry) throw HearthError.notFound(`No ${kind} files here`);
         return entry;
       },
     );
-
     // Everything's address and health are for an administrator, like the rest of the settings.
     app.get('/system/search-status', { config: { permission: 'admin' } }, async () =>
       beacon.status(),
@@ -123,6 +98,29 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
   };
 }
 
+/**
+ * Two lookups (the size of the collection, then one entry at a random
+ * offset), so the set is never materialised.
+ */
+async function randomEntry(
+  kind: MediaKind,
+  scope: string,
+  search: (query: SearchQuery) => Promise<SearchResponse>,
+) {
+  const base: SearchQuery = {
+    text: '',
+    scope,
+    type: kind,
+    recursive: true,
+    sort: { field: 'name', direction: 'asc' },
+    page: 1,
+    limit: 1,
+  };
+  const probe = await search(base);
+  if (probe.total === 0) return null;
+  const picked = await search({ ...base, page: Math.floor(Math.random() * probe.total) + 1 });
+  return picked.items[0] ?? probe.items[0] ?? null;
+}
 function parseMediaKind(raw: string): MediaKind {
   if ((MEDIA_KINDS as readonly string[]).includes(raw)) return raw as MediaKind;
   throw HearthError.badRequest(`Unknown media kind "${raw}"`);

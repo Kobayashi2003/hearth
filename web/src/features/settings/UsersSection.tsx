@@ -6,10 +6,11 @@ import type { ManagedUser } from '@hearth/shared';
 
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { CredentialFields } from '@/features/session/CredentialFields';
 import { useSession } from '@/features/session/session';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
-import { Field, Input, SettingsGroup } from '@/ui/Field';
+import { Input, SettingsGroup } from '@/ui/Field';
 import { SettingSwitch } from './admin-settings';
 
 const VERBS: ReadonlyArray<[string, string]> = [
@@ -174,23 +175,13 @@ function NewUser({ onCreated }: { onCreated: () => void }) {
   return (
     <form onSubmit={submit} className="py-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Username">
-          <Input
-            value={username}
-            onChange={event => setUsername(event.target.value)}
-            required
-            pattern="[A-Za-z0-9._\-]+"
-          />
-        </Field>
-        <Field label="Password">
-          <Input
-            type="password"
-            value={password}
-            onChange={event => setPassword(event.target.value)}
-            required
-            autoComplete="new-password"
-          />
-        </Field>
+        <CredentialFields
+          purpose="new-account"
+          username={username}
+          password={password}
+          onUsername={setUsername}
+          onPassword={setPassword}
+        />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-1">
         <VerbChips permissions={permissions} onChange={setPermissions} />

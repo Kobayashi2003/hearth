@@ -10,34 +10,37 @@ export type RangeResult =
 const RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/;
 
 export function parseRange(header: string | undefined, size: number): RangeResult {
-  if (!header) return { kind: 'none' };
-
-  const match = RANGE_PATTERN.exec(header.trim());
+  const match = header ? RANGE_PATTERN.exec(header.trim()) : null;
   if (!match) return { kind: 'none' };
-
   const [, rawStart = '', rawEnd = ''] = match;
   if (rawStart === '' && rawEnd === '') return { kind: 'none' };
 
-  let start: number;
-  let end: number;
-
-  if (rawStart === '') {
-    // Suffix form: the last N bytes.
-    const suffixLength = Number.parseInt(rawEnd, 10);
-    if (suffixLength <= 0) return { kind: 'unsatisfiable' };
-    start = Math.max(0, size - suffixLength);
-    end = size - 1;
-  } else {
-    start = Number.parseInt(rawStart, 10);
-    end = rawEnd === '' ? size - 1 : Number.parseInt(rawEnd, 10);
-  }
-
-  // An empty file can satisfy no range at all.
-  if (size === 0 || start >= size || start > end) return { kind: 'unsatisfiable' };
-
-  return { kind: 'satisfiable', range: { start, end: Math.min(end, size - 1) } };
+  const bounds = rawStart === '' ? suffix(rawEnd, size) : explicit(rawStart, rawEnd, size);
+  if (!bounds || !fits(bounds, size)) return { kind: 'unsatisfiable' };
+  return {
+    kind: 'satisfiable',
+    range: { start: bounds.start, end: Math.min(bounds.end, size - 1) },
+  };
 }
 
+/** An empty file can satisfy no range at all. */
+function fits(bounds: ByteRange, size: number): boolean {
+  return size > 0 && bounds.start < size && bounds.start <= bounds.end;
+}
+
+/** `bytes=-N`: the last N bytes. */
+function suffix(rawLength: string, size: number): ByteRange | null {
+  const length = Number.parseInt(rawLength, 10);
+  return length > 0 ? { start: Math.max(0, size - length), end: size - 1 } : null;
+}
+
+/** `bytes=A-B`, or `bytes=A-` to the end. */
+function explicit(rawStart: string, rawEnd: string, size: number): ByteRange {
+  return {
+    start: Number.parseInt(rawStart, 10),
+    end: rawEnd === '' ? size - 1 : Number.parseInt(rawEnd, 10),
+  };
+}
 export function contentRangeHeader(range: ByteRange, size: number): string {
   return `bytes ${range.start}-${range.end}/${size}`;
 }

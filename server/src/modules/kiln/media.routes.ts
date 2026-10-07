@@ -22,8 +22,19 @@ export interface MediaRouteServices {
 
 /** Bytes for <video>, <audio> and <img>: raw files, conversions, subtitles, thumbnails. */
 export function createMediaRoutes(services: MediaRouteServices): FastifyPluginAsync {
-  const { listing, streams, ffmpeg, subtitles, thumbnails, folderCovers } = services;
+  return async app => {
+    await app.register(playbackRoutes(services));
+    await app.register(thumbnailRoutes(services));
+  };
+}
 
+/** A file as it is, its probe, a conversion the browser can play, and its subtitles as WebVTT. */
+function playbackRoutes({
+  listing,
+  streams,
+  ffmpeg,
+  subtitles,
+}: MediaRouteServices): FastifyPluginAsync {
   return async app => {
     app.route<{ Querystring: { path: string; token?: string } }>({
       method: ['GET', 'HEAD'],
@@ -31,8 +42,7 @@ export function createMediaRoutes(services: MediaRouteServices): FastifyPluginAs
       schema: { querystring: pathQuery() },
       config: STREAM,
       handler: async (request, reply) => {
-        const { target, entry } = await openFile(listing, request, request.query.path);
-        return streams.send(request, reply, target, entry);
+        return streams.send(request, reply, await openFile(listing, request, request.query.path));
       },
     });
 
@@ -91,7 +101,15 @@ export function createMediaRoutes(services: MediaRouteServices): FastifyPluginAs
           .send(vtt);
       },
     );
+  };
+}
 
+function thumbnailRoutes({
+  listing,
+  thumbnails,
+  folderCovers,
+}: MediaRouteServices): FastifyPluginAsync {
+  return async app => {
     app.get<{
       Querystring: { path: string; token?: string; width?: number; quality?: number; v?: string };
     }>(

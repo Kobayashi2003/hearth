@@ -3,8 +3,8 @@ import { useState, type FormEvent } from 'react';
 import { LogoMark } from '@/brand/Logo';
 import { ApiError, apiBase, isUnreachable } from '@/lib/api';
 import { Button } from '@/ui/Button';
-import { Field, Input } from '@/ui/Field';
 import { Spinner } from '@/ui/Feedback';
+import { CredentialFields } from './CredentialFields';
 import { useSession } from './session';
 
 export function LoginPage() {
@@ -48,24 +48,13 @@ export function LoginPage() {
         ) : null}
 
         <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
-          <Field label="Username">
-            <Input
-              value={username}
-              onChange={event => setUsername(event.target.value)}
-              autoComplete="username"
-              autoFocus
-              required
-            />
-          </Field>
-          <Field label="Password">
-            <Input
-              type="password"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </Field>
+          <CredentialFields
+            purpose="sign-in"
+            username={username}
+            password={password}
+            onUsername={setUsername}
+            onPassword={setPassword}
+          />
 
           {error ? (
             <p role="alert" className="text-[13px] text-danger">

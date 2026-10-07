@@ -2,7 +2,8 @@ import path from 'node:path';
 
 import type { SettingKey, SettingState } from '@hearth/shared';
 
-import { rootAvailable, type AppConfig, type RootConfig } from './index.js';
+import type { AppConfig } from './index.js';
+import { rootAvailable, type RootConfig } from './roots.js';
 import {
   kindOf,
   parseSetting,

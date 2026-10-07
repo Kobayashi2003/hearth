@@ -52,31 +52,38 @@ function videoTag(src: string, settings: Map<string, string>): string {
 }
 
 export function withPlayableVideos(html: string): string {
-  const objects = html.replace(/<object\b([^>]*)>([\s\S]*?)<\/object>/gi, (whole, open, inner) => {
-    const settings = attributes(open as string);
-    for (const param of (inner as string).matchAll(/<param\b([^>]*)>/gi)) {
-      const { name, value } = Object.fromEntries(attributes(param[1]!));
-      if (name) settings.set(name.toLowerCase(), value ?? '');
-    }
-    const src =
-      settings.get('data') ||
-      settings.get('src') ||
-      settings.get('filename') ||
-      settings.get('url') ||
-      settings.get('movie');
-    if (isLocalVideo(src, settings.get('type'))) return videoTag(src, settings);
-    // Often the object carries an <embed> for the other browsers of the day.
-    const embed = /<embed\b([^>]*)>/i.exec(inner as string);
-    const fallback = embed ? attributes(embed[1]!) : null;
-    const fallbackSrc = fallback?.get('src');
-    if (fallback && isLocalVideo(fallbackSrc, fallback.get('type'))) {
-      return videoTag(fallbackSrc, new Map([...settings, ...fallback]));
-    }
-    return whole;
-  });
-  return objects.replace(/<embed\b([^>]*)>/gi, (whole, open) => {
-    const settings = attributes(open as string);
+  const objects = html.replace(
+    /<object\b([^>]*)>([\s\S]*?)<\/object>/gi,
+    (whole, open: string, inner: string) => objectVideo(open, inner) ?? whole,
+  );
+  return objects.replace(/<embed\b([^>]*)>/gi, (whole, open: string) => {
+    const settings = attributes(open);
     const src = settings.get('src');
     return isLocalVideo(src, settings.get('type')) ? videoTag(src, settings) : whole;
   });
+}
+
+/** The names an <object> or its <param>s used for the file to play. */
+const SOURCE_NAMES = ['data', 'src', 'filename', 'url', 'movie'];
+
+/**
+ * An <object> as a <video>, from its own attributes and <param>s, or else
+ * from the <embed> it often carried for the other browsers of the day.
+ */
+function objectVideo(open: string, inner: string): string | null {
+  const settings = attributes(open);
+  for (const param of inner.matchAll(/<param\b([^>]*)>/gi)) {
+    const { name, value } = Object.fromEntries(attributes(param[1]!));
+    if (name) settings.set(name.toLowerCase(), value ?? '');
+  }
+  const src = SOURCE_NAMES.map(name => settings.get(name)).find(Boolean);
+  if (isLocalVideo(src, settings.get('type'))) return videoTag(src, settings);
+
+  const embed = /<embed\b([^>]*)>/i.exec(inner);
+  const fallback = embed ? attributes(embed[1]!) : null;
+  const fallbackSrc = fallback?.get('src');
+  if (fallback && isLocalVideo(fallbackSrc, fallback.get('type'))) {
+    return videoTag(fallbackSrc, new Map([...settings, ...fallback]));
+  }
+  return null;
 }

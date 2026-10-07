@@ -1,5 +1,3 @@
-import path from 'node:path';
-import fs from 'node:fs';
 import crypto from 'node:crypto';
 
 import {
@@ -16,13 +14,11 @@ import {
   envString,
   projectRoot,
 } from './env.js';
+import { defaultRootOf, parseRoots, type RootConfig } from './roots.js';
+import { parseStaticUsers, type StaticUser } from './users.js';
 
-export interface RootConfig {
-  /** Derived from the absolute path, so it survives reordering. */
-  id: string;
-  absolutePath: string;
-  label: string;
-}
+export type { RootConfig } from './roots.js';
+export type { StaticUser } from './users.js';
 
 export type SearchProviderChoice = 'everything' | 'walk' | 'auto';
 
@@ -155,47 +151,11 @@ export interface AppConfig {
   readonly adminOnly: boolean;
 }
 
-export interface StaticUser {
-  username: string;
-  /** Plain text or a bcrypt hash. */
-  password: string;
-  permissions: string;
-}
-
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const KB = 1024;
 const MB = 1024 * KB;
-
-/**
- * `USER_RULES`: "user:pass:perms" joined by ';' (or ','). The password is
- * everything between the first and last ':'.
- */
-function parseStaticUsers(raw: string): StaticUser[] {
-  if (!raw.trim()) return [];
-  const delimiter = raw.includes(';') ? ';' : ',';
-  const users: StaticUser[] = [];
-
-  for (const entry of raw.split(delimiter)) {
-    const trimmed = entry.trim();
-    if (!trimmed) continue;
-    const parts = trimmed.split(':');
-    if (parts.length < 3) {
-      throw new ConfigError('USER_RULES', `entry "${trimmed}" is not "user:pass:perms"`);
-    }
-    users.push({
-      username: parts[0]!.trim(),
-      password: parts.slice(1, -1).join(':'),
-      permissions: parts[parts.length - 1]!.trim(),
-    });
-  }
-  return users;
-}
-
-function rootIdFor(absolutePath: string): string {
-  return crypto.createHash('sha1').update(absolutePath.toLowerCase()).digest('hex').slice(0, 12);
-}
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'];
 
@@ -207,30 +167,6 @@ function logLevel(): string {
   return level;
 }
 
-function parseRoots(): RootConfig[] {
-  const configured = envList('ROOT_DIRECTORIES');
-  const fallback = envPath('BASE_DIRECTORY', './example');
-  const rawPaths = configured.length > 0 ? configured : [fallback];
-
-  const seen = new Set<string>();
-  const roots: RootConfig[] = [];
-
-  for (const raw of rawPaths) {
-    const absolutePath = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(projectRoot, raw);
-    const key = absolutePath.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    roots.push({
-      id: rootIdFor(absolutePath),
-      absolutePath,
-      label: path.basename(absolutePath) || absolutePath,
-    });
-  }
-
-  if (roots.length === 0) throw new ConfigError('ROOT_DIRECTORIES', 'no root directory resolved');
-  return roots;
-}
-
 function rateBucket(name: string, max: number, windowMinutes: number): RateBucket {
   return {
     max: envLimit(`RATE_LIMIT_${name}_MAX`, max),
@@ -240,14 +176,7 @@ function rateBucket(name: string, max: number, windowMinutes: number): RateBucke
 
 export function loadConfig(development = false): AppConfig {
   const roots = parseRoots();
-  const requestedDefault = envOptional('BASE_DIRECTORY');
-  const defaultRoot = requestedDefault
-    ? (roots.find(
-        r =>
-          r.absolutePath.toLowerCase() ===
-          path.resolve(projectRoot, requestedDefault).toLowerCase(),
-      ) ?? roots[0]!)
-    : roots[0]!;
+  const defaultRoot = defaultRootOf(roots);
 
   const config: AppConfig = {
     projectRoot,
@@ -367,19 +296,6 @@ export function loadConfig(development = false): AppConfig {
   };
 
   return deepFreeze(config);
-}
-
-/**
- * Whether a root can be served right now. A missing root does not stop Hearth
- * from starting: a drive that is not mounted yet, or a disconnected one, is
- * reported as unavailable and served as soon as it is back.
- */
-export function rootAvailable(root: RootConfig): boolean {
-  try {
-    return fs.statSync(root.absolutePath).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 function deepFreeze<T>(value: T): T {

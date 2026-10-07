@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { HearthError } from './errors.js';
-import { rootAvailable } from '../config/index.js';
+import { rootAvailable } from '../config/roots.js';
 import type { RuntimeState } from '../config/runtime-state.js';
 
 /**

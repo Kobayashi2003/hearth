@@ -146,7 +146,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
       await api.register(createAdminRoutes(warden));
       await api.register(createVaultRoutes(listing));
       await api.register(createFileOpsRoutes(fileOps, listing, trash, ledger));
-      await api.register(createTransferRoutes(uploads, chunked, downloads, listing, streams));
+      await api.register(createTransferRoutes({ uploads, chunked, downloads, listing, streams }));
       await api.register(createEmberRoutes(trash, ledger));
       await api.register(createLedgerRoutes(ledger));
       await api.register(createHobRoutes(hob));

@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
   DeleteRequest,
   MkdirRequest,
@@ -51,12 +51,20 @@ const schemasFor = (batch: number) => {
   } as const;
 };
 
+interface FileOpsServices {
+  fileOps: FileOpsService;
+  listing: ListingService;
+  trash: TrashService;
+  ledger: LedgerService;
+}
+
 export function createFileOpsRoutes(
   fileOps: FileOpsService,
   listing: ListingService,
   trash: TrashService,
   ledger: LedgerService,
 ): FastifyPluginAsync {
+  const services: FileOpsServices = { fileOps, listing, trash, ledger };
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
     const schemas = schemasFor(app.hearth.config.listing.maxBatchItems);
@@ -97,12 +105,7 @@ export function createFileOpsRoutes(
           await listing.assertDirectory(destination);
 
           const results = await fileOps.transfer(sources, destination, mode);
-          if (mode === 'move') {
-            for (const result of results) {
-              if (result.ok && result.resultPath)
-                await ledger.reprefix(result.path, result.resultPath);
-            }
-          }
+          if (mode === 'move') await followMoves(ledger, results);
           const body: OperationResponse = { results };
           return body;
         },
@@ -115,32 +118,45 @@ export function createFileOpsRoutes(
       async request => {
         const useTrash = trash.enabled && !request.body.permanent;
         const results: OperationResult[] = [];
-
+        // One at a time, each reporting its own outcome: one failure does not stop the rest.
         for (const requested of request.body.paths) {
-          try {
-            const target = request.resolvePath(requested, 'delete');
-            const relative = request.relativePath(target);
-            const entry = await listing.require(target);
-            if (useTrash) {
-              // Progress is kept: restoring to the same path restores where you were.
-              await trash.accept(target, entry.isDirectory, entry.size);
-            } else {
-              await fileOps.remove(target);
-              await ledger.forget(relative);
-            }
-            results.push({ path: requested, ok: true });
-          } catch (error) {
-            results.push({
-              path: requested,
-              ok: false,
-              error: error instanceof HearthError ? error.message : 'Could not delete that item',
-            });
-          }
+          results.push(await deleteOne(services, request, requested, useTrash));
         }
-
         const body: OperationResponse = { results };
         return body;
       },
     );
   };
+}
+
+/** Reading positions follow what moved. */
+async function followMoves(ledger: LedgerService, results: OperationResult[]) {
+  for (const result of results) {
+    if (result.ok && result.resultPath) await ledger.reprefix(result.path, result.resultPath);
+  }
+}
+
+/** One item to the recycle bin (or gone for good), reporting its own outcome. */
+async function deleteOne(
+  { fileOps, listing, trash, ledger }: FileOpsServices,
+  request: FastifyRequest,
+  requested: string,
+  useTrash: boolean,
+): Promise<OperationResult> {
+  try {
+    const target = request.resolvePath(requested, 'delete');
+    const entry = await listing.require(target);
+    if (useTrash) {
+      // Progress is kept: restoring to the same path restores where you were.
+      await trash.accept(target, entry.isDirectory, entry.size);
+    } else {
+      const relative = request.relativePath(target);
+      await fileOps.remove(target);
+      await ledger.forget(relative);
+    }
+    return { path: requested, ok: true };
+  } catch (error) {
+    const message = error instanceof HearthError ? error.message : 'Could not delete that item';
+    return { path: requested, ok: false, error: message };
+  }
 }

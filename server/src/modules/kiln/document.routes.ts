@@ -33,8 +33,15 @@ export interface DocumentRouteServices {
 
 /** Files the client renders itself: text, comics, archives and Office documents. */
 export function createDocumentRoutes(services: DocumentRouteServices): FastifyPluginAsync {
-  const { listing, streams, text, comics, archives, documents, backgrounds } = services;
+  return async app => {
+    await app.register(textRoutes(services));
+    await app.register(bookRoutes(services));
+    await app.register(officeRoutes(services));
+  };
+}
 
+/** A text file decoded for reading, and saved back in the encoding it was read in. */
+function textRoutes({ listing, text }: DocumentRouteServices): FastifyPluginAsync {
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
 
@@ -74,7 +81,17 @@ export function createDocumentRoutes(services: DocumentRouteServices): FastifyPl
         return { ok: true };
       },
     );
+  };
+}
 
+/** Comics page by page, and archives entry by entry. */
+function bookRoutes({
+  listing,
+  streams,
+  comics,
+  archives,
+}: DocumentRouteServices): FastifyPluginAsync {
+  return async app => {
     app.get<{ Querystring: { path: string } }>(
       '/comic',
       { schema: { querystring: pathQuery() }, config: READ },
@@ -130,7 +147,17 @@ export function createDocumentRoutes(services: DocumentRouteServices): FastifyPl
           .send(body);
       },
     );
+  };
+}
 
+/** Office documents as HTML, and the wallpapers offered under Appearance. */
+function officeRoutes({
+  listing,
+  streams,
+  documents,
+  backgrounds,
+}: DocumentRouteServices): FastifyPluginAsync {
+  return async app => {
     app.get<{ Querystring: { path: string } }>(
       '/office',
       { schema: { querystring: pathQuery() }, config: READ },

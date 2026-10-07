@@ -27,22 +27,9 @@ const ascii = (bytes: Uint8Array, start: number, end: number) =>
   String.fromCharCode(...bytes.subarray(start, end));
 
 export function kindleCover(readAt: ReadAt, fileSize: number): Uint8Array | null {
-  const header = readAt(0, PALM_HEADER_LENGTH);
-  if (header.length < PALM_HEADER_LENGTH || ascii(header, 60, 68) !== 'BOOKMOBI') return null;
-  const count = u16(header, 76);
-  if (count === 0 || count > MAX_RECORDS) return null;
-
-  const table = readAt(PALM_HEADER_LENGTH, count * 8);
-  if (table.length < count * 8) return null;
-  const recordRange = (index: number): [number, number] | null => {
-    if (index < 0 || index >= count) return null;
-    const start = u32(table, index * 8);
-    const end = index + 1 < count ? u32(table, (index + 1) * 8) : fileSize;
-    return start < end && end <= fileSize ? [start, end] : null;
-  };
-
-  const first = recordRange(0);
-  if (!first) return null;
+  const recordRange = recordTable(readAt, fileSize);
+  const first = recordRange?.(0);
+  if (!recordRange || !first) return null;
   const record = readAt(first[0], Math.min(first[1] - first[0], MAX_HEADER_RECORD));
   if (record.length < 132 || ascii(record, 16, 20) !== 'MOBI') return null;
 
@@ -50,17 +37,45 @@ export function kindleCover(readAt: ReadAt, fileSize: number): Uint8Array | null
   if (firstImage === NO_INDEX) return null;
   const exth = readExth(record, 16 + u32(record, 20), (u32(record, 128) & 0x40) !== 0);
 
+  // The cover, else the thumbnail: whichever leads to a real image.
   for (const type of [EXTH_COVER_OFFSET, EXTH_THUMBNAIL_OFFSET]) {
-    const offset = exth.get(type);
-    if (offset === undefined || offset === NO_INDEX) continue;
-    const range = recordRange(firstImage + offset);
-    if (!range) continue;
-    const image = readAt(range[0], range[1] - range[0]);
-    if (isImage(image)) return image;
+    const image = imageRecord(readAt, recordRange, firstImage, exth.get(type));
+    if (image) return image;
   }
   return null;
 }
 
+function imageRecord(
+  readAt: ReadAt,
+  recordRange: RecordRange,
+  firstImage: number,
+  offset: number | undefined,
+): Uint8Array | null {
+  if (offset === undefined || offset === NO_INDEX) return null;
+  const range = recordRange(firstImage + offset);
+  if (!range) return null;
+  const bytes = readAt(range[0], range[1] - range[0]);
+  return isImage(bytes) ? bytes : null;
+}
+
+type RecordRange = (index: number) => [start: number, end: number] | null;
+
+/** The Palm record table, as a lookup of each record's byte range; null if this is no Mobipocket book. */
+function recordTable(readAt: ReadAt, fileSize: number): RecordRange | null {
+  const header = readAt(0, PALM_HEADER_LENGTH);
+  if (header.length < PALM_HEADER_LENGTH || ascii(header, 60, 68) !== 'BOOKMOBI') return null;
+  const count = u16(header, 76);
+  if (count === 0 || count > MAX_RECORDS) return null;
+
+  const table = readAt(PALM_HEADER_LENGTH, count * 8);
+  if (table.length < count * 8) return null;
+  return index => {
+    if (index < 0 || index >= count) return null;
+    const start = u32(table, index * 8);
+    const end = index + 1 < count ? u32(table, (index + 1) * 8) : fileSize;
+    return start < end && end <= fileSize ? [start, end] : null;
+  };
+}
 /** The numeric EXTH entries; the ones a cover needs are all four-byte numbers. */
 function readExth(record: Uint8Array, offset: number, present: boolean): Map<number, number> {
   const entries = new Map<number, number>();

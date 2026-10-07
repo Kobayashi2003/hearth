@@ -64,9 +64,11 @@ export class ChunkedUploadService {
   async begin(
     username: string,
     destination: SafePath,
-    relativePath: string,
-    size: number,
-    requestedChunkSize: number,
+    {
+      relativePath,
+      size,
+      chunkSize: requestedChunkSize,
+    }: { relativePath: string; size: number; chunkSize: number },
   ): Promise<ChunkedUploadSession> {
     if (size > this.runtime.get('maxUploadSizeMB') * MB) {
       throw new HearthError('PAYLOAD_TOO_LARGE', 'That file is larger than the upload limit');

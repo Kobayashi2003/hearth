@@ -34,9 +34,10 @@ const POSTER_MAX_SECONDS = 600;
 export class ThumbnailService {
   /**
    * Decoding is CPU work (sharp, ffmpeg, a worker per book); a folder of
-   * thousands asks for it all at once. One per core keeps the server answering.
+   * thousands asks for it all at once. Half the cores: the rest stay free for
+   * what someone is watching, often a video decoded on this same machine.
    */
-  private readonly decoding = new Gate(Math.max(2, os.availableParallelism()));
+  private readonly decoding = new Gate(Math.max(2, Math.floor(os.availableParallelism() / 2)));
 
   constructor(
     private readonly config: AppConfig,
@@ -95,68 +96,37 @@ export class ThumbnailService {
     request: ThumbnailRequest,
     signal?: AbortSignal,
   ): Promise<Buffer | null> {
-    const mimeType = mimeForPath(target, size);
-    const kind = mediaKindOf(mimeType);
-
-    if (kind === 'video') {
-      const duration = await this.ffmpeg
-        .probe(target, signal)
-        .then(probe => probe.durationSeconds)
-        .catch(() => null);
-      // A clip shorter than the minimum offset is taken from its middle.
-      const at =
-        duration === null
-          ? POSTER_MIN_SECONDS
-          : Math.min(
-              POSTER_MAX_SECONDS,
-              Math.max(Math.min(POSTER_MIN_SECONDS, duration / 2), duration * POSTER_FRACTION),
-            );
-      const frame = await this.ffmpeg
-        .extractFrame(target, at, request.width, signal)
-        .catch(() => Buffer.alloc(0));
-      return frame.length > 0 ? frame : this.ffmpeg.extractFrame(target, 0, request.width, signal);
-    }
-
-    if (kind === 'audio') {
-      const embedded = await embeddedArtwork(target);
-      if (embedded) return embedded;
-      const scan = await albumArtwork(path.dirname(target));
-      return scan ? fsp.readFile(scan) : null;
-    }
-
-    if (path.extname(target).toLowerCase() === '.psd') {
-      const rendered = await runWorker<PsdRequest, PsdResponse>(
-        'psd',
-        { filePath: target },
-        signal,
-      );
-      return Buffer.from(rendered.png);
-    }
-
+    const kind = mediaKindOf(mimeForPath(target, size));
     const extension = path.extname(target).toLowerCase();
-    const bookKind = COMIC_EXTENSIONS.has(extension)
-      ? ('comic' as const)
-      : EPUB_EXTENSIONS.has(extension)
-        ? ('epub' as const)
-        : KINDLE_EXTENSIONS.has(extension)
-          ? ('kindle' as const)
-          : null;
-
-    if (bookKind) {
-      // A worker failure here means "not really an archive", i.e. no cover.
-      const cover = await runWorker<CoverRequest, CoverResponse | null>(
-        'cover',
-        { archivePath: target, kind: bookKind },
-        signal,
-      ).catch(() => null);
-      return cover ? Buffer.from(cover.content) : null;
-    }
-
-    if (kind !== 'image') return null;
-
-    return fsp.readFile(target);
+    if (kind === 'video') return this.posterFrame(target, request.width, signal);
+    if (kind === 'audio') return audioArtwork(target);
+    if (extension === '.psd') return renderPsd(target, signal);
+    const book = bookKindOf(extension);
+    if (book) return bookCover(target, book, signal);
+    return kind === 'image' ? fsp.readFile(target) : null;
   }
 
+  /**
+   * A frame past the opening logos (a clip shorter than the minimum offset is
+   * taken from its middle), or the very first frame if that one fails.
+   */
+  private async posterFrame(target: SafePath, width: number, signal?: AbortSignal) {
+    const duration = await this.ffmpeg
+      .probe(target, signal)
+      .then(probe => probe.durationSeconds)
+      .catch(() => null);
+    const at =
+      duration === null
+        ? POSTER_MIN_SECONDS
+        : Math.min(
+            POSTER_MAX_SECONDS,
+            Math.max(Math.min(POSTER_MIN_SECONDS, duration / 2), duration * POSTER_FRACTION),
+          );
+    const frame = await this.ffmpeg
+      .extractFrame(target, at, width, signal)
+      .catch(() => Buffer.alloc(0));
+    return frame.length > 0 ? frame : this.ffmpeg.extractFrame(target, 0, width, signal);
+  }
   /**
    * An HTTP validator for the thumbnail of `target`: the disk cache key, which
    * already changes with the absolute path (so two roots never share one), the
@@ -187,6 +157,37 @@ export class ThumbnailService {
   }
 }
 
+type BookKind = CoverRequest['kind'];
+
+function bookKindOf(extension: string): BookKind | null {
+  if (COMIC_EXTENSIONS.has(extension)) return 'comic';
+  if (EPUB_EXTENSIONS.has(extension)) return 'epub';
+  if (KINDLE_EXTENSIONS.has(extension)) return 'kindle';
+  return null;
+}
+
+/** A worker failure here means "not really an archive", i.e. no cover. */
+async function bookCover(target: SafePath, kind: BookKind, signal?: AbortSignal) {
+  const cover = await runWorker<CoverRequest, CoverResponse | null>(
+    'cover',
+    { archivePath: target, kind },
+    signal,
+  ).catch(() => null);
+  return cover ? Buffer.from(cover.content) : null;
+}
+
+async function renderPsd(target: SafePath, signal?: AbortSignal): Promise<Buffer> {
+  const rendered = await runWorker<PsdRequest, PsdResponse>('psd', { filePath: target }, signal);
+  return Buffer.from(rendered.png);
+}
+
+/** Art in the file's tags, else the album's scans beside it. */
+async function audioArtwork(target: SafePath): Promise<Buffer | null> {
+  const embedded = await embeddedArtwork(target);
+  if (embedded) return embedded;
+  const scan = await albumArtwork(path.dirname(target));
+  return scan ? fsp.readFile(scan) : null;
+}
 /** The cover embedded in an audio file's tags; only the metadata is parsed. */
 async function embeddedArtwork(target: SafePath): Promise<Buffer | null> {
   try {

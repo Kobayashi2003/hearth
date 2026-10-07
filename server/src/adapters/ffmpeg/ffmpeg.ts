@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import os from 'node:os';
 import type { Readable } from 'node:stream';
 
 import {
@@ -52,34 +53,7 @@ export class FfmpegAdapter {
       signal,
     );
 
-    let payload: ProbePayload;
-    try {
-      payload = JSON.parse(output) as ProbePayload;
-    } catch {
-      throw HearthError.badRequest('That file could not be read as media');
-    }
-
-    const streams = payload.streams ?? [];
-    const video = streams.find(stream => stream.codec_type === 'video');
-    const audio = streams.filter(stream => stream.codec_type === 'audio');
-    const subtitles = streams.filter(stream => stream.codec_type === 'subtitle');
-
-    const duration = Number.parseFloat(payload.format?.duration ?? '');
-
-    return {
-      durationSeconds: Number.isFinite(duration) ? duration : null,
-      width: video?.width ?? null,
-      height: video?.height ?? null,
-      videoCodec: video?.codec_name ?? null,
-      audioCodec: audio[0]?.codec_name ?? null,
-      browserPlayable: isBrowserPlayable(
-        payload.format?.format_name,
-        video?.codec_name,
-        audio[0]?.codec_name,
-      ),
-      audioTracks: audio.map(toTrack),
-      subtitleTracks: subtitles.map(toTrack),
-    };
+    return summarise(parseProbe(output));
   }
 
   /** Fragmented MP4 on stdout, playable before the encode finishes. */
@@ -147,6 +121,12 @@ export class FfmpegAdapter {
       [
         '-v',
         'quiet',
+        // One thread each: a folder of videos runs several of these at once,
+        // and by default each would take every core.
+        '-threads',
+        '1',
+        '-filter_threads',
+        '1',
         '-ss',
         atSeconds.toFixed(2),
         '-i',
@@ -163,6 +143,7 @@ export class FfmpegAdapter {
         'pipe:1',
       ],
       signal,
+      { background: true },
     );
   }
 
@@ -170,8 +151,18 @@ export class FfmpegAdapter {
     command: string,
     args: string[],
     signal: AbortSignal | undefined,
+    { background = false }: { background?: boolean } = {},
   ): ChildProcessWithoutNullStreams {
     const child = spawn(command, args, { windowsHide: true });
+    // Work nobody is watching (a tile's poster frame) yields to the browser
+    // decoding a video on the same machine, and to a transcode someone is.
+    if (background && child.pid !== undefined) {
+      try {
+        os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+      } catch {
+        // Not permitted here: it simply runs at normal priority.
+      }
+    }
 
     const kill = (): void => {
       if (!child.killed) child.kill('SIGKILL');
@@ -193,8 +184,9 @@ export class FfmpegAdapter {
     command: string,
     args: string[],
     signal?: AbortSignal,
+    options: { background?: boolean } = {},
   ): Promise<Buffer> {
-    const child = this.spawnBound(command, args, signal);
+    const child = this.spawnBound(command, args, signal, options);
     const chunks: Buffer[] = [];
     let stderr = '';
 
@@ -221,6 +213,40 @@ export class FfmpegAdapter {
   }
 }
 
+function parseProbe(output: string): ProbePayload {
+  try {
+    return JSON.parse(output) as ProbePayload;
+  } catch {
+    throw HearthError.badRequest('That file could not be read as media');
+  }
+}
+
+/** What the viewer needs from ffprobe: length, picture, codecs, tracks, and whether to convert. */
+function summarise(payload: ProbePayload): MediaProbe {
+  const streams = payload.streams ?? [];
+  const video = streams.find(stream => stream.codec_type === 'video');
+  const audio = streams.filter(stream => stream.codec_type === 'audio');
+  const subtitles = streams.filter(stream => stream.codec_type === 'subtitle');
+  const duration = Number.parseFloat(payload.format?.duration ?? '');
+  const audioCodec = audio[0]?.codec_name;
+
+  return {
+    durationSeconds: Number.isFinite(duration) ? duration : null,
+    ...picture(video),
+    audioCodec: audioCodec ?? null,
+    browserPlayable: isBrowserPlayable(payload.format?.format_name, video?.codec_name, audioCodec),
+    audioTracks: audio.map(toTrack),
+    subtitleTracks: subtitles.map(toTrack),
+  };
+}
+
+function picture(video: ProbeStream | undefined) {
+  return {
+    width: video?.width ?? null,
+    height: video?.height ?? null,
+    videoCodec: video?.codec_name ?? null,
+  };
+}
 /** `index` is the ordinal within its kind, matching ffmpeg's `-map 0:a:N`. */
 function toTrack(stream: ProbeStream, ordinal: number): MediaTrack {
   return {

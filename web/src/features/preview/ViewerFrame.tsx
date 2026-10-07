@@ -43,84 +43,18 @@ export function ViewerFrame({
   subtitle?: ReactNode;
   className?: string;
 }) {
-  const { close, closeThen, step, index, total, isFullscreen, toggleFullscreen } = useOverlay();
-  const search = explorerRoute.useSearch();
-  const revealInFolder = useRevealInFolder();
-  // Opened from search or a collection, or from a folder that is not its own.
-  const awayFromFolder =
-    search.q.trim() !== '' || search.type !== undefined || parentOf(entry.path) !== search.path;
+  const { step, total } = useOverlay();
   const idle = useIdle(immersive);
   const paper = tone === 'paper';
-  const buttonVariant = paper ? 'quiet' : 'stage';
-
   const bar = (
-    <header
-      className={cn(
-        // Narrow screens put the controls on a second row so the name keeps its width.
-        'flex shrink-0 flex-wrap items-center gap-x-2 px-3 py-2 sm:min-h-14 sm:flex-nowrap sm:px-4',
-        paper && 'border-b border-line bg-surface text-ink',
-        immersive &&
-          'absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent pb-5 transition-opacity duration-300',
-        immersive && idle && 'pointer-events-none opacity-0',
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <h2 className="truncate text-[15px] font-semibold" title={entry.name}>
-          {entry.name}
-        </h2>
-        <p
-          className={cn('tabular truncate text-[12px]', paper ? 'text-ink-3' : 'text-stage-ink/60')}
-        >
-          {subtitle ?? (total > 1 ? `${index + 1} of ${total}` : null)}
-        </p>
-      </div>
-      <Button
-        variant={buttonVariant}
-        size="icon"
-        onClick={close}
-        aria-label="Close"
-        title="Close (Esc)"
-        className="sm:order-last"
-      >
-        <X />
-      </Button>
-      <div className="flex w-full items-center justify-end gap-0.5 overflow-x-auto sm:w-auto">
-        {actions}
-        {awayFromFolder ? (
-          <Button
-            variant={buttonVariant}
-            size="icon"
-            onClick={() => closeThen(() => revealInFolder(entry.path))}
-            aria-label="Show in folder"
-            title="Show in folder"
-          >
-            <FolderSearch />
-          </Button>
-        ) : null}
-        <a
-          href={mediaUrls.download(entry.path)}
-          aria-label="Download"
-          title="Download"
-          className={cn(
-            'grid size-tap place-items-center rounded-lg [&_svg]:size-[18px]',
-            paper
-              ? 'text-ink-2 hover:bg-sunken hover:text-ink'
-              : 'text-stage-ink/80 hover:bg-white/10 hover:text-stage-ink',
-          )}
-        >
-          <Download />
-        </a>
-        <Button
-          variant={buttonVariant}
-          size="icon"
-          onClick={toggleFullscreen}
-          aria-label="Full screen"
-          title="Full screen"
-        >
-          {isFullscreen ? <Minimize /> : <Maximize />}
-        </Button>
-      </div>
-    </header>
+    <ViewerBar
+      entry={entry}
+      actions={actions}
+      subtitle={subtitle}
+      paper={paper}
+      floating={immersive}
+      hidden={immersive && idle}
+    />
   );
 
   return (
@@ -143,6 +77,115 @@ export function ViewerFrame({
   );
 }
 
+/**
+ * Name and place in the gallery, then the viewer's own controls, show in
+ * folder, download, fullscreen and close. Floating, it lies over the content
+ * on a gradient and fades out while the pointer rests.
+ */
+function ViewerBar({
+  entry,
+  actions,
+  subtitle,
+  paper,
+  floating,
+  hidden,
+}: {
+  entry: FileEntry;
+  actions: ReactNode;
+  subtitle: ReactNode;
+  paper: boolean;
+  floating: boolean;
+  hidden: boolean;
+}) {
+  const { close, index, total } = useOverlay();
+  return (
+    <header
+      className={cn(
+        // Narrow screens put the controls on a second row so the name keeps its width.
+        'flex shrink-0 flex-wrap items-center gap-x-2 px-3 py-2 sm:min-h-14 sm:flex-nowrap sm:px-4',
+        paper && 'border-b border-line bg-surface text-ink',
+        floating &&
+          'absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent pb-5 transition-opacity duration-300',
+        hidden && 'pointer-events-none opacity-0',
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-[15px] font-semibold" title={entry.name}>
+          {entry.name}
+        </h2>
+        <p
+          className={cn('tabular truncate text-[12px]', paper ? 'text-ink-3' : 'text-stage-ink/60')}
+        >
+          {subtitle ?? (total > 1 ? `${index + 1} of ${total}` : null)}
+        </p>
+      </div>
+      <Button
+        variant={paper ? 'quiet' : 'stage'}
+        size="icon"
+        onClick={close}
+        aria-label="Close"
+        title="Close (Esc)"
+        className="sm:order-last"
+      >
+        <X />
+      </Button>
+      <div className="flex w-full items-center justify-end gap-0.5 overflow-x-auto sm:w-auto">
+        {actions}
+        <BarButtons entry={entry} paper={paper} />
+      </div>
+    </header>
+  );
+}
+
+/** What every viewer offers: show in folder (when it was opened elsewhere), download, fullscreen. */
+function BarButtons({ entry, paper }: { entry: FileEntry; paper: boolean }) {
+  const { closeThen, isFullscreen, toggleFullscreen } = useOverlay();
+  const search = explorerRoute.useSearch();
+  const revealInFolder = useRevealInFolder();
+  // Opened from search or a collection, or from a folder that is not its own.
+  const awayFromFolder =
+    search.q.trim() !== '' || search.type !== undefined || parentOf(entry.path) !== search.path;
+  const variant = paper ? 'quiet' : 'stage';
+
+  return (
+    <>
+      {awayFromFolder ? (
+        <Button
+          variant={variant}
+          size="icon"
+          onClick={() => closeThen(() => revealInFolder(entry.path))}
+          aria-label="Show in folder"
+          title="Show in folder"
+        >
+          <FolderSearch />
+        </Button>
+      ) : null}
+      <a
+        href={mediaUrls.download(entry.path)}
+        aria-label="Download"
+        title="Download"
+        className={cn(
+          'grid size-tap place-items-center rounded-lg [&_svg]:size-[18px]',
+          paper
+            ? 'text-ink-2 hover:bg-sunken hover:text-ink'
+            : 'text-stage-ink/80 hover:bg-white/10 hover:text-stage-ink',
+        )}
+      >
+        <Download />
+      </a>
+      <Button
+        variant={variant}
+        size="icon"
+        onClick={toggleFullscreen}
+        aria-label="Full screen"
+        title="Full screen"
+      >
+        {isFullscreen ? <Minimize /> : <Maximize />}
+      </Button>
+    </>
+  );
+}
+
 function SideArrow({
   side,
   hidden,
@@ -160,7 +203,8 @@ function SideArrow({
       aria-label={side === 'left' ? 'Previous file' : 'Next file'}
       className={cn(
         'absolute top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full',
-        'bg-black/35 text-white/85 backdrop-blur transition-opacity hover:bg-black/55 [&_svg]:size-6',
+        // No backdrop blur: over a playing video it is redrawn every frame.
+        'bg-black/45 text-white/85 transition-opacity hover:bg-black/60 [&_svg]:size-6',
         side === 'left' ? 'left-3' : 'right-3',
         hidden && 'pointer-events-none opacity-0',
       )}

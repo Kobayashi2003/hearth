@@ -13,8 +13,14 @@
 	# Caddy shares the console with Hearth. Its start-up chatter (and the two
 	# warnings about the choices above) would bury Hearth's own lines; a real
 	# fault, such as the port being taken, is an error and still shows.
+	#
+	# The proxy handler's own log is left out: all it reports is a browser
+	# hanging up mid-response ("aborting with incomplete response"), which is
+	# how a video seeks and how a thumbnail scrolled away is cancelled. A
+	# backend that cannot be reached is still reported, under http.log.error.
 	log {
 		level ERROR
+		exclude http.handlers.reverse_proxy
 	}
 }
 

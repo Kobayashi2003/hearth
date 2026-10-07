@@ -6,7 +6,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import type { FileEntry } from '@hearth/shared';
 
@@ -62,7 +64,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
-  const { progressFor, save } = useProgress();
+  const { save } = useProgress();
   const lastSaved = useRef(0);
 
   const play = useCallback(
@@ -122,45 +124,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setPlaylist([]);
   }, []);
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (!track) {
-      audio.removeAttribute('src');
-      audio.load();
-      return;
-    }
-    audio.src = mediaUrls.raw(track.path);
-    audio.volume = volume;
-    lastSaved.current = 0;
-    setPosition(0);
-    setDuration(0);
-
-    const saved = progressFor(track.path);
-    const resumeAt = saved?.kind === 'time' && typeof saved.at === 'number' ? saved.at : 0;
-    const onReady = () => {
-      if (resumeAt > RESUME_MIN_SECONDS && resumeAt < audio.duration - RESUME_END_MARGIN)
-        audio.currentTime = resumeAt;
-    };
-    audio.addEventListener('loadedmetadata', onReady, { once: true });
-    void audio.play().catch(() => undefined);
-    return () => audio.removeEventListener('loadedmetadata', onReady);
-    // Only a new track reloads the element.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.path]);
-
-  // Written from here, not the viewer, because playback outlives the viewer.
-  useEffect(() => {
-    if (!track || !duration || Math.abs(position - lastSaved.current) < SAVE_EVERY_SECONDS) return;
-    lastSaved.current = position;
-    save(track.path, {
-      kind: 'time',
-      at: position,
-      total: duration,
-      percent: percentOf(position, duration),
-      savedAt: Date.now(),
-    });
-  }, [track, position, duration, save]);
+  useTrackLoading({ audioRef, track, volume, lastSaved, setPosition, setDuration });
+  useTrackProgress(track, position, duration, lastSaved);
 
   const onEnded = () => {
     if (track)
@@ -208,8 +173,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setVolume,
       toggleMute,
       toggleShuffle: () => setShuffle(value => !value),
-      cycleRepeat: () =>
-        setRepeat(value => (value === 'off' ? 'all' : value === 'all' ? 'one' : 'off')),
+      cycleRepeat: () => setRepeat(nextRepeat),
       stop,
     }),
     [
@@ -258,4 +222,79 @@ export function usePlayer(): PlayerValue {
 
 function clampVolume(value: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+const REPEAT_ORDER: RepeatMode[] = ['off', 'all', 'one'];
+
+function nextRepeat(mode: RepeatMode): RepeatMode {
+  return REPEAT_ORDER[(REPEAT_ORDER.indexOf(mode) + 1) % REPEAT_ORDER.length]!;
+}
+
+/**
+ * A new track reloads the element and starts it, from where it was left if
+ * that is past the opening and short of the end; no track empties it.
+ */
+function useTrackLoading({
+  audioRef,
+  track,
+  volume,
+  lastSaved,
+  setPosition,
+  setDuration,
+}: {
+  audioRef: RefObject<HTMLAudioElement | null>;
+  track: FileEntry | null;
+  volume: number;
+  lastSaved: MutableRefObject<number>;
+  setPosition: (seconds: number) => void;
+  setDuration: (seconds: number) => void;
+}) {
+  const { progressFor } = useProgress();
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!track) {
+      audio.removeAttribute('src');
+      audio.load();
+      return;
+    }
+    audio.src = mediaUrls.raw(track.path);
+    audio.volume = volume;
+    lastSaved.current = 0;
+    setPosition(0);
+    setDuration(0);
+
+    const saved = progressFor(track.path);
+    const resumeAt = saved?.kind === 'time' && typeof saved.at === 'number' ? saved.at : 0;
+    const onReady = () => {
+      if (resumeAt > RESUME_MIN_SECONDS && resumeAt < audio.duration - RESUME_END_MARGIN)
+        audio.currentTime = resumeAt;
+    };
+    audio.addEventListener('loadedmetadata', onReady, { once: true });
+    void audio.play().catch(() => undefined);
+    return () => audio.removeEventListener('loadedmetadata', onReady);
+    // Only a new track reloads the element.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.path]);
+}
+
+/** Written from here, not the viewer, because playback outlives the viewer. */
+function useTrackProgress(
+  track: FileEntry | null,
+  position: number,
+  duration: number,
+  lastSaved: MutableRefObject<number>,
+) {
+  const { save } = useProgress();
+  useEffect(() => {
+    if (!track || !duration || Math.abs(position - lastSaved.current) < SAVE_EVERY_SECONDS) return;
+    lastSaved.current = position;
+    save(track.path, {
+      kind: 'time',
+      at: position,
+      total: duration,
+      percent: percentOf(position, duration),
+      savedAt: Date.now(),
+    });
+  }, [track, position, duration, save, lastSaved]);
 }

@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { cn } from '@/lib/cn';
 import { EntryVisual, ProgressBar } from './EntryVisual';
 import type { ListingProps } from './FileList';
+import { useListingRows } from './useListingRows';
 
 export const GAP = 14;
 export const PADDING = 24;
@@ -50,20 +50,16 @@ export function FileGrid({
 
   useEffect(() => onColumns(columns), [columns, onColumns]);
 
-  const virtualizer = useVirtualizer({
+  const virtualizer = useListingRows({
     count: rows,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeight,
+    scrollRef,
+    rowHeight,
     overscan: 3,
     paddingStart: PADDING,
-    paddingEnd: bottomInset,
+    bottomInset,
+    focused: focusedIndex,
+    perRow: columns,
   });
-
-  useEffect(() => virtualizer.measure(), [rowHeight, virtualizer]);
-  useEffect(() => {
-    if (focusedIndex >= 0)
-      virtualizer.scrollToIndex(Math.floor(focusedIndex / columns), { align: 'auto' });
-  }, [focusedIndex, columns, virtualizer]);
 
   const thumbWidth = tileWidth > 200 ? 480 : 320;
 

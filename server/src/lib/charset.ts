@@ -21,27 +21,31 @@ const COMMON_HAN = new Set(
     '這來國個們為說時會過學對後麼沒於還發當開經頭動兩長樣現將與實點種話兒問機給幾業間電門東無從見車總書員報馬張難數應聽氣關並內軍產萬處場師體別眼讀題',
 );
 
-function score(text: string): number {
-  let total = 0;
-  for (const character of text) {
-    const code = character.codePointAt(0)!;
-    if (code === 0xfffd) total -= 20;
-    else if (code < 0x20) total -= code === 9 || code === 10 || code === 13 ? 0 : 5;
-    else if (code < 0x80) continue;
-    else if (COMMON_HAN.has(character)) total += 3;
-    else if (code >= 0x3040 && code <= 0x30ff)
-      total += 2; // hiragana, katakana
-    else if (code >= 0x4e00 && code <= 0x9fff) total += 1;
-    else if (code >= 0xac00 && code <= 0xd7a3)
-      total += 1.2; // hangul
-    else if (code >= 0xff61 && code <= 0xff9f)
-      total -= 1; // half-width kana: GBK misread as Shift_JIS
-    else if ((code >= 0x3000 && code <= 0x303f) || (code >= 0xff01 && code <= 0xff60)) total += 1;
-    else total -= 1;
-  }
-  return total;
+/** Code point ranges outside ASCII, and what a character there says about a guess. */
+const WEIGHTS: ReadonlyArray<[low: number, high: number, weight: number]> = [
+  [0x3040, 0x30ff, 2], // hiragana, katakana
+  [0x4e00, 0x9fff, 1], // CJK ideographs
+  [0xac00, 0xd7a3, 1.2], // hangul
+  [0xff61, 0xff9f, -1], // half-width kana: GBK misread as Shift_JIS
+  [0x3000, 0x303f, 1], // CJK punctuation
+  [0xff01, 0xff60, 1], // full-width forms
+];
+
+function weightOf(character: string): number {
+  const code = character.codePointAt(0)!;
+  if (code === 0xfffd) return -20;
+  if (code < 0x20) return code === 9 || code === 10 || code === 13 ? 0 : -5;
+  if (code < 0x80) return 0;
+  if (COMMON_HAN.has(character)) return 3;
+  const range = WEIGHTS.find(([low, high]) => code >= low && code <= high);
+  return range ? range[2] : -1;
 }
 
+function score(text: string): number {
+  let total = 0;
+  for (const character of text) total += weightOf(character);
+  return total;
+}
 function startsWith(buffer: Uint8Array, bytes: number[]): boolean {
   return bytes.every((byte, index) => buffer[index] === byte);
 }

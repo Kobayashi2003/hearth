@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import type {
   ChunkedUploadInitRequest,
   UploadResponse,
@@ -51,18 +51,31 @@ export function uploadRelativeName(fieldName: string, filename: string | undefin
   return filename;
 }
 
-export function createTransferRoutes(
-  uploads: UploadService,
-  chunked: ChunkedUploadService,
-  downloads: DownloadService,
-  listing: ListingService,
-  streams: StreamService,
-): FastifyPluginAsync {
+interface TransferServices {
+  uploads: UploadService;
+  chunked: ChunkedUploadService;
+  downloads: DownloadService;
+  listing: ListingService;
+  streams: StreamService;
+}
+
+/** Bytes in (whole files, or in chunks that survive a dropped connection) and out (a file, or a zip of many). */
+export function createTransferRoutes(services: TransferServices): FastifyPluginAsync {
   return async app => {
-    const { config, runtime } = app.hearth;
-    const schemas = schemasFor(config.listing.maxBatchItems);
-    const rateLimits = buildRateLimits(config);
-    const writeConfig = { permission: 'write' as const, rateLimit: rateLimits.write };
+    await app.register(uploadRoutes(services));
+    await app.register(chunkedRoutes(services));
+    await app.register(downloadRoutes(services));
+  };
+}
+
+function writeConfigFor(app: FastifyInstance) {
+  return { permission: 'write' as const, rateLimit: buildRateLimits(app.hearth.config).write };
+}
+
+function uploadRoutes({ uploads, listing }: TransferServices): FastifyPluginAsync {
+  return async app => {
+    const { config } = app.hearth;
+    const writeConfig = writeConfigFor(app);
 
     /**
      * Browsers strip directory segments from a multipart filename, so the field
@@ -98,6 +111,13 @@ export function createTransferRoutes(
         return body;
       },
     );
+  };
+}
+
+function chunkedRoutes({ chunked, listing }: TransferServices): FastifyPluginAsync {
+  return async app => {
+    const schemas = schemasFor(app.hearth.config.listing.maxBatchItems);
+    const writeConfig = writeConfigFor(app);
 
     app.post<{ Body: ChunkedUploadInitRequest }>(
       '/upload/chunked/init',
@@ -105,13 +125,8 @@ export function createTransferRoutes(
       async request => {
         const directory = request.resolvePath(request.body.path, 'write');
         await listing.assertDirectory(directory);
-        return chunked.begin(
-          usernameOf(request),
-          directory,
-          request.body.relativePath,
-          request.body.size,
-          request.body.chunkSize,
-        );
+        const { relativePath, size, chunkSize } = request.body;
+        return chunked.begin(usernameOf(request), directory, { relativePath, size, chunkSize });
       },
     );
 
@@ -154,6 +169,13 @@ export function createTransferRoutes(
         return { ok: true };
       },
     );
+  };
+}
+
+function downloadRoutes({ downloads, listing, streams }: TransferServices): FastifyPluginAsync {
+  return async app => {
+    const { config, runtime } = app.hearth;
+    const schemas = schemasFor(config.listing.maxBatchItems);
 
     app.route<{ Querystring: { path: string; token?: string } }>({
       method: ['GET', 'HEAD'],
@@ -162,7 +184,7 @@ export function createTransferRoutes(
       handler: async (request, reply) => {
         const target = request.resolvePath(request.query.path, 'read');
         const entry = await listing.assertFile(target);
-        return streams.send(request, reply, target, entry, { download: true });
+        return streams.send(request, reply, { target, entry }, { download: true });
       },
     });
 

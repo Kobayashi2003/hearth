@@ -9,6 +9,12 @@ import { inlineSafetyHeaders, mediaKindOf, mimeForPath } from '../../lib/mime.js
 import type { SafePath } from '../../lib/vault.js';
 import { contentRangeHeader, parseRange } from './range.js';
 
+/** A file resolved and checked for reading, with its listing entry. */
+export interface OpenedFile {
+  target: SafePath;
+  entry: FileEntry;
+}
+
 /** Raw byte delivery with Range support. */
 export class StreamService {
   constructor(private readonly config: AppConfig) {}
@@ -29,8 +35,7 @@ export class StreamService {
   async send(
     request: FastifyRequest,
     reply: FastifyReply,
-    target: SafePath,
-    entry: FileEntry,
+    { target, entry }: OpenedFile,
     options: { download?: boolean; filename?: string } = {},
   ): Promise<void> {
     const size = entry.size;

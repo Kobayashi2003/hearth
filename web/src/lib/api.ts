@@ -84,36 +84,47 @@ async function request<T>(
   path: string,
   options: { method?: string; body?: unknown; signal?: AbortSignal | undefined } = {},
 ): Promise<T> {
-  const { method = 'GET', body, signal } = options;
-  let response: Response;
+  const response = await reach(path, options);
+  if (!response.ok) throw await failureOf(response);
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+/** The response, or UNREACHABLE when none came; an abort is passed on as itself. */
+async function reach(
+  path: string,
+  { method = 'GET', body, signal }: { method?: string; body?: unknown; signal?: AbortSignal },
+): Promise<Response> {
+  const json = body !== undefined;
   try {
-    response = await fetch(apiBase + path, {
+    return await fetch(apiBase + path, {
       method,
       credentials: 'same-origin',
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: json ? { 'content-type': 'application/json' } : undefined,
+      body: json ? JSON.stringify(body) : undefined,
       signal: signal ?? null,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new ApiError(0, 'UNREACHABLE', 'No response from the server');
   }
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as ApiErrorBody | null;
-    if (!payload && (response.status >= 500 || response.status === 404)) {
-      throw new ApiError(response.status, 'UNREACHABLE', 'No response from the server');
-    }
-    throw new ApiError(
-      response.status,
-      payload?.code ?? 'UNKNOWN',
-      payload?.message ?? `Request failed (${response.status})`,
-    );
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
 }
 
+/** Hearth's own refusal, or (a non-JSON 5xx or 404) a proxy standing in for it. */
+async function failureOf(response: Response): Promise<ApiError> {
+  const payload = (await response.json().catch(() => null)) as ApiErrorBody | null;
+  if (!payload) {
+    const proxy = response.status >= 500 || response.status === 404;
+    return proxy
+      ? new ApiError(response.status, 'UNREACHABLE', 'No response from the server')
+      : new ApiError(response.status, 'UNKNOWN', `Request failed (${response.status})`);
+  }
+  return new ApiError(
+    response.status,
+    payload.code ?? 'UNKNOWN',
+    payload.message ?? `Request failed (${response.status})`,
+  );
+}
 const get = <T>(path: string, params?: Record<string, unknown>, signal?: AbortSignal) =>
   request<T>(withQuery(path, params), { signal });
 const send = <T>(method: string, path: string, body?: unknown) =>

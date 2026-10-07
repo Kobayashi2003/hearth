@@ -31,72 +31,68 @@ export function coverHrefFrom(
   readEntry: (name: string) => string | null,
 ): string | null {
   const opfPath = /<rootfile[^>]+full-path="([^"]+)"/i.exec(containerXml)?.[1];
-  if (!opfPath) return null;
+  const opf = opfPath ? readEntry(opfPath) : null;
+  if (!opfPath || !opf) return null;
 
-  const opf = readEntry(opfPath);
-  if (!opf) return null;
-
+  const href = declaredCover(opf);
+  if (!href) return null;
   const base = path.posix.dirname(opfPath);
-  const resolve = (target: string) =>
-    base === '.' ? target : path.posix.normalize(`${base}/${target}`);
-
-  // EPUB 3: the manifest item declares itself as the cover.
-  const byProperty = /<item[^>]+properties="[^"]*cover-image[^"]*"[^>]*>/i.exec(opf)?.[0];
-  const propertyHref = byProperty ? /href="([^"]+)"/i.exec(byProperty)?.[1] : undefined;
-  if (propertyHref) return resolve(decodeURIComponent(propertyHref));
-
-  // EPUB 2: a meta tag names the id of the manifest item that is the cover.
-  const coverId = /<meta[^>]+name="cover"[^>]+content="([^"]+)"/i.exec(opf)?.[1];
-  if (!coverId) return null;
-
-  const escapedId = coverId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const item = new RegExp(`<item[^>]+id="${escapedId}"[^>]*>`, 'i').exec(opf)?.[0];
-  const itemHref = item ? /href="([^"]+)"/i.exec(item)?.[1] : undefined;
-
-  return itemHref ? resolve(decodeURIComponent(itemHref)) : null;
+  const target = decodeURIComponent(href);
+  return base === '.' ? target : path.posix.normalize(`${base}/${target}`);
 }
 
+/** The cover's href as the OPF writes it: EPUB 3 marks the item, EPUB 2 names its id in a meta. */
+function declaredCover(opf: string): string | null {
+  const byProperty = /<item[^>]+properties="[^"]*cover-image[^"]*"[^>]*>/i.exec(opf)?.[0];
+  const propertyHref = hrefOf(byProperty);
+  if (propertyHref) return propertyHref;
+
+  const coverId = /<meta[^>]+name="cover"[^>]+content="([^"]+)"/i.exec(opf)?.[1];
+  if (!coverId) return null;
+  const escapedId = coverId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return hrefOf(new RegExp(`<item[^>]+id="${escapedId}"[^>]*>`, 'i').exec(opf)?.[0]);
+}
+
+function hrefOf(tag: string | undefined): string | null {
+  return (tag && /href="([^"]+)"/i.exec(tag)?.[1]) || null;
+}
+
+type Size = { width: number; height: number };
+
 /** Dimensions from the header alone (PNG, JPEG, WebP); anything else is unmeasurable. */
-export function imageSize(buffer: Buffer): { width: number; height: number } | null {
+export function imageSize(buffer: Buffer): Size | null {
   if (buffer.length > 24 && buffer.readUInt32BE(0) === 0x89504e47) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   }
-
-  // JPEG: walk the segments to the frame header.
-  if (buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
-    let offset = 2;
-    while (offset + 9 < buffer.length) {
-      if (buffer[offset] !== 0xff) break;
-      const marker = buffer[offset + 1]!;
-      const length = buffer.readUInt16BE(offset + 2);
-      // SOF0-SOF15, excluding the four that are not frame headers.
-      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
-        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
-      }
-      offset += 2 + length;
-    }
-    return null;
-  }
-
-  if (buffer.length > 30 && buffer.toString('ascii', 8, 12) === 'WEBP') {
-    const chunk = buffer.toString('ascii', 12, 16);
-    if (chunk === 'VP8X') {
-      return {
-        width: buffer.readUIntLE(24, 3) + 1,
-        height: buffer.readUIntLE(27, 3) + 1,
-      };
-    }
-    if (chunk === 'VP8 ') {
-      return {
-        width: buffer.readUInt16LE(26) & 0x3fff,
-        height: buffer.readUInt16LE(28) & 0x3fff,
-      };
-    }
-  }
-
+  if (buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8) return jpegSize(buffer);
+  if (buffer.length > 30 && buffer.toString('ascii', 8, 12) === 'WEBP') return webpSize(buffer);
   return null;
 }
 
+/** JPEG: walk the segments to the frame header. */
+function jpegSize(buffer: Buffer): Size | null {
+  let offset = 2;
+  while (offset + 9 < buffer.length && buffer[offset] === 0xff) {
+    const marker = buffer[offset + 1]!;
+    // SOF0-SOF15, excluding the four that are not frame headers.
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + buffer.readUInt16BE(offset + 2);
+  }
+  return null;
+}
+
+function webpSize(buffer: Buffer): Size | null {
+  const chunk = buffer.toString('ascii', 12, 16);
+  if (chunk === 'VP8X') {
+    return { width: buffer.readUIntLE(24, 3) + 1, height: buffer.readUIntLE(27, 3) + 1 };
+  }
+  if (chunk === 'VP8 ') {
+    return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
+  }
+  return null;
+}
 /** Rethrown from a worker's promise so the parent sees an `error` event instead of a silent exit. */
 export function rethrow(error: unknown): never {
   throw error;

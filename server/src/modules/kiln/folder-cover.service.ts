@@ -1,5 +1,6 @@
-import path from 'node:path';
+import type { Dirent } from 'node:fs';
 import fsp from 'node:fs/promises';
+import path from 'node:path';
 
 import { hasCoverArt, isHiddenSystemEntry } from '@hearth/shared';
 
@@ -46,52 +47,57 @@ export class FolderCoverService {
     return source;
   }
 
+  /** Files directly inside beat anything in a subfolder; then subfolders in order, up to the limits. */
   private async search(
     directory: SafePath,
     depth: number,
     signal?: AbortSignal,
   ): Promise<SafePath | null> {
     if (signal?.aborted) return null;
+    const visible = await visibleEntries(directory);
+    if (!visible) return null;
 
-    const dirents = await fsp.readdir(directory, { withFileTypes: true }).catch(() => null);
-    if (!dirents) return null;
-
-    const visible = dirents
-      .filter(dirent => !isHiddenSystemEntry(dirent.name))
-      .sort((a, b) => collator.compare(a.name, b.name));
-
-    // Files directly inside beat anything in a subfolder.
-    const candidates: SafePath[] = [];
-    for (const dirent of visible) {
-      if (dirent.isDirectory()) continue;
-      const child = path.join(directory, dirent.name) as SafePath;
-      const entry = { name: dirent.name, mimeType: mimeForPath(child), isDirectory: false };
-      if (hasCoverArt(entry)) candidates.push(child);
-      if (candidates.length >= JACKET_SCAN_DEPTH) break;
-    }
-
+    const candidates = coverCandidates(directory, visible);
     if (candidates.length > 0) return await pickPortrait(candidates);
-
     if (depth <= 0) return null;
 
-    let branches = 0;
-    for (const dirent of visible) {
-      if (!dirent.isDirectory()) continue;
-      if (branches >= this.runtime.get('folderCoverMaxBranches')) break;
-      branches += 1;
-
+    const folders = visible
+      .filter(dirent => dirent.isDirectory())
+      .slice(0, this.runtime.get('folderCoverMaxBranches'));
+    for (const folder of folders) {
       const found = await this.search(
-        path.join(directory, dirent.name) as SafePath,
+        path.join(directory, folder.name) as SafePath,
         depth - 1,
         signal,
       );
       if (found) return found;
     }
-
     return null;
   }
 }
 
+/** The folder's entries in natural order, without the clutter operating systems leave. */
+async function visibleEntries(directory: SafePath): Promise<Dirent[] | null> {
+  const dirents = await fsp.readdir(directory, { withFileTypes: true }).catch(() => null);
+  return (
+    dirents
+      ?.filter(dirent => !isHiddenSystemEntry(dirent.name))
+      .sort((a, b) => collator.compare(a.name, b.name)) ?? null
+  );
+}
+
+/** The first few files that have a picture of their own. */
+function coverCandidates(directory: SafePath, visible: Dirent[]): SafePath[] {
+  const candidates: SafePath[] = [];
+  for (const dirent of visible) {
+    if (dirent.isDirectory()) continue;
+    const child = path.join(directory, dirent.name) as SafePath;
+    const entry = { name: dirent.name, mimeType: mimeForPath(child), isDirectory: false };
+    if (hasCoverArt(entry)) candidates.push(child);
+    if (candidates.length >= JACKET_SCAN_DEPTH) break;
+  }
+  return candidates;
+}
 /** The first portrait candidate, or the first one if all are landscape. Reads headers only. */
 async function pickPortrait(candidates: SafePath[]): Promise<SafePath> {
   for (const candidate of candidates) {

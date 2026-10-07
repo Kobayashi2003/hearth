@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { ConfigError, consumeLegacyEnvNames, loadEnvFiles } from './config/env.js';
-import { loadConfig, rootAvailable } from './config/index.js';
+import { loadConfig } from './config/index.js';
+import { rootAvailable } from './config/roots.js';
 import { createLogger } from './lib/logger.js';
 
 /** `npm run dev` passes --development; it layers .env.development, which lifts every limit. */

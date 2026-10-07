@@ -76,29 +76,41 @@ const CODE_EXTENSIONS = new Set([
   '.php',
 ]);
 
-/** Which viewer opens a file. A `.cbz` is a comic by declaration; a `.zip` opens as an archive. */
+/**
+ * Extensions that decide the viewer before the MIME type is looked at, checked
+ * in this order: a `.cbz` is a comic by declaration, a `.zip` opens as an
+ * archive, and a `.psd` is shown through the server's rendering of it.
+ */
+const BY_EXTENSION: ReadonlyArray<[ReadonlySet<string>, ViewerKind]> = [
+  [COMIC_BOOK_EXTENSIONS, 'comic'],
+  [ARCHIVE_EXTENSIONS, 'archive'],
+  [EPUB_EXTENSIONS, 'epub'],
+  [KINDLE_EXTENSIONS, 'epub'],
+  [OFFICE_EXTENSIONS, 'office'],
+  [FLASH_EXTENSIONS, 'flash'],
+  [PDF_EXTENSIONS, 'pdf'],
+  [new Set(['.html', '.htm']), 'html'],
+  [new Set(['.psd']), 'image'],
+];
+
+const BY_MIME_PREFIX: ReadonlyArray<[string, ViewerKind]> = [
+  ['image/', 'image'],
+  ['video/', 'video'],
+  ['audio/', 'audio'],
+  ...TEXT_MIME_PREFIXES.map(prefix => [prefix, 'text'] as [string, ViewerKind]),
+];
+
+/** Which viewer opens a file. */
 export function viewerKindFor(
   entry: Pick<FileEntry, 'name' | 'mimeType' | 'isDirectory'>,
 ): ViewerKind {
   if (entry.isDirectory) return 'none';
   const extension = extensionOf(entry.name);
-  if (COMIC_BOOK_EXTENSIONS.has(extension)) return 'comic';
-  if (ARCHIVE_EXTENSIONS.has(extension)) return 'archive';
-  if (EPUB_EXTENSIONS.has(extension) || KINDLE_EXTENSIONS.has(extension)) return 'epub';
-  if (OFFICE_EXTENSIONS.has(extension)) return 'office';
-  if (FLASH_EXTENSIONS.has(extension)) return 'flash';
-  if (PDF_EXTENSIONS.has(extension)) return 'pdf';
-  if (extension === '.html' || extension === '.htm') return 'html';
-  if (extension === '.psd') return 'image';
-
-  const { mimeType } = entry;
-  if (mimeType.startsWith('image/')) return 'image';
-  if (mimeType.startsWith('video/')) return 'video';
-  if (mimeType.startsWith('audio/')) return 'audio';
-  if (TEXT_MIME_PREFIXES.some(prefix => mimeType.startsWith(prefix))) return 'text';
-  return 'none';
+  const byExtension = BY_EXTENSION.find(([extensions]) => extensions.has(extension));
+  if (byExtension) return byExtension[1];
+  const byMime = BY_MIME_PREFIX.find(([prefix]) => entry.mimeType.startsWith(prefix));
+  return byMime ? byMime[1] : 'none';
 }
-
 export function isPreviewable(entry: FileEntry): boolean {
   return viewerKindFor(entry) !== 'none';
 }
@@ -110,32 +122,26 @@ export function galleryFor(entry: FileEntry, entries: readonly FileEntry[]): Fil
   return entries.filter(candidate => viewerKindFor(candidate) === kind);
 }
 
+const ICONS: Record<ViewerKind, LucideIcon> = {
+  image: Image,
+  video: Film,
+  audio: Music,
+  comic: BookImage,
+  epub: BookOpen,
+  archive: Archive,
+  office: FileText,
+  html: Globe,
+  flash: Sparkles,
+  pdf: FileText,
+  text: FileText,
+  none: File,
+};
+
+/** The kind's icon; a spreadsheet and source code get their own within theirs. */
 export function iconFor(entry: Pick<FileEntry, 'name' | 'mimeType' | 'isDirectory'>): LucideIcon {
   if (entry.isDirectory) return Folder;
-  switch (viewerKindFor(entry)) {
-    case 'image':
-      return Image;
-    case 'video':
-      return Film;
-    case 'audio':
-      return Music;
-    case 'comic':
-      return BookImage;
-    case 'epub':
-      return BookOpen;
-    case 'archive':
-      return Archive;
-    case 'office':
-      return /\.xlsx?$/i.test(entry.name) ? FileSpreadsheet : FileText;
-    case 'html':
-      return Globe;
-    case 'flash':
-      return Sparkles;
-    case 'pdf':
-      return FileText;
-    case 'text':
-      return CODE_EXTENSIONS.has(extensionOf(entry.name)) ? FileCode2 : FileText;
-    default:
-      return File;
-  }
+  const kind = viewerKindFor(entry);
+  if (kind === 'office' && /\.xlsx?$/i.test(entry.name)) return FileSpreadsheet;
+  if (kind === 'text' && CODE_EXTENSIONS.has(extensionOf(entry.name))) return FileCode2;
+  return ICONS[kind];
 }

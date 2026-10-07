@@ -1,8 +1,7 @@
 import type { FastifyRequest } from 'fastify';
-import type { FileEntry } from '@hearth/shared';
 
-import type { SafePath } from '../../lib/vault.js';
 import type { ListingService } from '../vault/listing.service.js';
+import type { OpenedFile } from './stream.service.js';
 
 const PATH_PROPERTIES = {
   path: { type: 'string', maxLength: 4096 },
@@ -31,7 +30,7 @@ export async function openFile(
   listing: ListingService,
   request: FastifyRequest,
   path: string,
-): Promise<{ target: SafePath; entry: FileEntry }> {
+): Promise<OpenedFile> {
   const target = request.resolvePath(path, 'read');
   return { target, entry: await listing.assertFile(target) };
 }

@@ -63,30 +63,24 @@ export class HearthError extends Error {
   }
 }
 
+/** Operating-system failures that mean something to the user, said in their terms. */
+const NODE_ERRORS: Record<string, () => HearthError> = {
+  ENOENT: () => HearthError.notFound('That file or folder no longer exists'),
+  EEXIST: () => HearthError.conflict('An item with that name already exists'),
+  EACCES: () => HearthError.forbidden('The operating system denied access to that path'),
+  EPERM: () => HearthError.forbidden('The operating system denied access to that path'),
+  ENOTEMPTY: () => HearthError.conflict('That folder is not empty'),
+  EISDIR: () => HearthError.badRequest('That path is a folder, not a file'),
+  ENOTDIR: () => HearthError.badRequest('That path is a file, not a folder'),
+  ENOSPC: () => new HearthError('INTERNAL', 'The disk is full'),
+};
+
 export function fromNodeError(error: unknown, fallbackMessage: string): HearthError {
   if (error instanceof HearthError) return error;
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  switch (code) {
-    case 'ENOENT':
-      return HearthError.notFound('That file or folder no longer exists');
-    case 'EEXIST':
-      return HearthError.conflict('An item with that name already exists');
-    case 'EACCES':
-    case 'EPERM':
-      return HearthError.forbidden('The operating system denied access to that path');
-    case 'ENOTEMPTY':
-      return HearthError.conflict('That folder is not empty');
-    case 'EISDIR':
-      return HearthError.badRequest('That path is a folder, not a file');
-    case 'ENOTDIR':
-      return HearthError.badRequest('That path is a file, not a folder');
-    case 'ENOSPC':
-      return new HearthError('INTERNAL', 'The disk is full');
-    default:
-      return HearthError.internal(fallbackMessage);
-  }
+  const known = code && Object.hasOwn(NODE_ERRORS, code) ? NODE_ERRORS[code] : undefined;
+  return known ? known() : HearthError.internal(fallbackMessage);
 }
-
 export function isAbortError(error: unknown): boolean {
   return (
     (error instanceof HearthError && error.code === 'ABORTED') ||

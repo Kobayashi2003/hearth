@@ -2,47 +2,31 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'rea
 import { useQuery } from '@tanstack/react-query';
 import { TriangleAlert } from 'lucide-react';
 
-import { api, mediaUrls } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useKeyBindings } from '@/lib/keys';
-import { local } from '@/lib/storage';
 import { Centered, Notice, Spinner } from '@/ui/Feedback';
-import { percentOf, useProgress } from '@/features/progress/progress';
 import { usePlayer } from '../audio/PlayerProvider';
 import { useMediaSession } from '../audio/useMediaSession';
 import { useOverlay, type ViewerProps } from '../overlay';
 import { useIdle, ViewerFrame } from '../ViewerFrame';
-import { preferredAudio, rememberAudio } from './video/tracks';
+import { usePlaybackState, useResume, useVideoSource, useVolume } from './video/playback';
 import { useSubtitles } from './video/useSubtitles';
 import { VideoControls } from './video/VideoControls';
 
-const SAVE_EVERY_SECONDS = 5;
-const RESUME_MIN_SECONDS = 30;
-const RESUME_END_MARGIN = 20;
+const CONVERSION_FAILED =
+  'The video could not be converted for this browser. Check that ffmpeg is installed on the server, or download the file.';
 
 export default function VideoViewer({ entry }: ViewerProps) {
   const path = entry.path;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const { step, index, total, toggleFullscreen } = useOverlay();
-  const { progressFor, save } = useProgress();
   const { pause: pauseMusic } = usePlayer();
   const idle = useIdle(true);
 
-  // Null until the viewer picks: the language chosen last time applies.
-  const [audioChoice, setAudioChoice] = useState<number | null>(null);
-  // A transcode restarts at an offset to seek; the element's clock counts from there.
-  const [offset, setOffset] = useState(0);
-  const [state, setState] = useState({
-    playing: false,
-    time: 0,
-    duration: 0,
-    buffered: 0,
-    waiting: true,
-  });
-  const [volume, setVolume] = useState(() => Number(local.get('hearth.volume') ?? 1));
-  const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
-  const resumeAt = useRef<number | null>(null);
-  const lastSaved = useRef(0);
+  const [failure, setFailure] = useState<string | null>(null);
+  const { state, events, stopWaiting } = usePlaybackState();
+  const { volume, muted, setMuted, applyVolume, toggleMute } = useVolume(videoRef);
 
   const { data: probe, isPending: probing } = useQuery({
     queryKey: ['probe', path],
@@ -50,78 +34,38 @@ export default function VideoViewer({ entry }: ViewerProps) {
     staleTime: Infinity,
     retry: false,
   });
+  const video = useVideoSource(path, probe);
+  const { transcoding, restartAt } = video;
 
   useEffect(() => pauseMusic(), [pauseMusic]);
-
-  if (resumeAt.current === null) {
-    const saved = progressFor(path);
-    resumeAt.current = saved?.kind === 'time' && typeof saved.at === 'number' ? saved.at : 0;
-  }
-
-  const audioTracks = probe?.audioTracks ?? [];
-  const audioTrack = audioChoice ?? preferredAudio(audioTracks);
-
-  // Set when the browser refused the original file despite the probe; the stream is then converted.
-  const [forceTranscode, setForceTranscode] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-  const transcoding = forceTranscode || (probe ? !probe.browserPlayable || audioTrack > 0 : false);
 
   const subtitles = useSubtitles({
     path,
     probed: probe?.subtitleTracks ?? [],
-    offset,
-    transcoding,
+    offset: video.offset,
+    transcoding: video.transcoding,
   });
 
   const duration = probe?.durationSeconds ?? state.duration;
-  const position = offset + state.time;
-
-  const source = transcoding
-    ? mediaUrls.transcode(path, { audioTrack, start: offset })
-    : mediaUrls.raw(path);
+  const position = video.offset + state.time;
+  const takeResume = useResume(path, position, duration);
 
   const seek = useCallback(
     (seconds: number) => {
       const target = Math.max(0, Math.min(duration || seconds, seconds));
-      if (transcoding) setOffset(target);
+      if (transcoding) restartAt(target);
       else if (videoRef.current) videoRef.current.currentTime = target;
     },
-    [transcoding, duration],
+    [transcoding, restartAt, duration],
   );
 
   const toggle = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) void video.play().catch(() => undefined);
-    else video.pause();
+    const element = videoRef.current;
+    if (!element) return;
+    if (element.paused) void element.play().catch(() => undefined);
+    else element.pause();
   }, []);
 
-  const applyVolume = useCallback((next: number) => {
-    const clamped = Math.min(1, Math.max(0, next));
-    setVolume(clamped);
-    local.set('hearth.volume', String(clamped));
-    if (videoRef.current) {
-      videoRef.current.volume = clamped;
-      videoRef.current.muted = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!duration || Math.abs(position - lastSaved.current) < SAVE_EVERY_SECONDS) return;
-    lastSaved.current = position;
-    const nearEnd = position > duration - RESUME_END_MARGIN;
-    save(path, {
-      kind: 'time',
-      at: nearEnd ? 0 : position,
-      total: duration,
-      percent: nearEnd ? 100 : percentOf(position, duration),
-      savedAt: Date.now(),
-    });
-  }, [position, duration, path, save]);
-
-  const toggleMute = () => {
-    if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
-  };
   useKeyBindings(
     (
       [
@@ -151,19 +95,7 @@ export default function VideoViewer({ entry }: ViewerProps) {
     onNext: total > 1 ? () => step(1) : undefined,
   });
 
-  const lastTap = useRef(0);
-  const pointerType = useRef('mouse');
-  function onStagePointerUp(event: PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === 'mouse') return;
-    const now = Date.now();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const zone = (event.clientX - rect.left) / rect.width;
-    if (now - lastTap.current < 300 && zone < 0.35) seek(position - 10);
-    else if (now - lastTap.current < 300 && zone > 0.65) seek(position + 10);
-    lastTap.current = now;
-  }
-
-  const controlsHidden = idle && state.playing;
+  const { onPointerDown, onStagePointerUp, isMouse } = useTouchSeek(seek, position);
 
   return (
     <ViewerFrame entry={entry} immersive className="bg-black">
@@ -171,51 +103,27 @@ export default function VideoViewer({ entry }: ViewerProps) {
         {!probing ? (
           <video
             ref={videoRef}
-            key={source}
-            src={source}
+            key={video.source}
+            src={video.source}
             autoPlay
             playsInline
             className="size-full"
-            onPointerDown={event => (pointerType.current = event.pointerType)}
-            onClick={() => pointerType.current === 'mouse' && toggle()}
+            {...events}
+            onPointerDown={onPointerDown}
+            onClick={() => isMouse() && toggle()}
             onLoadedMetadata={event => {
-              const video = event.currentTarget;
-              video.volume = volume;
-              video.playbackRate = rate;
-              const at = resumeAt.current ?? 0;
-              resumeAt.current = 0;
-              if (at > RESUME_MIN_SECONDS && at < (duration || video.duration) - RESUME_END_MARGIN)
-                seek(at);
+              const element = event.currentTarget;
+              element.volume = volume;
+              element.playbackRate = rate;
+              const at = takeResume(duration || element.duration);
+              if (at !== null) seek(at);
             }}
-            onPlay={() => setState(current => ({ ...current, playing: true }))}
-            onPause={() => setState(current => ({ ...current, playing: false, waiting: false }))}
-            onWaiting={() => setState(current => ({ ...current, waiting: true }))}
-            onPlaying={() => setState(current => ({ ...current, waiting: false, playing: true }))}
-            onCanPlay={() => setState(current => ({ ...current, waiting: false }))}
             onVolumeChange={event => setMuted(event.currentTarget.muted)}
-            onDurationChange={event => {
-              // Read now: React clears currentTarget before a state updater runs.
-              const length = event.currentTarget.duration || 0;
-              setState(current => ({ ...current, duration: length }));
-            }}
-            onTimeUpdate={event => {
-              const video = event.currentTarget;
-              const buffered = video.buffered.length
-                ? video.buffered.end(video.buffered.length - 1)
-                : 0;
-              setState(current => ({ ...current, time: video.currentTime, buffered }));
-            }}
             onEnded={() => total > 1 && index < total - 1 && step(1)}
             onError={() => {
-              setState(current => ({ ...current, waiting: false }));
-              if (!transcoding) {
-                setOffset(position);
-                setForceTranscode(true);
-              } else {
-                setFailure(
-                  'The video could not be converted for this browser. Check that ffmpeg is installed on the server, or download the file.',
-                );
-              }
+              stopWaiting();
+              if (!video.transcoding) video.convertFrom(position);
+              else setFailure(CONVERSION_FAILED);
             }}
           >
             {subtitles.trackProps ? (
@@ -224,30 +132,14 @@ export default function VideoViewer({ entry }: ViewerProps) {
           </video>
         ) : null}
 
-        {failure ? (
-          <Notice
-            className="absolute inset-0 bg-stage"
-            icon={<TriangleAlert />}
-            title="This video cannot be played here"
-            body={failure}
-          />
-        ) : state.waiting ? (
-          <Centered className="pointer-events-none absolute inset-0 flex-col gap-3">
-            <Spinner className="size-8" />
-            {transcoding ? (
-              <p className="animate-appear px-6 text-center text-[13px] text-stage-ink/70">
-                Converting for this browser. The first seconds take a moment.
-              </p>
-            ) : null}
-          </Centered>
-        ) : null}
+        <StageNotice failure={failure} waiting={state.waiting} transcoding={video.transcoding} />
       </div>
 
       <VideoControls
-        hidden={controlsHidden}
+        hidden={idle && state.playing}
         position={position}
         duration={duration}
-        buffered={offset + state.buffered}
+        buffered={video.offset + state.buffered}
         onSeek={seek}
         playing={state.playing}
         onToggle={toggle}
@@ -258,13 +150,11 @@ export default function VideoViewer({ entry }: ViewerProps) {
         onVolume={applyVolume}
         onToggleMute={toggleMute}
         audio={{
-          tracks: audioTracks,
-          selected: audioTrack,
+          tracks: video.audioTracks,
+          selected: video.audioTrack,
           onSelect: track => {
-            if (track === null || track === audioTrack) return;
-            rememberAudio(audioTracks.find(candidate => candidate.index === track));
-            setOffset(position);
-            setAudioChoice(track);
+            if (track === null || track === video.audioTrack) return;
+            video.chooseAudio(track, position);
           },
         }}
         subtitles={{
@@ -277,24 +167,86 @@ export default function VideoViewer({ entry }: ViewerProps) {
           setRate(option);
           if (videoRef.current) videoRef.current.playbackRate = option;
         }}
-        onPictureInPicture={
-          document.pictureInPictureEnabled
-            ? () =>
-                document.pictureInPictureElement
-                  ? void document.exitPictureInPicture()
-                  : void videoRef.current?.requestPictureInPicture().catch(() => undefined)
-            : null
-        }
-        note={
-          subtitles.status === 'loading'
-            ? 'Loading subtitles. The first time reads the whole file, so a long film takes a while.'
-            : subtitles.status === 'failed'
-              ? 'These subtitles could not be read.'
-              : transcoding
-                ? 'Converted on the fly for this browser; seeking restarts the stream.'
-                : null
-        }
+        onPictureInPicture={pictureInPicture(videoRef)}
+        note={noteFor(subtitles.status, video.transcoding)}
       />
     </ViewerFrame>
   );
+}
+
+/** Over the picture: why it cannot play, or a spinner while it waits for data. */
+function StageNotice({
+  failure,
+  waiting,
+  transcoding,
+}: {
+  failure: string | null;
+  waiting: boolean;
+  transcoding: boolean;
+}) {
+  if (failure) {
+    return (
+      <Notice
+        className="absolute inset-0 bg-stage"
+        icon={<TriangleAlert />}
+        title="This video cannot be played here"
+        body={failure}
+      />
+    );
+  }
+  if (!waiting) return null;
+  return (
+    <Centered className="pointer-events-none absolute inset-0 flex-col gap-3">
+      <Spinner className="size-8" />
+      {transcoding ? (
+        <p className="animate-appear px-6 text-center text-[13px] text-stage-ink/70">
+          Converting for this browser. The first seconds take a moment.
+        </p>
+      ) : null}
+    </Centered>
+  );
+}
+
+/**
+ * Touch: a double tap on the left or right third skips 10 seconds. A mouse
+ * click on the picture plays or pauses instead, so the element remembers
+ * which kind of pointer pressed it.
+ */
+function useTouchSeek(seek: (seconds: number) => void, position: number) {
+  const lastTap = useRef(0);
+  const pointerType = useRef('mouse');
+
+  return {
+    onPointerDown: (event: PointerEvent<HTMLVideoElement>) => {
+      pointerType.current = event.pointerType;
+    },
+    isMouse: () => pointerType.current === 'mouse',
+    onStagePointerUp: (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'mouse') return;
+      const now = Date.now();
+      const rect = event.currentTarget.getBoundingClientRect();
+      const zone = (event.clientX - rect.left) / rect.width;
+      const doubleTap = now - lastTap.current < 300;
+      if (doubleTap && zone < 0.35) seek(position - 10);
+      else if (doubleTap && zone > 0.65) seek(position + 10);
+      lastTap.current = now;
+    },
+  };
+}
+
+function pictureInPicture(videoRef: { current: HTMLVideoElement | null }): (() => void) | null {
+  if (!document.pictureInPictureEnabled) return null;
+  return () =>
+    document.pictureInPictureElement
+      ? void document.exitPictureInPicture()
+      : void videoRef.current?.requestPictureInPicture().catch(() => undefined);
+}
+
+function noteFor(subtitleStatus: string, transcoding: boolean): string | null {
+  if (subtitleStatus === 'loading') {
+    return 'Loading subtitles. The first time reads the whole file, so a long film takes a while.';
+  }
+  if (subtitleStatus === 'failed') return 'These subtitles could not be read.';
+  if (transcoding) return 'Converted on the fly for this browser; seeking restarts the stream.';
+  return null;
 }

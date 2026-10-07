@@ -1,5 +1,3 @@
-import { useEffect } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { Density, FileEntry, Progress, SortDirection, SortField } from '@hearth/shared';
 
@@ -7,6 +5,7 @@ import { useCoarsePointer } from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/cn';
 import { formatSize, formatWhen, parentOf } from '@/lib/format';
 import { EntryVisual, ProgressBar } from './EntryVisual';
+import { useListingRows } from './useListingRows';
 
 export interface ListingProps {
   entries: FileEntry[];
@@ -44,18 +43,14 @@ export function FileList({
   showFolder: boolean;
   onReveal: (entry: FileEntry) => void;
 }) {
-  const virtualizer = useVirtualizer({
+  const virtualizer = useListingRows({
     count: entries.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeight,
+    scrollRef,
+    rowHeight,
     overscan: 12,
-    paddingEnd: bottomInset,
+    bottomInset,
+    focused: focusedIndex,
   });
-
-  useEffect(() => virtualizer.measure(), [rowHeight, virtualizer]);
-  useEffect(() => {
-    if (focusedIndex >= 0) virtualizer.scrollToIndex(focusedIndex, { align: 'auto' });
-  }, [focusedIndex, virtualizer]);
 
   const thumbWidth = rowHeight > 40 ? 96 : 64;
 

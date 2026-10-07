@@ -58,16 +58,22 @@ function Origin({ setting, onReset }: { setting: SettingState; onReset: () => vo
   );
 }
 
-export function SettingSwitch({
+type Change = (patch: AdminSettingsPatch) => void;
+
+/**
+ * One administrator setting as a row: its title, its description, where its
+ * value comes from, and the control, which gets the setting once it has loaded.
+ */
+function AdminRow({
   name,
   title,
   description,
-  disabled,
+  control,
 }: {
   name: SettingKey;
   title: string;
   description?: ReactNode;
-  disabled?: boolean;
+  control: (setting: SettingState | undefined, change: Change) => ReactNode;
 }) {
   const { find, change } = useAdminSettings();
   const setting = find(name);
@@ -81,13 +87,36 @@ export function SettingSwitch({
         </>
       }
     >
-      <Switch
-        checked={setting?.value === true}
-        onChange={value => change({ [name]: value })}
-        label={title}
-        disabled={!setting || disabled}
-      />
+      {control(setting, change)}
     </SettingRow>
+  );
+}
+
+export function SettingSwitch({
+  name,
+  title,
+  description,
+  disabled,
+}: {
+  name: SettingKey;
+  title: string;
+  description?: ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <AdminRow
+      name={name}
+      title={title}
+      description={description}
+      control={(setting, change) => (
+        <Switch
+          checked={setting?.value === true}
+          onChange={value => change({ [name]: value })}
+          label={title}
+          disabled={!setting || disabled}
+        />
+      )}
+    />
   );
 }
 
@@ -104,68 +133,79 @@ export function SettingNumber({
   title: string;
   description?: ReactNode;
 }) {
-  const { find, change } = useAdminSettings();
-  const setting = find(name);
+  return (
+    <AdminRow
+      name={name}
+      title={title}
+      description={description}
+      control={(setting, change) => (
+        <NumberControl
+          title={title}
+          setting={setting}
+          onChange={value => change({ [name]: value })}
+        />
+      )}
+    />
+  );
+}
+
+function NumberControl({
+  title,
+  setting,
+  onChange,
+}: {
+  title: string;
+  setting: SettingState | undefined;
+  onChange: (value: number) => void;
+}) {
   const value = typeof setting?.value === 'number' ? setting.value : 0;
-  const unlimited = setting?.kind === 'limit' && value === 0;
+  const isLimit = setting?.kind === 'limit';
+  const unlimited = isLimit && value === 0;
+  const shown = unlimited ? '' : String(value);
   const [draft, setDraft] = useState('');
-  useEffect(() => setDraft(unlimited ? '' : String(value)), [value, unlimited]);
+  useEffect(() => setDraft(shown), [shown]);
 
   const commit = () => {
     const parsed = Number.parseInt(draft, 10);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      setDraft(unlimited ? '' : String(value));
-      return;
-    }
-    if (parsed !== value) change({ [name]: parsed });
+    if (!Number.isInteger(parsed) || parsed <= 0) setDraft(shown);
+    else if (parsed !== value) onChange(parsed);
   };
 
-  const unit = setting?.unit ? UNIT_LABEL[setting.unit] : '';
   return (
-    <SettingRow
-      title={title}
-      description={
-        <>
-          {description}
-          {setting ? <Origin setting={setting} onReset={() => change({ [name]: null })} /> : null}
-        </>
-      }
-    >
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={1}
-          inputMode="numeric"
-          value={draft}
-          placeholder={unlimited ? 'No limit' : undefined}
-          disabled={!setting || unlimited}
-          onChange={event => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={event => {
-            if (event.key === 'Enter') commit();
-          }}
-          aria-label={title}
-          className="w-28 text-right tabular"
-        />
-        {/* Fixed slots, so every row's field lines up whether or not it has a unit or "no limit". */}
-        <span className="w-9 text-[12.5px] text-ink-3">{unit}</span>
-        <span className="flex w-[5.25rem] items-center">
-          {setting?.kind === 'limit' ? (
-            <label className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
-              <input
-                type="checkbox"
-                checked={unlimited}
-                onChange={event =>
-                  change({ [name]: event.target.checked ? 0 : unlimitedFallback(setting) })
-                }
-                className="accent-[var(--glaze)]"
-              />
-              No limit
-            </label>
-          ) : null}
-        </span>
-      </div>
-    </SettingRow>
+    <div className="flex items-center gap-2">
+      <Input
+        type="number"
+        min={1}
+        inputMode="numeric"
+        value={draft}
+        placeholder={unlimited ? 'No limit' : undefined}
+        disabled={!setting || unlimited}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={event => {
+          if (event.key === 'Enter') commit();
+        }}
+        aria-label={title}
+        className="w-28 text-right tabular"
+      />
+      {/* Fixed slots, so every row's field lines up whether or not it has a unit or "no limit". */}
+      <span className="w-9 text-[12.5px] text-ink-3">
+        {setting?.unit ? UNIT_LABEL[setting.unit] : ''}
+      </span>
+      <span className="flex w-[5.25rem] items-center">
+        {isLimit ? (
+          <label className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
+            <input
+              type="checkbox"
+              checked={unlimited}
+              onChange={event => onChange(event.target.checked ? 0 : unlimitedFallback(setting))}
+              className="accent-[var(--glaze)]"
+            />
+            No limit
+          </label>
+        ) : null}
+      </span>
+    </div>
   );
 }
 

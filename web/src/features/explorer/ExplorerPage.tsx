@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FolderOpen, FolderPlus, SearchX, TriangleAlert, Upload } from 'lucide-react';
 import type { FileEntry } from '@hearth/shared';
 
 import { api, mediaUrls } from '@/lib/api';
@@ -15,18 +14,15 @@ import { useShell } from '@/features/shell/shell-context';
 import { useUploads, type QueuedFile } from '@/features/transfer/uploads';
 import { UploadTray } from '@/features/transfer/UploadTray';
 import { useFileDrop, useUploadPickers } from '@/features/transfer/useFilePicking';
-import { Button } from '@/ui/Button';
-import { Notice } from '@/ui/Feedback';
-import { actionsFor, folderActions } from './actions';
+import { actionsFor } from './actions';
 import { paletteCommands } from './commands';
 import { CommandPalette } from './CommandPalette';
-import { ContextMenu } from './ContextMenu';
 import { ExplorerDialogs, type DialogState } from './dialogs';
 import { useEntryEvents } from './entryEvents';
 import { ExplorerHeader } from './ExplorerHeader';
-import { FileGrid } from './FileGrid';
-import { FileList, useRowHeight } from './FileList';
-import { ListingSkeleton } from './ListingSkeleton';
+import { emptySpaceHandlers, ExplorerMenu, type MenuState } from './ExplorerMenu';
+import { useRowHeight } from './FileList';
+import { ListingBody } from './ListingBody';
 import { SelectionBar } from './SelectionBar';
 import { useRevealInFolder } from './search';
 import { explorerShortcuts } from './shortcuts';
@@ -47,9 +43,9 @@ export function ExplorerPage() {
   const uploads = useUploads();
 
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
-  // No entries means the folder's own menu, opened on empty space.
-  const [menu, setMenu] = useState<{ entries: FileEntry[]; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const newFolder = useCallback(() => setDialog({ kind: 'new-folder' }), []);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [columns, setColumns] = useState(1);
 
@@ -142,7 +138,7 @@ export function ExplorerPage() {
         setTheme: theme => update('theme', theme),
         openSettings: shell.openSettings,
         signOut: () => void signOut(),
-        newFolder: () => setDialog({ kind: 'new-folder' }),
+        newFolder,
         uploadFiles: pickers.pickFiles,
         uploadFolder: pickers.pickFolder,
       }),
@@ -157,6 +153,7 @@ export function ExplorerPage() {
       canWrite,
       pickers.pickFiles,
       pickers.pickFolder,
+      newFolder,
     ],
   );
 
@@ -176,7 +173,7 @@ export function ExplorerPage() {
       canDelete,
       blocked,
       openPalette: () => setPaletteOpen(true),
-      newFolder: () => setDialog({ kind: 'new-folder' }),
+      newFolder,
       upload: pickers.pickFiles,
       focusSearch: () => searchRef.current?.focus(),
     }),
@@ -202,7 +199,7 @@ export function ExplorerPage() {
         viewMode={preferences.viewMode}
         canWrite={canWrite}
         onViewMode={mode => update('viewMode', mode)}
-        onNewFolder={() => setDialog({ kind: 'new-folder' })}
+        onNewFolder={newFolder}
         onUploadFiles={pickers.pickFiles}
         onUploadFolder={pickers.pickFolder}
         onOpenNav={shell.openNav}
@@ -210,96 +207,29 @@ export function ExplorerPage() {
       />
 
       {explorer.isTruncated ? (
-        <p className="mx-4 mb-2 rounded-lg bg-glaze-wash px-3 py-1.5 text-[12.5px] text-ink-2 sm:mx-6">
-          Showing the first {entries.length.toLocaleString()} of {explorer.total.toLocaleString()}.
-          Search to narrow this folder down.
-        </p>
+        <TruncatedNote shown={entries.length} total={explorer.total} />
       ) : null}
 
       <div
         ref={scrollRef}
         className="scroll-thin relative min-h-0 flex-1 overflow-auto border-t border-line"
-        // Anywhere that is not an item or a control is empty space: the gaps
-        // between tiles and the end of a row count, not just below the last one.
-        onClick={event => {
-          if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-          if (!isEmptySpace(event.target)) return;
-          selection.clear();
-        }}
-        onContextMenu={event => {
-          if (event.defaultPrevented || !isEmptySpace(event.target)) return;
-          event.preventDefault();
-          selection.clear();
-          setMenu({ entries: [], x: event.clientX, y: event.clientY });
-        }}
+        {...emptySpaceHandlers(selection.clear, (x, y) => setMenu({ entries: [], x, y }))}
       >
-        {explorer.isPending ? (
-          <ListingSkeleton
-            view={isGrid ? 'grid' : 'list'}
-            tileSize={preferences.gridSize}
-            rowHeight={rowHeight}
-            scrollRef={scrollRef}
-          />
-        ) : explorer.error ? (
-          <Notice
-            icon={<TriangleAlert />}
-            title="This folder could not be opened"
-            body={explorer.error.message}
-            action={
-              <Button variant="outline" onClick={() => void explorer.refetch()}>
-                Try again
-              </Button>
-            }
-          />
-        ) : entries.length === 0 ? (
-          explorer.isSearching ? (
-            <Notice
-              icon={<SearchX />}
-              title="Nothing matches"
-              body={
-                !explorer.isRecursive
-                  ? 'Try including subfolders too.'
-                  : 'Try fewer or different words, or clear the type filter.'
-              }
-            />
-          ) : (
-            <Notice
-              icon={<FolderOpen />}
-              title="This folder is empty"
-              body={canWrite ? 'Drop files here to upload them, or create a folder.' : undefined}
-              action={
-                canWrite ? (
-                  <div className="flex gap-2">
-                    <Button variant="primary" onClick={pickers.pickFiles}>
-                      <Upload /> Upload files
-                    </Button>
-                    <Button variant="outline" onClick={() => setDialog({ kind: 'new-folder' })}>
-                      <FolderPlus /> New folder
-                    </Button>
-                  </div>
-                ) : undefined
-              }
-            />
-          )
-        ) : isGrid ? (
-          <FileGrid {...listing} tileSize={preferences.gridSize} onColumns={setColumns} />
-        ) : (
-          <FileList
-            {...listing}
-            sort={search.sort}
-            direction={search.direction}
-            onSort={explorer.sortBy}
-            showFolder={explorer.isSearching && explorer.isRecursive}
-            onReveal={entry => revealInFolder(entry.path)}
-          />
-        )}
+        <ListingBody
+          explorer={explorer}
+          listing={listing}
+          isGrid={isGrid}
+          tileSize={preferences.gridSize}
+          canWrite={canWrite}
+          scrollRef={scrollRef}
+          onColumns={setColumns}
+          onReveal={revealInFolder}
+          onUpload={pickers.pickFiles}
+          onNewFolder={newFolder}
+        />
       </div>
 
-      {drop.dropping ? (
-        <div className="animate-fade pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-3xl border-2 border-dashed border-glaze bg-glaze-wash">
-          <p className="display-title text-[32px] text-glaze-strong">Drop to upload here</p>
-        </div>
-      ) : null}
+      {drop.dropping ? <DropHint /> : null}
 
       <DockSlot slot="center">
         <SelectionBar
@@ -317,27 +247,18 @@ export function ExplorerPage() {
       </DockSlot>
 
       {menu ? (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          title={
-            menu.entries.length === 0
-              ? (search.path.split('/').at(-1) ?? '') || 'This folder'
-              : menu.entries.length === 1
-                ? menu.entries[0]!.name
-                : `${menu.entries.length} items`
-          }
-          actions={
-            menu.entries.length === 0
-              ? folderActions(canWrite && !explorer.isSearching, {
-                  newFolder: () => setDialog({ kind: 'new-folder' }),
-                  upload: pickers.pickFiles,
-                  paste: operations.clipboard ? operations.paste : null,
-                  selectAll: selection.selectAll,
-                  refresh: () => void explorer.refetch(),
-                })
-              : actionsFor(menu.entries, permissions, handlers)
-          }
+        <ExplorerMenu
+          menu={menu}
+          folder={search.path}
+          canWriteHere={canWrite && !explorer.isSearching}
+          folderHandlers={{
+            newFolder,
+            upload: pickers.pickFiles,
+            paste: operations.clipboard ? operations.paste : null,
+            selectAll: selection.selectAll,
+            refresh: () => void explorer.refetch(),
+          }}
+          entryActions={targets => actionsFor(targets, permissions, handlers)}
           onClose={closeMenu}
         />
       ) : null}
@@ -356,10 +277,19 @@ export function ExplorerPage() {
   );
 }
 
-/** Not an item, a button, a link or a field: a click there means "nothing". */
-function isEmptySpace(target: EventTarget | null): boolean {
+function TruncatedNote({ shown, total }: { shown: number; total: number }) {
   return (
-    target instanceof Element &&
-    !target.closest('[data-entry], button, a, input, label, [role="columnheader"]')
+    <p className="mx-4 mb-2 rounded-lg bg-glaze-wash px-3 py-1.5 text-[12.5px] text-ink-2 sm:mx-6">
+      Showing the first {shown.toLocaleString()} of {total.toLocaleString()}. Search to narrow this
+      folder down.
+    </p>
+  );
+}
+
+function DropHint() {
+  return (
+    <div className="animate-fade pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-3xl border-2 border-dashed border-glaze bg-glaze-wash">
+      <p className="display-title text-[32px] text-glaze-strong">Drop to upload here</p>
+    </div>
   );
 }

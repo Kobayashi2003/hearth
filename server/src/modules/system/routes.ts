@@ -8,7 +8,7 @@ import type {
 } from '@hearth/shared';
 
 import { HEARTH_VERSION } from '../../config/env.js';
-import { rootAvailable } from '../../config/index.js';
+import { rootAvailable } from '../../config/roots.js';
 import { HearthError } from '../../lib/errors.js';
 
 const switchRootSchema = {
