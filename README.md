@@ -46,7 +46,7 @@ npm run dev
 
 # Production: backend + Caddy edge serving the built SPA.
 .\start.ps1 -Build
-#   → http://localhost:30709/hearth  (behind frp, in the intended deployment)
+#   → http://localhost:17012/hearth  (-Bind moves the edge, e.g. onto a tunnel's port)
 ```
 
 The default login for the example config is `admin` / `hearth` — change
@@ -57,8 +57,8 @@ The default login for the example config is `admin` / `hearth` — change
 ## Deployment shape
 
 ```
-Internet ─► frp tunnel ─► :30709 Caddy edge ─┬─► /hearth/*  → static SPA (web/dist)
-                                             └─► /hearth-api/* → backend :17010 (loopback)
+Internet ─► tunnel ─► :17012 Caddy edge ─┬─► /hearth/*  → static SPA (web/dist)
+                                         └─► /hearth-api/* → backend :17010 (loopback)
 ```
 
 - The backend binds **loopback only**. Every request, media byte streams

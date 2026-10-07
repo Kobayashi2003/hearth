@@ -1,4 +1,4 @@
-# Standalone edge — Hearth alone behind frp on :30709.
+# Standalone edge — Hearth alone, on :17012 unless start.ps1 -Bind says otherwise.
 #
 # Routes live in ./Caddyfile.snippet; this file is just the site block around
 # them. Started by start.ps1, and skipped under `start.ps1 -NoCaddy`, when an
@@ -18,7 +18,7 @@
 	}
 }
 
-{$CADDY_BIND::30709} {
+{$CADDY_BIND::17012} {
 	import Caddyfile.snippet
 
 	# The frontend lives under its prefix, so the bare root serves nothing.

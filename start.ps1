@@ -2,7 +2,7 @@
 # Whole-app launcher. Boots the backend and the Caddy edge, and forwards Ctrl+C
 # to both:
 #   1. backend — node server/dist/main.js, loopback only
-#   2. Caddy   — the public ingress (frp forwards to -Bind, default :30709);
+#   2. Caddy   — the public ingress, on -Bind (default :17012);
 #                routes are in ./Caddyfile.snippet, upstreams from ./caddy-env.ps1
 #
 # There is no frontend process any more: the SPA is static assets Caddy serves
@@ -21,7 +21,7 @@
 param(
     [switch]$Build,
     [switch]$NoCaddy,
-    [string]$Bind = ':30709'
+    [string]$Bind = ':17012'
 )
 
 $ErrorActionPreference = 'Stop'
