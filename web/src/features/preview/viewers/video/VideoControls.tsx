@@ -72,7 +72,7 @@ export function VideoControls({
   return (
     <div
       className={cn(
-        'absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10 transition-opacity duration-300',
+        'absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[calc(0.75rem+var(--safe-bottom))] pt-10 transition-opacity duration-300',
         hidden && 'pointer-events-none opacity-0',
       )}
     >

@@ -4,7 +4,7 @@ import { loadConfig } from './config/index.js';
 import { rootAvailable } from './config/roots.js';
 import { createLogger } from './lib/logger.js';
 
-/** `npm run dev` passes --development; it layers .env.development, which lifts every limit. */
+/** `pnpm dev` passes --development; it layers .env.development, which lifts every limit. */
 const development =
   process.argv.includes('--development') || process.env.HEARTH_MODE === 'development';
 const envFiles = loadEnvFiles(development);

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { FileEntry } from '@hearth/shared';
 
 import { api, mediaUrls } from '@/lib/api';
+import { useCoarsePointer } from '@/hooks/useMediaQuery';
 import { useKeyBindings } from '@/lib/keys';
 import { isPreviewable } from '@/lib/file-kind';
 import { useSession } from '@/features/session/session';
@@ -29,6 +30,7 @@ import { explorerShortcuts } from './shortcuts';
 import { useLanding } from './useLanding';
 import { useExplorer } from './useExplorer';
 import { useFileOperations } from './useFileOperations';
+import { useScrollFold } from './useScrollFold';
 import { useSelection } from './useSelection';
 
 export function ExplorerPage() {
@@ -51,7 +53,9 @@ export function ExplorerPage() {
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const folded = useScrollFold(scrollRef, search.path);
 
+  const touch = useCoarsePointer();
   const canWrite = can('write');
   const canDelete = can('delete');
   const rowHeight = useRowHeight(preferences.density);
@@ -108,8 +112,12 @@ export function ExplorerPage() {
     onOpen: open,
     onMenu: (entry, x, y) => {
       // Right-clicking inside the selection acts on all of it; outside, on that one item.
-      const targets = selection.selected.has(entry.path) ? selection.selectedEntries : [entry];
-      if (!selection.selected.has(entry.path)) selection.pick(entry.path);
+      // A mouse also selects it, to show what the menu is for; a long press does not, since
+      // the sheet names the item, and a selection left behind would turn the next tap into
+      // selecting rather than opening.
+      const inSelection = selection.selected.has(entry.path);
+      const targets = inSelection ? selection.selectedEntries : [entry];
+      if (!inSelection && !touch) selection.pick(entry.path);
       setMenu({ entries: targets, x, y });
     },
     isSelecting: selection.selected.size > 0,
@@ -204,6 +212,7 @@ export function ExplorerPage() {
         onUploadFolder={pickers.pickFolder}
         onOpenNav={shell.openNav}
         searchRef={searchRef}
+        collapsed={folded}
       />
 
       {explorer.isTruncated ? (

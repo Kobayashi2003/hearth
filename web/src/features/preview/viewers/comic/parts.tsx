@@ -150,7 +150,7 @@ export function PageSlider({
   return (
     <div
       className={cn(
-        'absolute inset-x-0 bottom-0 z-20 flex items-center gap-3 bg-gradient-to-t from-black/75 to-transparent px-5 pb-4 pt-8 transition-opacity duration-300',
+        'absolute inset-x-0 bottom-0 z-20 flex items-center gap-3 bg-gradient-to-t from-black/75 to-transparent px-5 pb-[calc(1rem+var(--safe-bottom))] pt-8 transition-opacity duration-300',
         hidden && 'pointer-events-none opacity-0',
       )}
     >

@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/cn';
 
+/** A finger needs rows about 44px tall; a mouse is happier with a tighter list. */
 export const menuSurface =
-  'z-50 min-w-44 rounded-xl border border-line bg-surface p-1 text-[13px] shadow-float animate-rise data-[state=closed]:animate-sink';
+  'z-50 min-w-44 rounded-xl border border-line bg-surface p-1 text-[13px] shadow-float animate-rise data-[state=closed]:animate-sink [@media(pointer:coarse)]:min-w-56 [@media(pointer:coarse)]:text-[15px]';
 export const menuItem =
-  'flex h-8 w-full select-none items-center gap-2.5 rounded-lg px-2.5 text-left text-ink outline-none ' +
+  'flex h-8 w-full select-none items-center gap-2.5 rounded-lg px-2.5 text-left text-ink outline-none [@media(pointer:coarse)]:h-11 ' +
   'data-[highlighted]:bg-sunken hover:bg-sunken data-[disabled]:opacity-40 [&_svg]:size-4 [&_svg]:text-ink-3';
 
 export function Menu({

@@ -12,7 +12,7 @@
 #
 # Usage:
 #   .\start.ps1            # start with whatever is already built
-#   .\start.ps1 -Build     # npm run build first
+#   .\start.ps1 -Build     # pnpm build first
 #   .\start.ps1 -NoCaddy   # skip the edge (an external edge owns the port)
 #   .\start.ps1 -Bind :8080
 # ============================================================================
@@ -39,19 +39,21 @@ if (-not $NoCaddy) {
     }
 }
 
+foreach ($tool in 'node', 'pnpm') {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        throw "$tool is not on PATH."
+    }
+}
 if (-not (Test-Path (Join-Path $root 'node_modules'))) {
-    throw 'Dependencies are not installed. Run `npm install` in the repository root first.'
+    throw 'Dependencies are not installed. Run `pnpm install` in the repository root first.'
 }
 
 if ($Build) {
-    # npm on Windows is a .cmd shim; name it explicitly so Start-Process resolves it.
-    $npm = if ($IsWindows -or $null -eq $IsWindows) { 'npm.cmd' } else { 'npm' }
-    Write-Host '[BUILD] npm run build' -ForegroundColor Cyan
-    # -PassThru + ExitCode, not a bare -Wait: a failed build would otherwise pass
-    # silently and we would launch the previous, stale artifacts.
-    $buildProc = Start-Process -FilePath $npm -ArgumentList 'run','build' `
-        -WorkingDirectory $root -NoNewWindow -Wait -PassThru
-    if ($buildProc.ExitCode -ne 0) { throw "npm run build failed (exit $($buildProc.ExitCode))" }
+    Write-Host '[BUILD] pnpm build' -ForegroundColor Cyan
+    Push-Location $root
+    try { pnpm build } finally { Pop-Location }
+    # A failed build would otherwise launch the previous, stale artifacts.
+    if ($LASTEXITCODE -ne 0) { throw "pnpm build failed (exit $LASTEXITCODE)" }
 }
 
 # caddy-env.ps1 owns where Hearth listens: the backend port from .env, the static

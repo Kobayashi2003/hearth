@@ -5,8 +5,14 @@ import { EntryVisual, ProgressBar } from './EntryVisual';
 import type { ListingProps } from './FileList';
 import { useListingRows } from './useListingRows';
 
-export const GAP = 14;
-export const PADDING = 24;
+/** Gutters, wider on a desktop; a phone spends its width on the covers. */
+const SPACING = { wide: { gap: 14, padding: 24 }, narrow: { gap: 8, padding: 12 } };
+const NARROW_WIDTH = 640;
+/**
+ * The cover size is chosen on whatever screen the preference was set on; on a
+ * phone the same setting gives three columns rather than two outsized ones.
+ */
+const NARROW_SCALE = 0.7;
 /** Tiles are book-shaped: most of what earns a cover here is comics, novels and albums. */
 export const ASPECT = 4 / 3;
 const CAPTION = 44;
@@ -15,7 +21,7 @@ const CAPTION = 44;
 export function useGridLayout(
   scrollRef: React.RefObject<HTMLDivElement | null>,
   tileSize: number,
-): { columns: number; tileWidth: number; rowHeight: number } {
+): { columns: number; tileWidth: number; rowHeight: number; gap: number; padding: number } {
   const [width, setWidth] = useState(0);
 
   useLayoutEffect(() => {
@@ -27,10 +33,13 @@ export function useGridLayout(
     return () => observer.disconnect();
   }, [scrollRef]);
 
+  const narrow = width > 0 && width < NARROW_WIDTH;
+  const { gap, padding } = narrow ? SPACING.narrow : SPACING.wide;
+  const preferred = narrow ? tileSize * NARROW_SCALE : tileSize;
   // Rounded, so tiles stay within about half a step of the preferred size either way.
-  const columns = Math.max(2, Math.round((width - PADDING * 2 + GAP) / (tileSize + GAP)));
-  const tileWidth = width > 0 ? (width - PADDING * 2 - GAP * (columns - 1)) / columns : tileSize;
-  return { columns, tileWidth, rowHeight: tileWidth * ASPECT + CAPTION + GAP };
+  const columns = Math.max(2, Math.round((width - padding * 2 + gap) / (preferred + gap)));
+  const tileWidth = width > 0 ? (width - padding * 2 - gap * (columns - 1)) / columns : preferred;
+  return { columns, tileWidth, rowHeight: tileWidth * ASPECT + CAPTION + gap, gap, padding };
 }
 
 export function FileGrid({
@@ -45,7 +54,7 @@ export function FileGrid({
   tileSize,
   onColumns,
 }: ListingProps & { tileSize: number; onColumns: (columns: number) => void }) {
-  const { columns, tileWidth, rowHeight } = useGridLayout(scrollRef, tileSize);
+  const { columns, tileWidth, rowHeight, gap, padding } = useGridLayout(scrollRef, tileSize);
   const rows = Math.ceil(entries.length / columns);
 
   useEffect(() => onColumns(columns), [columns, onColumns]);
@@ -55,7 +64,7 @@ export function FileGrid({
     scrollRef,
     rowHeight,
     overscan: 3,
-    paddingStart: PADDING,
+    paddingStart: padding,
     bottomInset,
     focused: focusedIndex,
     perRow: columns,
@@ -77,9 +86,9 @@ export function FileGrid({
           className="absolute grid"
           style={{
             top: row.start,
-            left: PADDING,
-            right: PADDING,
-            gap: GAP,
+            left: padding,
+            right: padding,
+            gap,
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
           }}
         >

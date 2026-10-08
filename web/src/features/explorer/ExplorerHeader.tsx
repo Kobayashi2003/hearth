@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useState, type ReactNode, type RefObject } from 'react';
 
 import {
   ArrowLeft,
@@ -10,13 +10,19 @@ import {
 } from 'lucide-react';
 import type { ViewMode } from '@hearth/shared';
 
-import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useIsCompact, useIsNarrow } from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
-import { FilterBar, KINDS } from './FilterBar';
-import type { SearchScope } from './search';
+import { FilterBar } from './FilterBar';
+import {
+  COMPACT_TITLE_SIZES,
+  countLine,
+  headerTitle,
+  TITLE_SIZES,
+  titleScale,
+} from './header-title';
 import { SearchField } from './SearchField';
-import { ViewTools } from './ViewTools';
+import { NewMenu, ViewMenu, ViewTools, type ToolProps } from './ViewTools';
 import type { Explorer } from './useExplorer';
 
 export function ExplorerHeader({
@@ -30,6 +36,7 @@ export function ExplorerHeader({
   onUploadFolder,
   onOpenNav,
   searchRef,
+  collapsed,
 }: {
   explorer: Explorer;
   rootLabel: string;
@@ -42,115 +49,224 @@ export function ExplorerHeader({
   /** Present on narrow screens, where the sidebar is a drawer. */
   onOpenNav?: (() => void) | undefined;
   searchRef: RefObject<HTMLInputElement | null>;
+  /** Scrolled down the listing: a compact header folds to its first row. */
+  collapsed: boolean;
 }) {
-  const { search, patch, isSearching } = explorer;
+  const { search, patch } = explorer;
   // On a phone the search field is an icon until wanted, then takes the whole row.
-  const narrow = useMediaQuery('(max-width: 639px)');
+  const narrow = useIsNarrow();
+  const compact = useIsCompact();
   const [searchOpen, setSearchOpen] = useState(false);
+  // A new folder starts with the search closed.
+  const [searchedIn, setSearchedIn] = useState(search.path);
+  if (searchedIn !== search.path) {
+    setSearchedIn(search.path);
+    setSearchOpen(false);
+  }
   const searchTakesRow = narrow && (searchOpen || Boolean(search.q));
-  useEffect(() => setSearchOpen(false), [search.path]);
   const segments = search.path ? search.path.split('/') : [];
   const title = headerTitle(explorer, segments, rootLabel);
+  const folded = compact && collapsed;
+  const tools: ToolProps = {
+    viewMode,
+    canWrite,
+    onViewMode,
+    onNewFolder,
+    onUploadFiles,
+    onUploadFolder,
+  };
 
   return (
-    <header className="shrink-0 px-4 pt-3 sm:px-6">
+    <header className={cn('shrink-0 px-4 sm:px-6', compact ? 'pt-1' : 'pt-3')}>
       {searchTakesRow ? (
-        <div className="flex h-10 items-center gap-1">
-          <Button
-            size="icon"
-            aria-label="Close search"
-            className="-ml-2"
-            onClick={() => {
-              setSearchOpen(false);
-              patch({ q: '' });
-            }}
-          >
-            <ArrowLeft />
-          </Button>
-          <SearchField
-            explorer={explorer}
-            inputRef={searchRef}
-            autoFocus
-            className="w-auto flex-1"
-          />
-        </div>
+        <SearchRow
+          explorer={explorer}
+          searchRef={searchRef}
+          onClose={() => {
+            setSearchOpen(false);
+            patch({ q: '' });
+          }}
+        />
       ) : (
-        <div className="flex h-10 items-center gap-1">
-          {onOpenNav ? (
-            <Button size="icon" onClick={onOpenNav} aria-label="Open navigation" className="-ml-2">
-              <MenuIcon />
-            </Button>
-          ) : null}
-          <div className="hidden items-center sm:flex">
-            <Button
-              size="icon"
-              onClick={() => window.history.back()}
-              aria-label="Back"
-              title="Back"
-            >
-              <ArrowLeft />
-            </Button>
-            <Button
-              size="icon"
-              onClick={() => window.history.forward()}
-              aria-label="Forward"
-              title="Forward"
-            >
-              <ArrowRight />
-            </Button>
-          </div>
-          <Button
-            size="icon"
-            onClick={explorer.goUp}
-            disabled={search.path === ''}
-            aria-label="Up one folder"
-            title="Up (Alt+↑)"
-          >
-            <ArrowUp />
-          </Button>
-
-          <Breadcrumbs
-            segments={isSearching ? segments : segments.slice(0, -1)}
-            rootLabel={rootLabel}
-            onOpen={explorer.openFolder}
-          />
-
-          {narrow ? (
-            <Button size="icon" onClick={() => setSearchOpen(true)} aria-label="Search this folder">
-              <Search />
-            </Button>
-          ) : (
-            <SearchField explorer={explorer} inputRef={searchRef} />
-          )}
-        </div>
+        <NavRow
+          explorer={explorer}
+          rootLabel={rootLabel}
+          segments={segments}
+          onOpenNav={onOpenNav}
+          // Folded away, the title takes the path's place, so where you are stays in sight.
+          heading={folded ? title : null}
+          search={
+            narrow ? (
+              <Button
+                size="icon"
+                onClick={() => setSearchOpen(true)}
+                aria-label="Search this folder"
+              >
+                <Search />
+              </Button>
+            ) : (
+              <SearchField explorer={explorer} inputRef={searchRef} />
+            )
+          }
+          tools={compact ? <CompactTools explorer={explorer} tools={tools} /> : null}
+        />
       )}
 
-      <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2 pb-3 [@media(max-height:500px)]:mt-1 [@media(max-height:500px)]:pb-2">
-        <h1
-          className={cn(
-            'display-title line-clamp-2 min-w-0 max-w-full break-words pb-0.5 [@media(max-height:500px)]:text-[26px]',
-            TITLE_SIZES[titleScale(title ?? '')],
-          )}
-          title={title}
-        >
-          {title}
-        </h1>
-        <p className="tabular pb-1 text-[13px] text-ink-3">
-          {countLine(explorer, segments, rootLabel)}
-        </p>
-
-        <ViewTools
-          explorer={explorer}
-          viewMode={viewMode}
-          canWrite={canWrite}
-          onViewMode={onViewMode}
-          onNewFolder={onNewFolder}
-          onUploadFiles={onUploadFiles}
-          onUploadFolder={onUploadFolder}
-        />
-      </div>
-      <FilterBar explorer={explorer} />
+      {folded ? null : (
+        <>
+          <TitleRow
+            explorer={explorer}
+            title={title}
+            count={countLine(explorer, segments, rootLabel)}
+            compact={compact}
+            tools={tools}
+          />
+          <FilterBar explorer={explorer} />
+        </>
+      )}
     </header>
+  );
+}
+
+/** A phone's search: back out of it, and the field across the row. */
+function SearchRow({
+  explorer,
+  searchRef,
+  onClose,
+}: {
+  explorer: Explorer;
+  searchRef: RefObject<HTMLInputElement | null>;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex h-11 items-center gap-1">
+      <Button size="icon" aria-label="Close search" className="-ml-2" onClick={onClose}>
+        <ArrowLeft />
+      </Button>
+      <SearchField explorer={explorer} inputRef={searchRef} autoFocus className="w-auto flex-1" />
+    </div>
+  );
+}
+
+/** The toolbar folded into the first row: the view menu and, for writers, New. */
+function CompactTools({ explorer, tools }: { explorer: Explorer; tools: ToolProps }) {
+  return (
+    <>
+      <ViewMenu explorer={explorer} viewMode={tools.viewMode} onViewMode={tools.onViewMode} />
+      {tools.canWrite ? (
+        <NewMenu
+          compact
+          onNewFolder={tools.onNewFolder}
+          onUploadFiles={tools.onUploadFiles}
+          onUploadFolder={tools.onUploadFolder}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The folder's name and count; with room, the toolbar beside them. */
+function TitleRow({
+  explorer,
+  title,
+  count,
+  compact,
+  tools,
+}: {
+  explorer: Explorer;
+  title: string | undefined;
+  count: string;
+  compact: boolean;
+  tools: ToolProps;
+}) {
+  const scale = titleScale(title ?? '');
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-end gap-x-4 gap-y-2',
+        compact ? 'mt-1 pb-2' : 'mt-4 pb-3',
+      )}
+    >
+      <h1
+        className={cn(
+          'display-title min-w-0 max-w-full break-words pb-0.5',
+          compact
+            ? cn('truncate', COMPACT_TITLE_SIZES[scale])
+            : cn('line-clamp-2', TITLE_SIZES[scale]),
+        )}
+        title={title}
+      >
+        {title}
+      </h1>
+      <p className="tabular pb-1 text-[13px] text-ink-3">{count}</p>
+      {compact ? null : <ViewTools explorer={explorer} {...tools} />}
+    </div>
+  );
+}
+
+/** Menu, back, forward and up, then the path (or the folder's name, folded), search and tools. */
+function NavRow({
+  explorer,
+  rootLabel,
+  segments,
+  onOpenNav,
+  heading,
+  search,
+  tools,
+}: {
+  explorer: Explorer;
+  rootLabel: string;
+  segments: string[];
+  onOpenNav: (() => void) | undefined;
+  heading: string | null | undefined;
+  search: ReactNode;
+  tools: ReactNode;
+}) {
+  return (
+    <div className="flex h-11 items-center gap-0.5 sm:gap-1">
+      {onOpenNav ? (
+        <Button size="icon" onClick={onOpenNav} aria-label="Open navigation" className="-ml-2">
+          <MenuIcon />
+        </Button>
+      ) : null}
+      <div className="hidden items-center sm:flex">
+        <Button size="icon" onClick={() => window.history.back()} aria-label="Back" title="Back">
+          <ArrowLeft />
+        </Button>
+        <Button
+          size="icon"
+          onClick={() => window.history.forward()}
+          aria-label="Forward"
+          title="Forward"
+        >
+          <ArrowRight />
+        </Button>
+      </div>
+      <Button
+        size="icon"
+        onClick={explorer.goUp}
+        disabled={explorer.search.path === ''}
+        aria-label="Up one folder"
+        title="Up (Alt+↑)"
+      >
+        <ArrowUp />
+      </Button>
+
+      {heading ? (
+        <h1 className="ml-1 min-w-0 flex-1 truncate text-[16px] font-semibold" title={heading}>
+          {heading}
+        </h1>
+      ) : (
+        <Breadcrumbs
+          segments={explorer.isSearching ? segments : segments.slice(0, -1)}
+          rootLabel={rootLabel}
+          onOpen={explorer.openFolder}
+        />
+      )}
+
+      {search}
+      {tools}
+    </div>
   );
 }
 
@@ -190,48 +306,4 @@ function Breadcrumbs({
       ))}
     </nav>
   );
-}
-
-function headerTitle(explorer: Explorer, segments: string[], rootLabel: string) {
-  const { search, isSearching } = explorer;
-  if (!isSearching) return segments.at(-1) ?? rootLabel;
-  if (search.q) return `“${search.q}”`;
-  return KINDS.find(([kind]) => kind === search.type)?.[1];
-}
-
-function countLine(explorer: Explorer, segments: string[], rootLabel: string): string {
-  const { total, search } = explorer;
-  // No count yet: a no-break space keeps the line, so nothing shifts when it arrives.
-  if (explorer.isPending) return '\u00a0';
-  if (explorer.isSearching) {
-    return `${total.toLocaleString()} found ${scopePhrase(search.scope, segments.at(-1), rootLabel)}`;
-  }
-  return `${total.toLocaleString()} ${total === 1 ? 'item' : 'items'}`;
-}
-
-function scopePhrase(scope: SearchScope, folder: string | undefined, rootLabel: string): string {
-  if (!folder) return `in all of ${rootLabel}`;
-  return scope === 'here' ? `directly in ${folder}` : `in ${folder} and its subfolders`;
-}
-
-const TITLE_SIZES = {
-  short: 'text-[clamp(30px,5vw,52px)]',
-  medium: 'text-[clamp(26px,3.6vw,40px)]',
-  long: 'text-[clamp(22px,2.6vw,30px)]',
-} as const;
-
-/** Long names step down so a CJK album title does not outweigh the page; a full-width glyph counts double. */
-function titleScale(title: string): keyof typeof TITLE_SIZES {
-  let width = 0;
-  for (const character of title) {
-    width +=
-      /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(
-        character,
-      )
-        ? 1
-        : 0.55;
-  }
-  if (width <= 14) return 'short';
-  if (width <= 26) return 'medium';
-  return 'long';
 }

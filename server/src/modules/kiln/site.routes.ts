@@ -185,7 +185,7 @@ function siteRoute({ listing, streams, documents, ffmpeg }: SiteRouteServices): 
       if (!runtime.get('htmlRuffle')) throw HearthError.notFound('Ruffle is turned off');
       const file = documents.ruffleFile(rest.slice(RUFFLE_PREFIX.length));
       if (!file) {
-        throw HearthError.notFound('Ruffle is not installed; run `npm run ruffle` on the server');
+        throw HearthError.notFound('Ruffle is not installed; run `pnpm ruffle` on the server');
       }
       return streams.sendGenerated(reply, file);
     }

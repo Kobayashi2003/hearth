@@ -4,7 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#3E7A6B" />
+    <!-- The phone's own bars take the page's colour, so the app reads as one surface. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef0ec" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16191b" />
+    <!-- Added to a home screen it opens without the browser around it; the layout clears the notch. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Hearth" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <title>Hearth</title>
     <script>

@@ -155,6 +155,8 @@ function Item({
       aria-current={active ? 'page' : undefined}
       className={cn(
         'flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13.5px] text-ink-2 hover:bg-sunken hover:text-ink [&_svg]:size-4 [&_svg]:shrink-0',
+        // Big enough for a finger in the drawer.
+        '[@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:text-[15px]',
         active && 'bg-surface font-medium text-ink shadow-sm [&_svg]:text-glaze',
       )}
     >

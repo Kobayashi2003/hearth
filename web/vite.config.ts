@@ -37,11 +37,16 @@ export default defineConfig(({ command, mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: true,
-      rollupOptions: {
+      rolldownOptions: {
         output: {
-          manualChunks: {
-            react: ['react', 'react-dom'],
-            router: ['@tanstack/react-router', '@tanstack/react-query'],
+          codeSplitting: {
+            groups: [
+              { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+              {
+                name: 'router',
+                test: /[\\/]node_modules[\\/]@tanstack[\\/](?!react-virtual|virtual-core)/,
+              },
+            ],
           },
         },
       },

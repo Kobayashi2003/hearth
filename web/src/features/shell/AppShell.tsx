@@ -60,7 +60,8 @@ function Frame({ children }: { children: ReactNode }) {
 
   return (
     <ShellContext value={shell}>
-      <div className="relative flex h-dvh overflow-hidden">
+      {/* Clear of the notch and rounded corners; the bottom edge is left to the scrolling list. */}
+      <div className="relative flex h-dvh overflow-hidden pt-[var(--safe-top)] pr-[var(--safe-right)] pl-[var(--safe-left)]">
         {preferences.wallpaper ? (
           <div
             aria-hidden
@@ -80,7 +81,7 @@ function Frame({ children }: { children: ReactNode }) {
           <RadixDialog.Root open={navOpen} onOpenChange={setNavOpen}>
             <RadixDialog.Portal>
               <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
-              <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-bg shadow-float outline-none animate-slide-in data-[state=closed]:animate-slide-out">
+              <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-bg pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] shadow-float outline-none animate-slide-in data-[state=closed]:animate-slide-out">
                 <RadixDialog.Title className="sr-only">Places</RadixDialog.Title>
                 <RadixDialog.Description className="sr-only">
                   Folders and collections

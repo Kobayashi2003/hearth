@@ -19,7 +19,9 @@ export interface ListingProps {
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export const COLUMNS = 'grid-cols-[minmax(0,1fr)_5.5rem] md:grid-cols-[minmax(0,1fr)_9rem_6rem]';
+/** A phone has one column, the details under the name; then size; then date and size. */
+export const COLUMNS =
+  'grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_5.5rem] md:grid-cols-[minmax(0,1fr)_9rem_6rem]';
 
 export function FileList({
   entries,
@@ -59,7 +61,7 @@ export function FileList({
       <div
         role="row"
         className={cn(
-          'sticky top-0 z-10 grid h-8 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:px-6',
+          'sticky top-0 z-10 hidden h-8 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:grid sm:px-6',
           COLUMNS,
         )}
       >
@@ -78,7 +80,7 @@ export function FileList({
           sort={sort}
           direction={direction}
           onSort={onSort}
-          className="justify-end"
+          className="hidden justify-end sm:flex"
         />
       </div>
       <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
@@ -129,6 +131,7 @@ export function FileList({
                       </button>
                     ) : null}
                   </div>
+                  <PhoneDetails entry={entry} showFolder={showFolder} />
                   <ProgressBar progress={progress} className="mt-0.5 w-24" />
                 </div>
               </div>
@@ -138,7 +141,10 @@ export function FileList({
               >
                 {formatWhen(entry.mtime)}
               </div>
-              <div role="gridcell" className="tabular text-right text-[13px] text-ink-3">
+              <div
+                role="gridcell"
+                className="tabular hidden text-right text-[13px] text-ink-3 sm:block"
+              >
                 {entry.isDirectory ? '' : formatSize(entry.size)}
               </div>
             </div>
@@ -147,6 +153,19 @@ export function FileList({
       </div>
     </div>
   );
+}
+
+/**
+ * On a phone, the columns that do not fit, under the name: where a search
+ * result lives, or how big and how recent a file is.
+ */
+function PhoneDetails({ entry, showFolder }: { entry: FileEntry; showFolder: boolean }) {
+  const details = showFolder
+    ? `/${parentOf(entry.path)}`
+    : [entry.isDirectory ? null : formatSize(entry.size), formatWhen(entry.mtime)]
+        .filter(Boolean)
+        .join(' · ');
+  return <div className="tabular truncate text-[12px] text-ink-3 sm:hidden">{details}</div>;
 }
 
 function SortHeader({

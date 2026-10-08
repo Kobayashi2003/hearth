@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ImageOff, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 
+import { useCoarsePointer } from '@/hooks/useMediaQuery';
 import { mediaUrls } from '@/lib/api';
 import { extensionOf } from '@/lib/format';
 import { Button } from '@/ui/Button';
@@ -60,47 +61,17 @@ export default function ImageViewer({ entry }: ViewerProps) {
       entry={entry}
       immersive
       arrows
+      swipes
       actions={
-        <>
-          <Button
-            variant="stage"
-            size="icon"
-            onClick={() => zoom.zoomAt(0.8)}
-            aria-label="Zoom out"
-            title="Zoom out (−, Ctrl + wheel)"
-          >
-            <ZoomOut />
-          </Button>
-          <button
-            type="button"
-            onClick={() => {
-              zoom.reset();
-              setRotation(0);
-            }}
-            title="Fit (0)"
-            className="tabular h-8 min-w-12 rounded-lg px-1.5 text-[12px] text-stage-ink/80 hover:bg-white/10"
-          >
-            {changed ? `${Math.round(zoom.view.scale * 100)}%` : 'Fit'}
-          </button>
-          <Button
-            variant="stage"
-            size="icon"
-            onClick={() => zoom.zoomAt(1.25)}
-            aria-label="Zoom in"
-            title="Zoom in (+, Ctrl + wheel)"
-          >
-            <ZoomIn />
-          </Button>
-          <Button
-            variant="stage"
-            size="icon"
-            onClick={rotate}
-            aria-label="Rotate"
-            title="Rotate (R)"
-          >
-            <RotateCw />
-          </Button>
-        </>
+        <ImageActions
+          zoom={zoom}
+          changed={changed}
+          onFit={() => {
+            zoom.reset();
+            setRotation(0);
+          }}
+          onRotate={rotate}
+        />
       }
     >
       <div
@@ -138,5 +109,62 @@ export default function ImageViewer({ entry }: ViewerProps) {
         ) : null}
       </div>
     </ViewerFrame>
+  );
+}
+
+/**
+ * Zoom out, fit (showing the zoom once it is not fit), zoom in, rotate. Fingers
+ * pinch to zoom, so on a touch screen only fit (to undo a pinch) and rotate remain.
+ */
+function ImageActions({
+  zoom,
+  changed,
+  onFit,
+  onRotate,
+}: {
+  zoom: ReturnType<typeof usePanZoom>;
+  changed: boolean;
+  onFit: () => void;
+  onRotate: () => void;
+}) {
+  const touch = useCoarsePointer();
+  return (
+    <>
+      {touch ? null : (
+        <Button
+          variant="stage"
+          size="icon"
+          onClick={() => zoom.zoomAt(0.8)}
+          aria-label="Zoom out"
+          title="Zoom out (−, Ctrl + wheel)"
+        >
+          <ZoomOut />
+        </Button>
+      )}
+      {touch && !changed ? null : (
+        <button
+          type="button"
+          onClick={onFit}
+          title="Fit (0)"
+          className="tabular h-8 min-w-12 rounded-lg px-1.5 text-[12px] text-stage-ink/80 hover:bg-white/10"
+        >
+          {changed ? `${Math.round(zoom.view.scale * 100)}%` : 'Fit'}
+        </button>
+      )}
+      {touch ? null : (
+        <Button
+          variant="stage"
+          size="icon"
+          onClick={() => zoom.zoomAt(1.25)}
+          aria-label="Zoom in"
+          title="Zoom in (+, Ctrl + wheel)"
+        >
+          <ZoomIn />
+        </Button>
+      )}
+      <Button variant="stage" size="icon" onClick={onRotate} aria-label="Rotate" title="Rotate (R)">
+        <RotateCw />
+      </Button>
+    </>
   );
 }

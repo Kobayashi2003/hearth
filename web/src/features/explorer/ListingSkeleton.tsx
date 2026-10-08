@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn';
 import { COLUMNS } from './FileList';
-import { ASPECT, GAP, PADDING, useGridLayout } from './FileGrid';
+import { ASPECT, useGridLayout } from './FileGrid';
 
 /** Name widths vary so the placeholder reads as a listing rather than a stripe pattern. */
 const NAME_WIDTHS = [62, 45, 74, 38, 55, 68, 41, 50, 71, 36, 58, 47, 65, 43];
@@ -62,13 +62,13 @@ function GridSkeleton({
   tileSize: number;
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const { columns } = useGridLayout(scrollRef, tileSize);
+  const { columns, gap, padding } = useGridLayout(scrollRef, tileSize);
   return (
     <div
       className="grid"
       style={{
-        padding: PADDING,
-        gap: GAP,
+        padding,
+        gap,
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       }}
     >

@@ -25,5 +25,5 @@ desktop.ini
 .claude/
 *.local.json
 
-# Fetched by `npm run ruffle`, not committed
+# Fetched by `pnpm ruffle`, not committed
 web/public/ruffle/

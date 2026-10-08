@@ -88,6 +88,31 @@
   }
 }
 
+/*
+ * What the system keeps for itself (the notch, rounded corners, the home
+ * indicator). The page is laid out under them (viewport-fit=cover), so
+ * whatever sits at an edge adds these to its own padding.
+ */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/*
+ * Below 16px, iOS zooms the page in on any field that takes focus, and leaves
+ * it zoomed afterwards. Unlayered and important: it has to beat the size
+ * utilities a field carries for the desktop.
+ */
+@media (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -143,6 +168,13 @@
   }
   button {
     cursor: default;
+  }
+  /* No double-tap zoom on controls, and so no wait after each tap to see if a second follows. */
+  button,
+  a,
+  [role='button'],
+  [role='row'] {
+    touch-action: manipulation;
   }
 }
 

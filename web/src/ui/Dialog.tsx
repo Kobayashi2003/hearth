@@ -28,8 +28,11 @@ export function Dialog({
         <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
         <RadixDialog.Content
           className={cn(
-            'animate-rise data-[state=closed]:animate-sink fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-[min(28rem,calc(100vw-2rem))]',
+            'animate-rise data-[state=closed]:animate-sink fixed left-1/2 top-1/2 z-50 flex max-h-[80dvh] w-[min(28rem,calc(100vw-2rem))]',
             '-translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-line bg-surface shadow-float outline-none',
+            // Centred, except on a phone: the keyboard rises over the lower half and iOS does not
+            // move a fixed dialog out of its way, so there it sits near the top.
+            'max-sm:top-[calc(var(--safe-top)+1.5rem)] max-sm:max-h-[60dvh] max-sm:translate-y-0',
             className,
           )}
         >

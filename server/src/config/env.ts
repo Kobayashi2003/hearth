@@ -89,7 +89,7 @@ export function envLimit(name: string, fallback: number, scale = 1): number {
 /**
  * A safeguard rather than a cap on what people can do: a positive number with
  * no "unlimited", because lifting it only lets the server wait or scan forever.
- * It stays in force under `npm run dev` too.
+ * It stays in force under `pnpm dev` too.
  */
 export function envPositive(name: string, fallback: number): number {
   const value = envInt(name, fallback);

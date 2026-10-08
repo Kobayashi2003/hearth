@@ -34,11 +34,11 @@ export default function AudioViewer({ entry }: ViewerProps) {
     <ViewerFrame entry={entry} subtitle={baseName(parentOf(entry.path)) || undefined}>
       <div
         className={cn(
-          'grid h-full min-h-0',
+          'grid h-full min-h-0 grid-cols-[minmax(0,1fr)]',
           playlist.length > 1 && 'grid-rows-[1fr_auto] md:grid-cols-[1fr_20rem] md:grid-rows-1',
         )}
       >
-        <div className="flex min-h-0 flex-col items-center justify-center gap-6 px-6 pb-6">
+        <div className="flex min-h-0 flex-col items-center justify-center gap-6 px-6 pb-[calc(1.5rem+var(--safe-bottom))]">
           <Artwork path={entry.path} />
           <div className="w-full max-w-md">
             <Scrubber
@@ -55,7 +55,10 @@ export default function AudioViewer({ entry }: ViewerProps) {
             <div className="mt-3 flex items-center justify-center gap-2">
               <ModeButtons />
               <SkipButtons />
-              <VolumeControl />
+              {/* A phone sets the volume with its own buttons; iOS ignores a page's anyway. */}
+              <div className="max-sm:hidden">
+                <VolumeControl />
+              </div>
             </div>
           </div>
         </div>

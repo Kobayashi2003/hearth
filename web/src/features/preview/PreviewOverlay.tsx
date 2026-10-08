@@ -137,7 +137,7 @@ export function PreviewOverlay() {
       role="dialog"
       aria-modal="true"
       aria-label={current.entry.name}
-      className="animate-fade fixed inset-0 z-50 flex flex-col bg-stage text-stage-ink"
+      className="animate-fade fixed inset-0 z-50 flex flex-col bg-stage pr-[var(--safe-right)] pl-[var(--safe-left)] text-stage-ink"
     >
       <OverlayContext value={value}>
         <Suspense

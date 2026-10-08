@@ -1,8 +1,9 @@
-import { AArrowDown, AArrowUp, Languages, Pencil, Save, WrapText, X } from 'lucide-react';
+import { AArrowDown, AArrowUp, Languages, Pencil, Save, Type, WrapText, X } from 'lucide-react';
 
+import { useIsNarrow } from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
-import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
+import { Menu, MenuChoice, MenuItem, MenuLabel, MenuSeparator } from '@/ui/Menu';
 
 const ENCODINGS: ReadonlyArray<[string, string]> = [
   ['utf8', 'UTF-8'],
@@ -52,6 +53,44 @@ export function ReadActions({
   /** Absent when the user may not write or only part of the file was loaded. */
   onEdit: (() => void) | null;
 }) {
+  const narrow = useIsNarrow();
+  const edit = onEdit ? (
+    <Button variant="quiet" size="icon" onClick={onEdit} aria-label="Edit" title="Edit">
+      <Pencil />
+    </Button>
+  ) : null;
+  if (narrow) {
+    // Five buttons crowd out the file name on a phone; reading options share one menu.
+    return (
+      <>
+        <Menu
+          trigger={
+            <Button
+              variant="quiet"
+              size="icon"
+              aria-label="Reading options"
+              title="Reading options"
+            >
+              <Type />
+            </Button>
+          }
+        >
+          <MenuItem icon={<AArrowDown />} onSelect={() => onStep(-1)}>
+            Smaller text
+          </MenuItem>
+          <MenuItem icon={<AArrowUp />} onSelect={() => onStep(1)}>
+            Larger text
+          </MenuItem>
+          <MenuChoice checked={wrap} onSelect={() => onWrap(!wrap)}>
+            Wrap long lines
+          </MenuChoice>
+          <MenuSeparator />
+          <EncodingChoices encoding={encoding} onEncoding={onEncoding} />
+        </Menu>
+        {edit}
+      </>
+    );
+  }
   return (
     <>
       <Button variant="quiet" size="icon" onClick={() => onStep(-1)} aria-label="Smaller text">
@@ -78,18 +117,9 @@ export function ReadActions({
           </Button>
         }
       >
-        <MenuLabel>Read as</MenuLabel>
-        {ENCODINGS.map(([value, label]) => (
-          <MenuChoice key={value} checked={encoding === value} onSelect={() => onEncoding(value)}>
-            {label}
-          </MenuChoice>
-        ))}
+        <EncodingChoices encoding={encoding} onEncoding={onEncoding} />
       </Menu>
-      {onEdit ? (
-        <Button variant="quiet" size="icon" onClick={onEdit} aria-label="Edit" title="Edit">
-          <Pencil />
-        </Button>
-      ) : null}
+      {edit}
     </>
   );
 }
@@ -173,5 +203,24 @@ export function Editor({
       style={{ fontSize }}
       className="absolute inset-0 resize-none bg-surface p-5 font-mono leading-relaxed text-ink outline-none"
     />
+  );
+}
+
+function EncodingChoices({
+  encoding,
+  onEncoding,
+}: {
+  encoding: string;
+  onEncoding: (encoding: string) => void;
+}) {
+  return (
+    <>
+      <MenuLabel>Read as</MenuLabel>
+      {ENCODINGS.map(([value, label]) => (
+        <MenuChoice key={value} checked={encoding === value} onSelect={() => onEncoding(value)}>
+          {label}
+        </MenuChoice>
+      ))}
+    </>
   );
 }

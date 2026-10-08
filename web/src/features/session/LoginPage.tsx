@@ -91,7 +91,7 @@ function ServerUnreachable({ onRetry }: { onRetry: () => void }) {
       <ul className="mt-2 list-disc space-y-1 pl-4 text-ink-2">
         <li>
           Start it with <code className="text-ink">start.ps1</code> (or{' '}
-          <code className="text-ink">npm run dev</code> while developing).
+          <code className="text-ink">pnpm dev</code> while developing).
         </li>
         <li>
           If it is running, check that <code className="text-ink">HEARTH_PORT</code> is the port

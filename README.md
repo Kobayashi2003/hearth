@@ -18,7 +18,7 @@ SPA, with search delegated to [Everything](https://www.voidtools.com/).
 
 ## Requirements
 
-- **Node.js 22 LTS** or newer
+- **Node.js 24** and **pnpm**
 - **ffmpeg** and **ffprobe** on `PATH` — for video probe, transcode, subtitle
   extraction, and video thumbnails
 - **Windows** for instant search via Everything (optional; a filesystem-walk
@@ -32,8 +32,8 @@ SPA, with search delegated to [Everything](https://www.voidtools.com/).
 ## Quick start
 
 ```bash
-npm install
-npm run build
+pnpm install
+pnpm build
 
 # Configure — the defaults serve the bundled ./example tree.
 cp .env.example .env
@@ -41,7 +41,7 @@ cp .env.example .env
 #   set HEARTH_USER_RULES to your own username and password
 
 # Development: backend + Vite dev server, hot-reloading, one command.
-npm run dev
+pnpm dev
 #   → http://localhost:17011
 
 # Production: backend + Caddy edge serving the built SPA.
@@ -109,15 +109,15 @@ how you like things set.
 
 | Command | Effect |
 |---|---|
-| `npm install` | Install every workspace's dependencies |
-| `npm run build` | Build shared types, backend, and the SPA |
-| `npm run dev` | Backend + Vite dev server with hot reload; layers `.env.development`, which lifts every limit |
-| `npm start` | Run the built backend in production mode (no Caddy) |
-| `npm test` | Run the unit and integration tests |
-| `npm run format` | Format the code with Prettier (`format:check` to verify) |
-| `npm run typecheck` | Typecheck every workspace |
-| `npm run lint` | Lint the whole repository |
-| `npm run ruffle` | Download the pinned Ruffle build into `web/public/ruffle/`, for .swf files and Flash in old web pages |
+| `pnpm install` | Install every workspace's dependencies |
+| `pnpm build` | Build shared types, backend, and the SPA |
+| `pnpm dev` | Backend + Vite dev server with hot reload; layers `.env.development`, which lifts every limit |
+| `pnpm start` | Run the built backend in production mode (no Caddy) |
+| `pnpm test` | Run the unit and integration tests |
+| `pnpm format` | Format the code with Prettier (`format:check` to verify) |
+| `pnpm typecheck` | Typecheck every workspace |
+| `pnpm lint` | Lint the whole repository |
+| `pnpm ruffle` | Download the pinned Ruffle build into `web/public/ruffle/`, for .swf files and Flash in old web pages |
 | `.\start.ps1 -Build` | Production: build, then run backend + Caddy |
 | `.\start.ps1 -NoCaddy` | Run the backend only; an external edge owns the port |
 

@@ -1,6 +1,9 @@
 import js from '@eslint/js';
-import tseslint from 'typescript-eslint';
+import prettier from 'eslint-config-prettier';
 import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   { ignores: ['**/dist/**', '**/node_modules/**', 'web/src/vendor/**', 'web/public/ruffle/**'] },
@@ -8,8 +11,18 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ['web/src/**/*.{ts,tsx}'],
-    plugins: { 'react-hooks': reactHooks },
-    rules: reactHooks.configs.recommended.rules,
+    languageOptions: { globals: globals.browser },
+    plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      // TODO: React Compiler rules that arrived with eslint-plugin-react-hooks 7; existing code
+      // predates them. Restore to error once the flagged hooks are rewritten.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+    },
   },
   {
     rules: {
@@ -82,4 +95,5 @@ export default tseslint.config(
       ],
     },
   },
+  prettier,
 );
