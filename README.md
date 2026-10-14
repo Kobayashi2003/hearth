@@ -120,6 +120,7 @@ how you like things set.
 | `pnpm ruffle` | Download the pinned Ruffle build into `web/public/ruffle/`, for .swf files and Flash in old web pages |
 | `.\start.ps1 -Build` | Production: build, then run backend + Caddy |
 | `.\start.ps1 -NoCaddy` | Run the backend only; an external edge owns the port |
+| `.\stop.ps1` | Stop what `start.ps1` started, from another window |
 
 Configuration lives in `.env` at the repository root. Every variable is optional
 and listed in [`.env.example`](.env.example) and `docs/后端代码结构.md`; the

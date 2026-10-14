@@ -102,6 +102,20 @@ describe('useSelection', () => {
     expect(result.current.focusVisible).toBe(true);
   });
 
+  it('going up points at the folder just left, in view but not selected', () => {
+    const { result } = render();
+    act(() => result.current.pick(path('apple')));
+    act(() => result.current.reset());
+    act(() => result.current.land(path('cherry')));
+    expect(selectedNames(result.current.selected)).toEqual([]);
+    expect(result.current.focusedIndex).toBe(2);
+    // Shown after a mouse click too: the point is to see where you came from.
+    expect(result.current.focusVisible).toBe(true);
+    // The keyboard carries on from there.
+    act(() => result.current.move(1));
+    expect(result.current.focusedIndex).toBe(3);
+  });
+
   it('selects all, inverts, and clears', () => {
     const { result } = render();
     act(() => result.current.pick(path('apple')));

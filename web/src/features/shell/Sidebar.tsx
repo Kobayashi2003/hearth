@@ -68,14 +68,7 @@ export function Sidebar({
 
   return (
     <nav aria-label="Places" className="flex h-full flex-col gap-5 px-3 pb-3 pt-4">
-      <button
-        type="button"
-        onClick={() => go({ path: '' })}
-        className="self-start rounded-lg px-2 py-1"
-        aria-label="Home"
-      >
-        <Wordmark />
-      </button>
+      <HomeButton root={active} onClick={() => go({ path: '' })} />
 
       {can('admin') && roots.data && roots.data.roots.length > 1 ? (
         <RootSwitcher roots={roots.data.roots} onSwitch={id => void switchRoot(id)} />
@@ -117,6 +110,21 @@ export function Sidebar({
         onSignOut={() => void signOut()}
       />
     </nav>
+  );
+}
+
+/** The wordmark: back to the top of the root being served, with any search or filter dropped. */
+function HomeButton({ root, onClick }: { root: RootDescriptor | undefined; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="self-start rounded-lg px-2 py-1 transition-colors hover:bg-sunken"
+      aria-label="Home"
+      title={`Back to the top of ${root?.label ?? 'the root'}`}
+    >
+      <Wordmark />
+    </button>
   );
 }
 

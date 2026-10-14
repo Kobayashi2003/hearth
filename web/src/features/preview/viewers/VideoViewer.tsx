@@ -11,6 +11,7 @@ import { useOverlay, type ViewerProps } from '../overlay';
 import { useIdle, ViewerFrame } from '../ViewerFrame';
 import { usePlaybackState, useResume, useVideoSource, useVolume } from './video/playback';
 import { useSubtitles } from './video/useSubtitles';
+import { FramePreview } from './video/FramePreview';
 import { VideoControls } from './video/VideoControls';
 
 const CONVERSION_FAILED =
@@ -96,6 +97,7 @@ export default function VideoViewer({ entry }: ViewerProps) {
   });
 
   const { onPointerDown, onStagePointerUp, isMouse } = useTouchSeek(seek, position);
+  const pauseWhileScrubbing = usePauseWhileScrubbing(videoRef);
 
   return (
     <ViewerFrame entry={entry} immersive className="bg-black">
@@ -141,6 +143,20 @@ export default function VideoViewer({ entry }: ViewerProps) {
         duration={duration}
         buffered={video.offset + state.buffered}
         onSeek={seek}
+        scrub={{
+          // A file the browser plays seeks along the drag; a conversion restarts on each
+          // seek, so it waits for the release.
+          live: !video.transcoding,
+          onScrub: pauseWhileScrubbing,
+          preview: at => (
+            <FramePreview
+              entry={entry}
+              at={at}
+              duration={duration}
+              aspect={probe?.width && probe.height ? probe.width / probe.height : 16 / 9}
+            />
+          ),
+        }}
         playing={state.playing}
         onToggle={toggle}
         onStep={step}
@@ -171,6 +187,27 @@ export default function VideoViewer({ entry }: ViewerProps) {
         note={noteFor(subtitles.status, video.transcoding)}
       />
     </ViewerFrame>
+  );
+}
+
+/**
+ * Dragging the seek bar pauses the film, as the big players do, so the picture
+ * stays on the frame being chosen; letting go plays it again if it was playing.
+ */
+function usePauseWhileScrubbing(videoRef: { current: HTMLVideoElement | null }) {
+  const resume = useRef(false);
+  return useCallback(
+    (scrubbing: boolean) => {
+      const element = videoRef.current;
+      if (!element) return;
+      if (scrubbing) {
+        resume.current = !element.paused;
+        element.pause();
+      } else if (resume.current) {
+        void element.play().catch(() => undefined);
+      }
+    },
+    [videoRef],
   );
 }
 

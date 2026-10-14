@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { MediaProbe } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
+import { isAbortError } from '../../lib/errors.js';
 import { maximum } from '../../lib/limits.js';
 import { abortSignalOf } from '../../lib/request.js';
 import type { ListingService } from '../vault/listing.service.js';
@@ -161,6 +162,49 @@ function thumbnailRoutes({
           return reply.code(204).header('Cache-Control', 'no-store').send();
         }
         return reply.header('Content-Type', 'image/webp').send(thumbnail);
+      },
+    );
+
+    /** A video's frame at a moment, for the preview above its seek bar. */
+    app.get<{
+      Querystring: { path: string; token?: string; at: number; width?: number; v?: string };
+    }>(
+      '/media/frame',
+      {
+        schema: {
+          querystring: pathQuery(
+            {
+              at: { type: 'number', minimum: 0 },
+              width: { type: 'integer', minimum: 64, maximum: 480, default: 192 },
+              // The client's version of the file (mtime and size); only a cache key.
+              v: { type: 'string', maxLength: 64 },
+            },
+            ['path', 'at'],
+          ),
+        },
+        config: STREAM,
+      },
+      async (request, reply) => {
+        const { target } = await openFile(listing, request, request.query.path);
+        const frame = await thumbnails
+          .frameAt(
+            target,
+            { atSeconds: request.query.at, width: request.query.width ?? 192 },
+            abortSignalOf(request),
+          )
+          // A moment ffmpeg cannot reach (past the end, a damaged file) has no preview.
+          .catch(error => {
+            if (isAbortError(error)) throw error;
+            return null;
+          });
+        if (!frame) return reply.code(204).header('Cache-Control', 'no-store').send();
+        return reply
+          .header('Content-Type', 'image/webp')
+          .header(
+            'Cache-Control',
+            request.query.v ? 'private, max-age=86400, immutable' : 'private, no-cache',
+          )
+          .send(frame);
       },
     );
   };

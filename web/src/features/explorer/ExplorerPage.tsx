@@ -191,6 +191,7 @@ export function ExplorerPage() {
     entries,
     selected: selection.selected,
     focusedIndex: selection.focusVisible ? selection.focusedIndex : -1,
+    landing: selection.landing,
     rowHeight,
     bottomInset: DOCK_CLEARANCE,
     folderCovers: preferences.folderCovers,

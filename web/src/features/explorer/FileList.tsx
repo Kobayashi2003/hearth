@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { Density, FileEntry, Progress, SortDirection, SortField } from '@hearth/shared';
 
@@ -11,6 +12,8 @@ export interface ListingProps {
   entries: FileEntry[];
   selected: ReadonlySet<string>;
   focusedIndex: number;
+  /** Bumped when the focus lands somewhere to be centred (see useSelection.land). */
+  landing: number;
   rowHeight: number;
   bottomInset: number;
   folderCovers: boolean;
@@ -27,6 +30,7 @@ export function FileList({
   entries,
   selected,
   focusedIndex,
+  landing,
   rowHeight,
   bottomInset,
   folderCovers,
@@ -45,6 +49,8 @@ export function FileList({
   showFolder: boolean;
   onReveal: (entry: FileEntry) => void;
 }) {
+  const header = useRef<HTMLDivElement | null>(null);
+  const headerHeight = useHeight(header);
   const virtualizer = useListingRows({
     count: entries.length,
     scrollRef,
@@ -52,6 +58,8 @@ export function FileList({
     overscan: 12,
     bottomInset,
     focused: focusedIndex,
+    landing,
+    scrollMargin: headerHeight,
   });
 
   const thumbWidth = rowHeight > 40 ? 96 : 64;
@@ -59,6 +67,7 @@ export function FileList({
   return (
     <div role="grid" aria-rowcount={entries.length} className="min-w-0">
       <div
+        ref={header}
         role="row"
         className={cn(
           'sticky top-0 z-10 hidden h-8 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:grid sm:px-6',
@@ -101,7 +110,8 @@ export function FileList({
                 isSelected ? 'bg-glaze-wash' : 'hover:bg-sunken/70',
                 item.index === focusedIndex && 'shadow-[inset_2px_0_0_var(--glaze)]',
               )}
-              style={{ top: item.start, height: rowHeight }}
+              // `start` counts from the top of the scroller; the rows begin below the header.
+              style={{ top: item.start - headerHeight, height: rowHeight }}
             >
               <div role="gridcell" className="flex min-w-0 items-center gap-3">
                 <EntryVisual
@@ -201,6 +211,19 @@ function SortHeader({
       {active ? <Arrow className="size-3" /> : null}
     </button>
   );
+}
+
+/** An element's height, kept current: the list header is hidden on a phone. */
+function useHeight(ref: RefObject<HTMLElement | null>): number {
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setHeight(element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return height;
 }
 
 /** Must match `--row` in app.css: the virtualiser needs the number, the CSS the variable. */

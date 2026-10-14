@@ -46,6 +46,7 @@ export function FileGrid({
   entries,
   selected,
   focusedIndex,
+  landing,
   bottomInset,
   folderCovers,
   progressFor,
@@ -68,6 +69,7 @@ export function FileGrid({
     bottomInset,
     focused: focusedIndex,
     perRow: columns,
+    landing,
   });
 
   const thumbWidth = tileWidth > 200 ? 480 : 320;

@@ -17,7 +17,7 @@ export function useLanding(
   const { returningTo } = explorer;
   useEffect(() => {
     if (!returningTo || !entries.some(entry => entry.path === returningTo)) return;
-    selection.setFocused(returningTo);
+    selection.land(returningTo);
     explorer.clearReturningTo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returningTo, entries]);

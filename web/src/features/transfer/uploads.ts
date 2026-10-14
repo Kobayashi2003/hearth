@@ -20,6 +20,14 @@ export interface UploadJob {
   error?: string;
 }
 
+/**
+ * Job ids only need to be unique within this page. Not `crypto.randomUUID()`:
+ * that exists only in a secure context, and a phone reaching the server by its
+ * LAN address over plain HTTP is not one, so every upload failed there.
+ */
+let jobCounter = 0;
+const nextJobId = () => `upload-${Date.now().toString(36)}-${(jobCounter += 1)}`;
+
 /** One chunk over XHR, because fetch cannot report upload progress. */
 function sendChunk(
   chunk: { uploadId: string; index: number; blob: Blob },
@@ -126,7 +134,7 @@ export function useUploads() {
     (files: QueuedFile[], destination: string) => {
       const created = files.map(({ file, relativePath }) => ({
         job: {
-          id: crypto.randomUUID(),
+          id: nextJobId(),
           name: relativePath,
           destination,
           size: file.size,

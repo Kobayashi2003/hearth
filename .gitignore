@@ -27,3 +27,6 @@ desktop.ini
 
 # Fetched by `pnpm ruffle`, not committed
 web/public/ruffle/
+
+# Written by start.ps1 / gateway.ps1 while running
+.running.json

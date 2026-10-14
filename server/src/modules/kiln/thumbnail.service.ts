@@ -25,6 +25,11 @@ export interface ThumbnailRequest {
   quality: number;
 }
 
+type CacheRequest = ThumbnailRequest & { atSeconds?: number };
+
+/** Seek previews are small and passing; they need less quality than a cover. */
+const FRAME_QUALITY = 60;
+
 /** Poster offset: past the opening logos, capped so a long file never seeks far. */
 const POSTER_FRACTION = 0.15;
 const POSTER_MIN_SECONDS = 3;
@@ -62,11 +67,7 @@ export class ThumbnailService {
     );
     if (!thumbnail) return null;
 
-    await fsp.mkdir(path.dirname(cachePath), { recursive: true });
-    const temporaryPath = `${cachePath}.${process.pid}.tmp`;
-    await fsp.writeFile(temporaryPath, thumbnail);
-    await fsp.rename(temporaryPath, cachePath);
-
+    await writeAtomically(cachePath, thumbnail);
     return thumbnail;
   }
 
@@ -87,6 +88,37 @@ export class ThumbnailService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The frame at a moment of a video, for the preview above a seek bar. Cached
+   * like thumbnails; the client asks for at most about a hundred moments a
+   * video, so the cache stays small. Null past the end of the stream.
+   */
+  async frameAt(
+    target: SafePath,
+    { atSeconds, width }: { atSeconds: number; width: number },
+    signal?: AbortSignal,
+  ): Promise<Buffer | null> {
+    const stats = await fsp.stat(target);
+    const cachePath = this.cachePathFor(target, stats.mtimeMs, stats.size, {
+      width,
+      quality: FRAME_QUALITY,
+      atSeconds,
+    });
+    const cached = await fsp.readFile(cachePath).catch(() => null);
+    if (cached) return cached;
+
+    const frame = await this.decoding.run(async () => {
+      const jpeg = await this.ffmpeg.extractFrame(
+        target,
+        { atSeconds, width, exact: true },
+        signal,
+      );
+      return jpeg.length > 0 ? sharp(jpeg).webp({ quality: FRAME_QUALITY }).toBuffer() : null;
+    }, signal);
+    if (frame) await writeAtomically(cachePath, frame);
+    return frame;
   }
 
   /** Decode whatever the source is into bytes sharp can resize, or null. */
@@ -123,9 +155,11 @@ export class ThumbnailService {
             Math.max(Math.min(POSTER_MIN_SECONDS, duration / 2), duration * POSTER_FRACTION),
           );
     const frame = await this.ffmpeg
-      .extractFrame(target, at, width, signal)
+      .extractFrame(target, { atSeconds: at, width }, signal)
       .catch(() => Buffer.alloc(0));
-    return frame.length > 0 ? frame : this.ffmpeg.extractFrame(target, 0, width, signal);
+    return frame.length > 0
+      ? frame
+      : this.ffmpeg.extractFrame(target, { atSeconds: 0, width }, signal);
   }
   /**
    * An HTTP validator for the thumbnail of `target`: the disk cache key, which
@@ -137,11 +171,13 @@ export class ThumbnailService {
     return `"${this.keyFor(target, stats.mtimeMs, stats.size, request)}"`;
   }
 
-  private keyFor(target: string, mtimeMs: number, size: number, request: ThumbnailRequest): string {
+  private keyFor(target: string, mtimeMs: number, size: number, request: CacheRequest): string {
+    // A frame adds its moment; a thumbnail's key stays as it was, so its cache survives.
+    const moment = request.atSeconds === undefined ? '' : `|at${request.atSeconds}`;
     return crypto
       .createHash('sha1')
       .update(
-        `${THUMBNAIL_REVISION}|${target}|${mtimeMs}|${size}|${request.width}|${request.quality}`,
+        `${THUMBNAIL_REVISION}|${target}|${mtimeMs}|${size}|${request.width}|${request.quality}${moment}`,
       )
       .digest('hex');
   }
@@ -150,7 +186,7 @@ export class ThumbnailService {
     target: string,
     mtimeMs: number,
     size: number,
-    request: ThumbnailRequest,
+    request: CacheRequest,
   ): string {
     const key = this.keyFor(target, mtimeMs, size, request);
     return path.join(this.config.media.thumbnailCacheDirectory, key.slice(0, 2), `${key}.webp`);
@@ -188,6 +224,14 @@ async function audioArtwork(target: SafePath): Promise<Buffer | null> {
   const scan = await albumArtwork(path.dirname(target));
   return scan ? fsp.readFile(scan) : null;
 }
+/** Written beside, then renamed: a reader never sees half a file. */
+async function writeAtomically(target: string, bytes: Buffer): Promise<void> {
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  const temporaryPath = `${target}.${process.pid}.tmp`;
+  await fsp.writeFile(temporaryPath, bytes);
+  await fsp.rename(temporaryPath, target);
+}
+
 /** The cover embedded in an audio file's tags; only the metadata is parsed. */
 async function embeddedArtwork(target: SafePath): Promise<Buffer | null> {
   try {

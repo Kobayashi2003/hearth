@@ -78,6 +78,15 @@ describe('upload queue', () => {
     vi.clearAllMocks();
   });
 
+  // A phone on the LAN over plain HTTP is not a secure context: no crypto.randomUUID.
+  it('uploads where crypto.randomUUID does not exist', async () => {
+    vi.stubGlobal('crypto', {});
+    const { result } = mount();
+    act(() => result.current.start([queued('a'), queued('b')], ''));
+    await waitFor(() => expect(FakeRequest.sent).toHaveLength(2));
+    expect(new Set(result.current.jobs.map(job => job.id)).size).toBe(2);
+  });
+
   it('runs two uploads at a time and starts the next as one finishes', async () => {
     const { result } = mount();
     act(() => result.current.start([queued('a'), queued('b'), queued('c')], 'inbox'));

@@ -110,10 +110,14 @@ export class FfmpegAdapter {
     await this.collect(this.options.ffmpegPath, args, signal);
   }
 
+  /**
+   * One frame as JPEG. By default the most representative of the next 60
+   * frames, so a poster is not a fade or a black cut; `exact` takes the frame
+   * at that moment, as a seek preview must.
+   */
   async extractFrame(
     filePath: string,
-    atSeconds: number,
-    width: number,
+    { atSeconds, width, exact = false }: { atSeconds: number; width: number; exact?: boolean },
     signal?: AbortSignal,
   ): Promise<Buffer> {
     return this.collectBinary(
@@ -133,9 +137,8 @@ export class FfmpegAdapter {
         filePath,
         '-frames:v',
         '1',
-        // The most representative of the next 60 frames, not a fade or a black cut.
         '-vf',
-        `thumbnail=60,scale=${width}:-2`,
+        exact ? `scale=${width}:-2` : `thumbnail=60,scale=${width}:-2`,
         '-f',
         'image2',
         '-c:v',

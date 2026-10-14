@@ -14,6 +14,8 @@ export function useSelection(entries: readonly FileEntry[]) {
   // The focus ring is for keyboard users; after a click it would read as a
   // selection that refuses to go away.
   const [focusVisible, setFocusVisible] = useState(false);
+  // Bumped by each `land`: the list centres the item rather than just edging it into view.
+  const [landing, setLanding] = useState(0);
   const anchor = useRef<string | null>(null);
   const typeahead = useRef({ text: '', at: 0 });
 
@@ -101,6 +103,18 @@ export function useSelection(entries: readonly FileEntry[]) {
     [entries, focused, indexOf, range],
   );
 
+  /**
+   * Point at one item and bring it into view without selecting it, as going up
+   * lands on the folder just left: shown even after a click, since the point
+   * is to see where you came from.
+   */
+  const land = useCallback((path: string) => {
+    anchor.current = path;
+    setFocused(path);
+    setFocusVisible(true);
+    setLanding(count => count + 1);
+  }, []);
+
   /** Select one item and bring it into view, as "show in folder" lands on it. */
   const reveal = useCallback((path: string) => {
     anchor.current = path;
@@ -159,7 +173,8 @@ export function useSelection(entries: readonly FileEntry[]) {
     focused,
     focusedIndex: indexOf(focused),
     focusVisible,
-    setFocused,
+    landing,
+    land,
     reveal,
     pick,
     move,

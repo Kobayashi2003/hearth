@@ -237,6 +237,9 @@ export const mediaUrls = {
   /** `version` (mtime and size) lets the browser keep a thumbnail until the file changes. */
   thumbnail: (path: string, width = 320, version?: string) =>
     apiUrl('/thumbnail', { path, width, v: version }),
+  /** A video's frame at a moment, for a seek preview; `version` as for a thumbnail. */
+  frame: (path: string, at: number, width: number, version?: string) =>
+    apiUrl('/media/frame', { path, at, width, v: version }),
   download: (path: string) => apiUrl('/download', { path }),
   zip: (token: string) => apiUrl(`/download/zip/${token}`),
   comicPage: (key: string, page: string) => apiUrl(`/comic/${key}/${encodeURIComponent(page)}`),

@@ -8,6 +8,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import type { ComponentProps } from 'react';
 import type { MediaTrack } from '@hearth/shared';
 
 import { cn } from '@/lib/cn';
@@ -32,6 +33,7 @@ export function VideoControls({
   duration,
   buffered,
   onSeek,
+  scrub,
   playing,
   onToggle,
   onStep,
@@ -52,6 +54,8 @@ export function VideoControls({
   duration: number;
   buffered: number;
   onSeek: (seconds: number) => void;
+  /** How the seek bar drags: live or on release, with a preview, and pausing around it. */
+  scrub: Pick<ComponentProps<typeof Scrubber>, 'live' | 'preview' | 'onScrub'>;
   playing: boolean;
   onToggle: () => void;
   onStep: (delta: number) => void;
@@ -81,6 +85,7 @@ export function VideoControls({
         max={duration}
         buffered={buffered}
         onChange={onSeek}
+        {...scrub}
         label="Seek"
         className="text-white"
       />

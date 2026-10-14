@@ -26,6 +26,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+$runFile = Join-Path $root '.running.json'
 
 if (-not $NoCaddy) {
     if (-not (Get-Command caddy -ErrorAction SilentlyContinue)) {
@@ -105,6 +106,10 @@ try {
         }
     }
 
+    # stop.ps1 reads this to stop the app from another window.
+    $children | ForEach-Object { @{ ProcessId = $_.Id; StartTicks = $_.StartTime.Ticks } } |
+        ConvertTo-Json -AsArray | Set-Content -LiteralPath $runFile
+
     Write-Host ''
     Write-Host 'Press Ctrl+C to stop.'
     Write-Host ''
@@ -129,4 +134,5 @@ try {
                 -NoNewWindow -Wait -ErrorAction SilentlyContinue | Out-Null
         }
     }
+    Remove-Item -LiteralPath $runFile -ErrorAction SilentlyContinue
 }
