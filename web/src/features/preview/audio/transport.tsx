@@ -37,7 +37,7 @@ function PlayButton({ className }: { className?: string }) {
 
 export function SkipButtons({ variant = 'stage' }: { variant?: 'stage' | 'quiet' }) {
   const player = usePlayer();
-  const disabled = player.playlist.length < 2;
+  const disabled = !player.canSkip;
   return (
     <>
       <Button

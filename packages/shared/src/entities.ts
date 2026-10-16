@@ -82,6 +82,26 @@ export interface MediaProbe {
   subtitleTracks: MediaTrack[];
 }
 
+/**
+ * The tracks of an album ripped to one file, from its cue sheet (beside it, or
+ * embedded in a FLAC). Times are seconds from the start of that file.
+ */
+export interface CueSheet {
+  title: string | null;
+  performer: string | null;
+  /** `REM DATE`: usually just the year. */
+  date: string | null;
+  tracks: CueTrack[];
+}
+
+export interface CueTrack {
+  number: number;
+  title: string | null;
+  /** Null when it is the album's performer. */
+  performer: string | null;
+  start: number;
+}
+
 export interface ComicManifest {
   /** Cache key used to fetch individual pages. */
   key: string;

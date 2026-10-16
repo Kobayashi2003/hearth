@@ -4,6 +4,7 @@ import { mediaUrls } from '@/lib/api';
 
 export interface MediaSessionState {
   title: string;
+  artist?: string | undefined;
   album?: string;
   artworkPath: string;
   isPlaying: boolean;
@@ -30,7 +31,7 @@ const ACTIONS: MediaSessionAction[] = [
 export function useMediaSession(active: boolean, state: MediaSessionState): void {
   const latest = useRef(state);
   latest.current = state;
-  const { title, album, artworkPath, isPlaying, position, duration } = state;
+  const { title, artist, album, artworkPath, isPlaying, position, duration } = state;
   const hasPrevious = Boolean(state.onPrevious);
   const hasNext = Boolean(state.onNext);
 
@@ -39,6 +40,7 @@ export function useMediaSession(active: boolean, state: MediaSessionState): void
     const session = navigator.mediaSession;
     session.metadata = new MediaMetadata({
       title,
+      ...(artist ? { artist } : {}),
       ...(album ? { album } : {}),
       artwork: [
         { src: mediaUrls.thumbnail(artworkPath, 512), sizes: '512x512', type: 'image/webp' },
@@ -67,7 +69,7 @@ export function useMediaSession(active: boolean, state: MediaSessionState): void
       for (const action of ACTIONS) bind(action, null);
       session.metadata = null;
     };
-  }, [active, title, album, artworkPath, hasPrevious, hasNext]);
+  }, [active, title, artist, album, artworkPath, hasPrevious, hasNext]);
 
   useEffect(() => {
     if (!active || !('mediaSession' in navigator)) return;

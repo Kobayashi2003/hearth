@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ChevronRight,
   Menu as MenuIcon,
+  PanelLeftOpen,
   Search,
 } from 'lucide-react';
 import type { ViewMode } from '@hearth/shared';
@@ -35,6 +36,7 @@ export function ExplorerHeader({
   onUploadFiles,
   onUploadFolder,
   onOpenNav,
+  navKind,
   searchRef,
   collapsed,
 }: {
@@ -46,8 +48,9 @@ export function ExplorerHeader({
   onNewFolder: () => void;
   onUploadFiles: () => void;
   onUploadFolder: () => void;
-  /** Present on narrow screens, where the sidebar is a drawer. */
+  /** Present while the sidebar is out of sight: a drawer, or put away. */
   onOpenNav?: (() => void) | undefined;
+  navKind: 'drawer' | 'hidden' | null;
   searchRef: RefObject<HTMLInputElement | null>;
   /** Scrolled down the listing: a compact header folds to its first row. */
   collapsed: boolean;
@@ -93,6 +96,7 @@ export function ExplorerHeader({
           rootLabel={rootLabel}
           segments={segments}
           onOpenNav={onOpenNav}
+          navKind={navKind}
           // Folded away, the title takes the path's place, so where you are stays in sight.
           heading={folded ? title : null}
           search={
@@ -210,6 +214,7 @@ function NavRow({
   rootLabel,
   segments,
   onOpenNav,
+  navKind,
   heading,
   search,
   tools,
@@ -218,6 +223,7 @@ function NavRow({
   rootLabel: string;
   segments: string[];
   onOpenNav: (() => void) | undefined;
+  navKind: 'drawer' | 'hidden' | null;
   heading: string | null | undefined;
   search: ReactNode;
   tools: ReactNode;
@@ -225,8 +231,14 @@ function NavRow({
   return (
     <div className="flex h-11 items-center gap-0.5 sm:gap-1">
       {onOpenNav ? (
-        <Button size="icon" onClick={onOpenNav} aria-label="Open navigation" className="-ml-2">
-          <MenuIcon />
+        <Button
+          size="icon"
+          onClick={onOpenNav}
+          aria-label={navKind === 'hidden' ? 'Show sidebar' : 'Open navigation'}
+          title={navKind === 'hidden' ? 'Show sidebar (Ctrl+B)' : undefined}
+          className="-ml-2"
+        >
+          {navKind === 'hidden' ? <PanelLeftOpen /> : <MenuIcon />}
         </Button>
       ) : null}
       <div className="hidden items-center sm:flex">

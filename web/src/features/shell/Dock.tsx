@@ -23,7 +23,7 @@ export function DockProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      <div className="pointer-events-none fixed right-[calc(0.75rem+var(--safe-right))] bottom-[calc(0.75rem+var(--safe-bottom))] left-[calc(0.75rem+var(--safe-left))] z-40 flex flex-col-reverse items-center gap-2 lg:left-[calc(16rem+0.75rem+var(--safe-left))] lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-end">
+      <div className="pointer-events-none fixed right-[calc(0.75rem+var(--safe-right))] bottom-[calc(0.75rem+var(--safe-bottom))] left-[calc(var(--sidebar-offset,0px)+0.75rem+var(--safe-left))] z-40 flex flex-col-reverse items-center gap-2 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-end">
         <div ref={setLeft} className="flex justify-start empty:hidden lg:!flex" />
         <div
           ref={setCenter}

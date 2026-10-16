@@ -8,14 +8,13 @@ import {
   useState,
   type MutableRefObject,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import type { FileEntry } from '@hearth/shared';
 
-import { mediaUrls } from '@/lib/api';
-import { baseName, parentOf } from '@/lib/format';
 import { local } from '@/lib/storage';
 import { percentOf, useProgress } from '@/features/progress/progress';
+import { canSkipFrom, nowPlaying, playingSpan, useAlbumPlayback, type Album } from './album';
+import { useAudioSource } from './source';
 import { useMediaSession } from './useMediaSession';
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -30,6 +29,10 @@ interface PlayerValue {
   muted: boolean;
   shuffle: boolean;
   repeat: RepeatMode;
+  /** The file is an album ripped to one file: its tracks, and which is playing. */
+  album: Album | null;
+  /** Something to go back or on to: another file, or another track of the album. */
+  canSkip: boolean;
   play: (track: FileEntry, playlist?: FileEntry[]) => void;
   toggle: () => void;
   pause: () => void;
@@ -45,9 +48,6 @@ interface PlayerValue {
 const PlayerContext = createContext<PlayerValue | null>(null);
 const VOLUME_KEY = 'hearth.volume';
 const SAVE_EVERY_SECONDS = 5;
-/** Too little to be worth resuming, or so close to the end that the track is done. */
-const RESUME_MIN_SECONDS = 20;
-const RESUME_END_MARGIN = 10;
 
 /**
  * Audio lives here, above the preview overlay, so closing the preview that
@@ -58,14 +58,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [track, setTrack] = useState<FileEntry | null>(null);
   const [playlist, setPlaylist] = useState<FileEntry[]>([]);
   const [isPlaying, setPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(() => clampVolume(Number(local.get(VOLUME_KEY) ?? 1)));
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
   const { save } = useProgress();
   const lastSaved = useRef(0);
+  const source = useAudioSource(audioRef, track);
+  const { position, duration, seek } = source;
 
   const play = useCallback(
     (next: FileEntry, list?: FileEntry[]) => {
@@ -85,12 +85,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const pause = useCallback(() => audioRef.current?.pause(), []);
 
-  const seek = useCallback((seconds: number) => {
-    const audio = audioRef.current;
-    if (audio && Number.isFinite(seconds)) audio.currentTime = Math.max(0, seconds);
-  }, []);
+  const { album, skipWithin } = useAlbumPlayback({
+    file: track,
+    position,
+    duration,
+    repeat,
+    shuffle,
+    seek,
+  });
 
-  const skip = useCallback(
+  const skipFile = useCallback(
     (delta: number) => {
       if (!track || playlist.length === 0) return;
       const index = playlist.findIndex(item => item.path === track.path);
@@ -101,6 +105,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (next) setTrack(next);
     },
     [track, playlist, shuffle],
+  );
+  const skip = useCallback(
+    (delta: number) => {
+      if (!skipWithin(delta)) skipFile(delta);
+    },
+    [skipWithin, skipFile],
   );
 
   const setVolume = useCallback((next: number) => {
@@ -124,25 +134,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setPlaylist([]);
   }, []);
 
-  useTrackLoading({ audioRef, track, volume, lastSaved, setPosition, setDuration });
+  useEffect(() => {
+    lastSaved.current = 0;
+    if (audioRef.current) audioRef.current.volume = volume;
+    // A new track starts at the volume set; later changes go through setVolume.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.path]);
   useTrackProgress(track, position, duration, lastSaved);
 
   const onEnded = () => {
     if (track)
       save(track.path, { kind: 'time', at: 0, total: duration, percent: 100, savedAt: Date.now() });
     if (repeat === 'one') {
-      seek(0);
+      seek(playingSpan(album, duration).start);
       void audioRef.current?.play().catch(() => undefined);
       return;
     }
     const isLast = playlist.findIndex(item => item.path === track?.path) === playlist.length - 1;
-    if (repeat === 'all' || shuffle || !isLast) skip(1);
+    if (repeat === 'all' || shuffle || !isLast) skipFile(1);
   };
 
-  const index = track ? playlist.findIndex(item => item.path === track.path) : -1;
+  const canSkip = canSkipFrom(playlist, track, album);
   useMediaSession(track !== null, {
-    title: track?.name ?? '',
-    album: track ? baseName(parentOf(track.path)) : '',
+    ...nowPlaying(track, album),
     artworkPath: track?.path ?? '',
     isPlaying,
     position,
@@ -150,8 +164,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     onPlay: toggle,
     onPause: pause,
     onSeek: seek,
-    onPrevious: playlist.length > 1 && index >= 0 ? () => skip(-1) : undefined,
-    onNext: playlist.length > 1 && index >= 0 ? () => skip(1) : undefined,
+    onPrevious: canSkip ? () => skip(-1) : undefined,
+    onNext: canSkip ? () => skip(1) : undefined,
   });
 
   const value = useMemo<PlayerValue>(
@@ -165,6 +179,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       muted,
       shuffle,
       repeat,
+      album,
+      canSkip,
       play,
       toggle,
       pause,
@@ -186,6 +202,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       muted,
       shuffle,
       repeat,
+      album,
+      canSkip,
       play,
       toggle,
       pause,
@@ -205,8 +223,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         preload="metadata"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-        onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
-        onDurationChange={event => setDuration(event.currentTarget.duration || 0)}
+        {...source.events}
         onVolumeChange={event => setMuted(event.currentTarget.muted)}
         onEnded={onEnded}
       />
@@ -228,54 +245,6 @@ const REPEAT_ORDER: RepeatMode[] = ['off', 'all', 'one'];
 
 function nextRepeat(mode: RepeatMode): RepeatMode {
   return REPEAT_ORDER[(REPEAT_ORDER.indexOf(mode) + 1) % REPEAT_ORDER.length]!;
-}
-
-/**
- * A new track reloads the element and starts it, from where it was left if
- * that is past the opening and short of the end; no track empties it.
- */
-function useTrackLoading({
-  audioRef,
-  track,
-  volume,
-  lastSaved,
-  setPosition,
-  setDuration,
-}: {
-  audioRef: RefObject<HTMLAudioElement | null>;
-  track: FileEntry | null;
-  volume: number;
-  lastSaved: MutableRefObject<number>;
-  setPosition: (seconds: number) => void;
-  setDuration: (seconds: number) => void;
-}) {
-  const { progressFor } = useProgress();
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (!track) {
-      audio.removeAttribute('src');
-      audio.load();
-      return;
-    }
-    audio.src = mediaUrls.raw(track.path);
-    audio.volume = volume;
-    lastSaved.current = 0;
-    setPosition(0);
-    setDuration(0);
-
-    const saved = progressFor(track.path);
-    const resumeAt = saved?.kind === 'time' && typeof saved.at === 'number' ? saved.at : 0;
-    const onReady = () => {
-      if (resumeAt > RESUME_MIN_SECONDS && resumeAt < audio.duration - RESUME_END_MARGIN)
-        audio.currentTime = resumeAt;
-    };
-    audio.addEventListener('loadedmetadata', onReady, { once: true });
-    void audio.play().catch(() => undefined);
-    return () => audio.removeEventListener('loadedmetadata', onReady);
-    // Only a new track reloads the element.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.path]);
 }
 
 /** Written from here, not the viewer, because playback outlives the viewer. */

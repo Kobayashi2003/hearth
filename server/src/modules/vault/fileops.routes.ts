@@ -10,9 +10,9 @@ import type {
 
 import { HearthError } from '../../lib/errors.js';
 import { maxItems } from '../../lib/limits.js';
+import type { PathFollower } from '../../lib/path-follower.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { TrashService } from '../ember/trash.service.js';
-import type { LedgerService } from '../ledger/ledger.service.js';
 import type { FileOpsService } from './fileops.service.js';
 import type { ListingService } from './listing.service.js';
 
@@ -55,16 +55,17 @@ interface FileOpsServices {
   fileOps: FileOpsService;
   listing: ListingService;
   trash: TrashService;
-  ledger: LedgerService;
+  /** Reading positions and favorites, which follow what moved. */
+  followers: PathFollower;
 }
 
 export function createFileOpsRoutes(
   fileOps: FileOpsService,
   listing: ListingService,
   trash: TrashService,
-  ledger: LedgerService,
+  followers: PathFollower,
 ): FastifyPluginAsync {
-  const services: FileOpsServices = { fileOps, listing, trash, ledger };
+  const services: FileOpsServices = { fileOps, listing, trash, followers };
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
     const schemas = schemasFor(app.hearth.config.listing.maxBatchItems);
@@ -86,7 +87,7 @@ export function createFileOpsRoutes(
         const target = request.resolvePath(request.body.path, 'write');
         await listing.require(target);
         const renamed = await fileOps.rename(target, request.body.name);
-        await ledger.reprefix(request.relativePath(target), renamed);
+        await followers.reprefix(request.relativePath(target), renamed);
         return { path: renamed };
       },
     );
@@ -105,7 +106,7 @@ export function createFileOpsRoutes(
           await listing.assertDirectory(destination);
 
           const results = await fileOps.transfer(sources, destination, mode);
-          if (mode === 'move') await followMoves(ledger, results);
+          if (mode === 'move') await followMoves(followers, results);
           const body: OperationResponse = { results };
           return body;
         },
@@ -129,16 +130,15 @@ export function createFileOpsRoutes(
   };
 }
 
-/** Reading positions follow what moved. */
-async function followMoves(ledger: LedgerService, results: OperationResult[]) {
+async function followMoves(followers: PathFollower, results: OperationResult[]) {
   for (const result of results) {
-    if (result.ok && result.resultPath) await ledger.reprefix(result.path, result.resultPath);
+    if (result.ok && result.resultPath) await followers.reprefix(result.path, result.resultPath);
   }
 }
 
 /** One item to the recycle bin (or gone for good), reporting its own outcome. */
 async function deleteOne(
-  { fileOps, listing, trash, ledger }: FileOpsServices,
+  { fileOps, listing, trash, followers }: FileOpsServices,
   request: FastifyRequest,
   requested: string,
   useTrash: boolean,
@@ -152,7 +152,7 @@ async function deleteOne(
     } else {
       const relative = request.relativePath(target);
       await fileOps.remove(target);
-      await ledger.forget(relative);
+      await followers.forget(relative);
     }
     return { path: requested, ok: true };
   } catch (error) {

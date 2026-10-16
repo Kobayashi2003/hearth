@@ -1,6 +1,7 @@
-import { DEFAULT_HOB, type HobDocument, type HobPatch } from '@hearth/shared';
+import { DEFAULT_HOB, type Favorite, type HobDocument, type HobPatch } from '@hearth/shared';
 
 import { UserDocuments } from '../../lib/json-store.js';
+import { isUnder, type PathFollower } from '../../lib/path-follower.js';
 
 /** Hob: per-user preferences. */
 export class HobService {
@@ -18,6 +19,43 @@ export class HobService {
     return this.documents
       .for(username)
       .update(current => pick({ ...DEFAULT_HOB, ...current, ...patch }));
+  }
+
+  /**
+   * Favorites follow folders that move inside the root being served; the
+   * root is read when the change happens, since favorites name theirs.
+   */
+  favoritesFollower(activeRoot: () => string): PathFollower {
+    return {
+      reprefix: (from, to) =>
+        this.rewriteFavorites(activeRoot(), favorite =>
+          isUnder(favorite.path, from)
+            ? { ...favorite, path: to + favorite.path.slice(from.length) }
+            : favorite,
+        ),
+      forget: target =>
+        this.rewriteFavorites(activeRoot(), favorite =>
+          isUnder(favorite.path, target) ? null : favorite,
+        ),
+    };
+  }
+
+  private async rewriteFavorites(
+    root: string,
+    rewrite: (favorite: Favorite) => Favorite | null,
+  ): Promise<void> {
+    for (const username of await this.documents.usernames()) {
+      try {
+        await this.documents.for(username).update(current => {
+          const favorites = (current.favorites ?? []).flatMap(favorite =>
+            favorite.root === root ? (rewrite(favorite) ?? []) : [favorite],
+          );
+          return { ...current, favorites };
+        });
+      } catch {
+        // A favorite is a convenience; it must not fail the file operation that already succeeded.
+      }
+    }
   }
 }
 

@@ -27,6 +27,19 @@ export interface ThumbnailRequest {
 
 type CacheRequest = ThumbnailRequest & { atSeconds?: number };
 
+/** Videos whose length is remembered; past this the memory starts over. */
+const DURATIONS_KEPT = 500;
+/** Short of the very end: there is no frame left to decode at the last instant. */
+const END_MARGIN_SECONDS = 0.5;
+
+/** Inside the video, on one of `points` evenly spaced moments (any moment when unlimited), to 0.1 s. */
+export function snapMoment(at: number, duration: number, points: number): number {
+  const step = Number.isFinite(points) ? Math.max(duration / points, 0.1) : 0.1;
+  const last = Math.floor(Math.max(0, duration - END_MARGIN_SECONDS) / step);
+  const index = Math.min(Math.round(Math.max(0, at) / step), last);
+  return Math.round(index * step * 10) / 10;
+}
+
 /** Seek previews are small and passing; they need less quality than a cover. */
 const FRAME_QUALITY = 60;
 
@@ -92,15 +105,20 @@ export class ThumbnailService {
 
   /**
    * The frame at a moment of a video, for the preview above a seek bar. Cached
-   * like thumbnails; the client asks for at most about a hundred moments a
-   * video, so the cache stays small. Null past the end of the stream.
+   * like thumbnails. The moment is kept inside the video and snapped to one of
+   * `HEARTH_FRAME_PREVIEW_POINTS` along it, so however a client asks, a video
+   * has at most that many cached. Null when ffmpeg finds no frame there.
    */
   async frameAt(
     target: SafePath,
-    { atSeconds, width }: { atSeconds: number; width: number },
+    request: { atSeconds: number; width: number },
     signal?: AbortSignal,
   ): Promise<Buffer | null> {
     const stats = await fsp.stat(target);
+    const duration = await this.durationOf(target, stats, signal);
+    if (duration === null) return null;
+    const atSeconds = snapMoment(request.atSeconds, duration, this.config.media.framePreviewPoints);
+    const { width } = request;
     const cachePath = this.cachePathFor(target, stats.mtimeMs, stats.size, {
       width,
       quality: FRAME_QUALITY,
@@ -119,6 +137,22 @@ export class ThumbnailService {
     }, signal);
     if (frame) await writeAtomically(cachePath, frame);
     return frame;
+  }
+
+  private readonly durations = new Map<string, number | null>();
+
+  /** A video's length, remembered by path and version: every hover over a seek bar asks again. */
+  private async durationOf(
+    target: SafePath,
+    stats: { mtimeMs: number; size: number },
+    signal?: AbortSignal,
+  ): Promise<number | null> {
+    const key = `${target}|${stats.mtimeMs}|${stats.size}`;
+    if (this.durations.has(key)) return this.durations.get(key)!;
+    const probe = await this.ffmpeg.probe(target, signal);
+    if (this.durations.size >= DURATIONS_KEPT) this.durations.clear();
+    this.durations.set(key, probe.durationSeconds);
+    return probe.durationSeconds;
   }
 
   /** Decode whatever the source is into bytes sharp can resize, or null. */

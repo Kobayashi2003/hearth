@@ -7,8 +7,8 @@ import type {
 } from '@hearth/shared';
 
 import { maxItems } from '../../lib/limits.js';
+import type { PathFollower } from '../../lib/path-follower.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
-import type { LedgerService } from '../ledger/ledger.service.js';
 import type { TrashService } from './trash.service.js';
 
 const restoreSchema = (batch: number) =>
@@ -22,7 +22,11 @@ const restoreSchema = (batch: number) =>
     },
   }) as const;
 
-export function createEmberRoutes(trash: TrashService, ledger: LedgerService): FastifyPluginAsync {
+/** `followers` see a restore as a move back, so positions and favorites return with the item. */
+export function createEmberRoutes(
+  trash: TrashService,
+  followers: PathFollower,
+): FastifyPluginAsync {
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
     const deleteConfig = { permission: 'delete' as const, rateLimit: rateLimits.write };
@@ -43,7 +47,7 @@ export function createEmberRoutes(trash: TrashService, ledger: LedgerService): F
         for (const id of request.body.ids) {
           try {
             const { path, originalPath } = await trash.restore(id);
-            await ledger.reprefix(originalPath, path);
+            await followers.reprefix(originalPath, path);
             results.push({ path: id, ok: true, resultPath: path });
           } catch (error) {
             results.push({

@@ -30,7 +30,8 @@ viewer's own reading session (the EPUB reader's position, bookmarks and
 highlights). Lives on the server so it follows you across devices.
 _Avoid_: history, recent, watch state
 
-**Hob**: per user, how you like things set — theme, density, view, wallpaper.
+**Hob**: per user, how you like things set — theme, density, view, wallpaper,
+favorite folders, the EPUB reader's colours.
 Stored apart from Ledger because it is written rarely and Ledger constantly.
 _Avoid_: settings, config
 
@@ -56,6 +57,7 @@ Selection is the set an operation applies to. They are independent.
 
 ### Adaptation
 
-Layout follows **width** (sidebar or drawer at 1024px; column count); ergonomics
+Layout follows **width** (the sidebar docks while the listing keeps 720px
+beside it, else it is a drawer; column count); ergonomics
 follow the **pointer** (row height, long-press, hit areas). A phone in landscape
 is wide *and* touched; a narrow desktop window is small *and* moused.

@@ -5,6 +5,7 @@ import { mediaUrls } from '@/lib/api';
 import { viewerKindFor } from '@/lib/file-kind';
 import { Button } from '@/ui/Button';
 import { usePreview } from '../PreviewProvider';
+import { playingSpan } from './album';
 import { usePlayer } from './PlayerProvider';
 import { SkipButtons } from './transport';
 
@@ -18,7 +19,10 @@ export function MiniPlayer() {
   const audioOpen = preview.current !== null && viewerKindFor(preview.current.entry) === 'audio';
   if (!track || audioOpen) return null;
 
-  const progress = player.duration > 0 ? (player.position / player.duration) * 100 : 0;
+  // On an album, the track playing, as the full player shows it.
+  const span = playingSpan(player.album, player.duration);
+  const progress = span.length > 0 ? ((player.position - span.start) / span.length) * 100 : 0;
+  const title = span.title ?? track.name;
 
   return (
     <div className="animate-rise pointer-events-auto relative flex w-[min(24rem,calc(100vw-1.5rem))] items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface p-1.5 pr-2 shadow-float">
@@ -26,7 +30,7 @@ export function MiniPlayer() {
         type="button"
         onClick={() => preview.open(track, player.playlist)}
         className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-        aria-label={`Open player: ${track.name}`}
+        aria-label={`Open player: ${title}`}
       >
         <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-sunken">
           {failedArt === track.path ? (
@@ -41,7 +45,7 @@ export function MiniPlayer() {
           )}
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-[13px] font-medium">{track.name}</span>
+          <span className="block truncate text-[13px] font-medium">{title}</span>
           <span className="block text-[12px] text-ink-3">
             {player.isPlaying ? 'Playing' : 'Paused'}
           </span>
@@ -54,7 +58,7 @@ export function MiniPlayer() {
       <span
         aria-hidden
         className="absolute inset-x-0 bottom-0 h-0.5 bg-ember"
-        style={{ width: `${progress}%` }}
+        style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
       />
     </div>
   );

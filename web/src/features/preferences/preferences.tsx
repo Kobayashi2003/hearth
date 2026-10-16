@@ -19,6 +19,8 @@ const THEME_KEY = 'hearth.theme';
 interface PreferencesValue {
   preferences: HobDocument;
   update: <K extends keyof HobDocument>(key: K, value: HobDocument[K]) => void;
+  /** Read Hob again: the server rewrites favorites when a folder they name moves. */
+  reload: () => void;
 }
 
 const PreferencesContext = createContext<PreferencesValue | null>(null);
@@ -38,9 +40,11 @@ function readMirror(): HobDocument {
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState<HobDocument>(readMirror);
 
-  const accept = useCallback((next: HobDocument) => {
-    setPreferences(next);
-    local.set(MIRROR_KEY, JSON.stringify(next));
+  // A server older than this page lacks the newer keys; they get their defaults, not undefined.
+  const accept = useCallback((next: Partial<HobDocument>) => {
+    const complete = { ...DEFAULT_HOB, ...next };
+    setPreferences(complete);
+    local.set(MIRROR_KEY, JSON.stringify(complete));
   }, []);
 
   useEffect(() => {
@@ -52,6 +56,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, [accept]);
+
+  const reload = useCallback(() => {
+    api.preferences().then(accept, () => undefined);
   }, [accept]);
 
   const update = useCallback(
@@ -77,7 +85,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     local.set(THEME_KEY, preferences.theme === 'system' ? null : preferences.theme);
   }, [preferences.theme]);
 
-  const value = useMemo(() => ({ preferences, update }), [preferences, update]);
+  const value = useMemo(() => ({ preferences, update, reload }), [preferences, update, reload]);
   return <PreferencesContext value={value}>{children}</PreferencesContext>;
 }
 

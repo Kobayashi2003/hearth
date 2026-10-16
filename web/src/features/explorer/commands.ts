@@ -10,6 +10,8 @@ import {
   RefreshCw,
   Search as SearchIcon,
   Settings,
+  Star,
+  StarOff,
   SunMedium,
   Upload,
 } from 'lucide-react';
@@ -32,6 +34,8 @@ export interface CommandContext {
   newFolder: () => void;
   uploadFiles: () => void;
   uploadFolder: () => void;
+  /** The folder on screen, when it can be a favorite. */
+  favorite: { isFavorite: boolean; toggle: () => void } | null;
 }
 
 /** What Ctrl + K offers; writing commands appear only to someone who can write. */
@@ -86,6 +90,16 @@ export function paletteCommands(context: CommandContext): Command[] {
     { id: 'settings', label: 'Open settings', icon: Settings, run: context.openSettings },
     { id: 'sign-out', label: 'Sign out', icon: LogOut, run: context.signOut },
   ];
+  if (context.favorite) {
+    list.splice(3, 0, {
+      id: 'favorite',
+      label: context.favorite.isFavorite
+        ? 'Remove this folder from favorites'
+        : 'Add this folder to favorites',
+      icon: context.favorite.isFavorite ? StarOff : Star,
+      run: context.favorite.toggle,
+    });
+  }
   if (context.canWrite) {
     list.splice(
       2,

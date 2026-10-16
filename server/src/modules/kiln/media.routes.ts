@@ -1,13 +1,14 @@
 import type { FastifyPluginAsync } from 'fastify';
-import type { MediaProbe } from '@hearth/shared';
+import type { CueSheet, MediaProbe } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
 import { isAbortError } from '../../lib/errors.js';
 import { maximum } from '../../lib/limits.js';
 import { abortSignalOf } from '../../lib/request.js';
 import type { ListingService } from '../vault/listing.service.js';
+import type { CueService } from './cue.service.js';
 import type { FolderCoverService } from './folder-cover.service.js';
-import { openFile, pathQuery, STREAM } from './route-helpers.js';
+import { openFile, pathQuery, sendConversion, STREAM } from './route-helpers.js';
 import type { StreamService } from './stream.service.js';
 import type { SubtitleService } from './subtitle.service.js';
 import type { ThumbnailService } from './thumbnail.service.js';
@@ -19,13 +20,55 @@ export interface MediaRouteServices {
   subtitles: SubtitleService;
   thumbnails: ThumbnailService;
   folderCovers: FolderCoverService;
+  cues: CueService;
 }
 
-/** Bytes for <video>, <audio> and <img>: raw files, conversions, subtitles, thumbnails. */
+/** Bytes for <video>, <audio> and <img>: raw files, conversions, subtitles, thumbnails; an album's tracks. */
 export function createMediaRoutes(services: MediaRouteServices): FastifyPluginAsync {
   return async app => {
     await app.register(playbackRoutes(services));
     await app.register(thumbnailRoutes(services));
+    await app.register(albumRoutes(services));
+  };
+}
+
+/**
+ * The tracks of an album ripped to one file (204 when it is just a file), and
+ * audio the browser cannot decode as audio it can.
+ */
+function albumRoutes({ listing, cues, ffmpeg }: MediaRouteServices): FastifyPluginAsync {
+  return async app => {
+    /** Like a video conversion, not seekable: the client seeks by asking again with a new `start`. */
+    app.get<{ Querystring: { path: string; token?: string; start?: number } }>(
+      '/media/audio',
+      {
+        schema: { querystring: pathQuery({ start: { type: 'number', minimum: 0 } }) },
+        config: STREAM,
+      },
+      async (request, reply) => {
+        const { target } = await openFile(listing, request, request.query.path);
+        const signal = abortSignalOf(request);
+        const probe = await ffmpeg.probe(target, signal);
+        const { stream, contentType } = ffmpeg.transcodeAudio(
+          target,
+          { startSeconds: request.query.start ?? 0, codec: probe.audioCodec },
+          signal,
+        );
+        return sendConversion(reply, stream, contentType);
+      },
+    );
+
+    app.get<{ Querystring: { path: string; token?: string } }>(
+      '/media/cue',
+      { schema: { querystring: pathQuery() }, config: STREAM },
+      async (request, reply) => {
+        const { target } = await openFile(listing, request, request.query.path);
+        const sheet: CueSheet | null = await cues.sheetFor(target, abortSignalOf(request));
+        // Not cached by the browser: a sheet dropped in beside the file should show up.
+        reply.header('Cache-Control', 'no-cache');
+        return sheet ? sheet : reply.code(204).send();
+      },
+    );
   };
 }
 
@@ -78,12 +121,7 @@ function playbackRoutes({
           { audioTrack: request.query.audioTrack, startSeconds: request.query.start },
           abortSignalOf(request),
         );
-        // Not byte-seekable: the client seeks by restarting with a new `start`.
-        return reply
-          .header('Content-Type', 'video/mp4')
-          .header('Cache-Control', 'no-store')
-          .header('Accept-Ranges', 'none')
-          .send(stream);
+        return sendConversion(reply, stream, 'video/mp4');
       },
     );
 
@@ -175,7 +213,12 @@ function thumbnailRoutes({
           querystring: pathQuery(
             {
               at: { type: 'number', minimum: 0 },
-              width: { type: 'integer', minimum: 64, maximum: 480, default: 192 },
+              width: {
+                type: 'integer',
+                minimum: 16,
+                ...maximum(app.hearth.config.media.thumbnailMaxWidth),
+                default: 192,
+              },
               // The client's version of the file (mtime and size); only a cache key.
               v: { type: 'string', maxLength: 64 },
             },

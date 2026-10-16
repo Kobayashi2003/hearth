@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import type { HobDocument, HobPatch } from '@hearth/shared';
+import { MAX_FAVORITES, type HobDocument, type HobPatch } from '@hearth/shared';
 
 import { usernameOf } from '../../lib/request.js';
 import type { HobService } from './hob.service.js';
@@ -16,6 +16,22 @@ const patchSchema = {
       wallpaperOpacity: { type: 'number', minimum: 0, maximum: 1 },
       gridSize: { type: 'number', minimum: 96, maximum: 320 },
       folderCovers: { type: 'boolean' },
+      favorites: {
+        type: 'array',
+        maxItems: MAX_FAVORITES,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['root', 'path'],
+          properties: {
+            root: { type: 'string', minLength: 1, maxLength: 64 },
+            path: { type: 'string', maxLength: 4096 },
+            label: { type: 'string', minLength: 1, maxLength: 200 },
+          },
+        },
+      },
+      // An id from the reader's theme registry; unknown ones fall back to its default.
+      readerTheme: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,63}$' },
     },
   },
 } as const;

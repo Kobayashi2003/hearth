@@ -11,6 +11,7 @@ import { usePreferences } from '@/features/preferences/preferences';
 import { useProgress } from '@/features/progress/progress';
 import { usePreview } from '@/features/preview/PreviewProvider';
 import { DOCK_CLEARANCE, DockSlot } from '@/features/shell/Dock';
+import { useFavorites } from '@/features/shell/favorites';
 import { useShell } from '@/features/shell/shell-context';
 import { useUploads, type QueuedFile } from '@/features/transfer/uploads';
 import { UploadTray } from '@/features/transfer/UploadTray';
@@ -91,8 +92,16 @@ export function ExplorerPage() {
     [explorer, preview, entries],
   );
 
+  const favorites = useFavorites();
+  // The root has no name to keep, and a search or collection is not a folder.
+  const favoriteHere = useMemo(
+    () => (search.path && !explorer.isSearching ? { path: search.path, favorites } : null),
+    [search.path, explorer.isSearching, favorites],
+  );
+
   const handlers = useMemo(
     () => ({
+      favorites,
       open,
       download: operations.download,
       copy: operations.copy,
@@ -102,7 +111,7 @@ export function ExplorerPage() {
       details: (entry: FileEntry) => setDialog({ kind: 'details', entry }),
       reveal: explorer.isSearching ? (entry: FileEntry) => revealInFolder(entry.path) : undefined,
     }),
-    [open, operations, explorer.isSearching, revealInFolder],
+    [open, operations, explorer.isSearching, revealInFolder, favorites],
   );
   const permissions = { write: canWrite, delete: canDelete };
   const selectionActions = actionsFor(selection.selectedEntries, permissions, handlers);
@@ -149,6 +158,12 @@ export function ExplorerPage() {
         newFolder,
         uploadFiles: pickers.pickFiles,
         uploadFolder: pickers.pickFolder,
+        favorite: favoriteHere
+          ? {
+              isFavorite: favorites.has(favoriteHere.path),
+              toggle: () => favorites.toggle(favoriteHere.path),
+            }
+          : null,
       }),
     [
       explorer,
@@ -162,6 +177,8 @@ export function ExplorerPage() {
       pickers.pickFiles,
       pickers.pickFolder,
       newFolder,
+      favoriteHere,
+      favorites,
     ],
   );
 
@@ -212,6 +229,7 @@ export function ExplorerPage() {
         onUploadFiles={pickers.pickFiles}
         onUploadFolder={pickers.pickFolder}
         onOpenNav={shell.openNav}
+        navKind={shell.navKind}
         searchRef={searchRef}
         collapsed={folded}
       />
@@ -267,6 +285,7 @@ export function ExplorerPage() {
             paste: operations.clipboard ? operations.paste : null,
             selectAll: selection.selectAll,
             refresh: () => void explorer.refetch(),
+            favorite: favoriteHere,
           }}
           entryActions={targets => actionsFor(targets, permissions, handlers)}
           onClose={closeMenu}

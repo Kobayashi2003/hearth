@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Scissors,
   SquareCheckBig,
+  Star,
+  StarOff,
   Trash2,
   Upload,
   type LucideIcon,
@@ -38,6 +40,31 @@ export interface ActionHandlers {
   details: (entry: FileEntry) => void;
   /** Present in search and collection results, where items are away from their folders. */
   reveal?: (entry: FileEntry) => void;
+  favorites?: FavoriteToggle;
+}
+
+/** Whether a folder is in the sidebar's favorites, and putting it there or taking it out. */
+export interface FavoriteToggle {
+  has: (path: string) => boolean;
+  toggle: (path: string) => void;
+}
+
+/** For a single folder, putting it in favorites or taking it out. */
+function folderFavorite(
+  only: FileEntry | undefined,
+  favorites: FavoriteToggle | undefined,
+): EntryAction[] {
+  return only?.isDirectory && favorites ? [favoriteAction(only.path, favorites)] : [];
+}
+
+function favoriteAction(path: string, favorites: FavoriteToggle): EntryAction {
+  const has = favorites.has(path);
+  return {
+    id: 'favorite',
+    label: has ? 'Remove from favorites' : 'Add to favorites',
+    icon: has ? StarOff : Star,
+    run: () => favorites.toggle(path),
+  };
 }
 
 /** One declaration for the context menu, the long-press menu and the selection bar. */
@@ -57,6 +84,7 @@ export function actionsFor(
       run: () => handlers.open(only),
     });
   }
+  actions.push(...folderFavorite(only, handlers.favorites));
   if (only && handlers.reveal) {
     const reveal = handlers.reveal;
     actions.push({
@@ -124,6 +152,8 @@ export interface FolderHandlers {
   paste: (() => void) | null;
   selectAll: () => void;
   refresh: () => void;
+  /** The folder on screen, when it is one that can be a favorite (not the root, not a search). */
+  favorite: { path: string; favorites: FavoriteToggle } | null;
 }
 
 /** The menu for the folder itself: a right-click (or long-press) on empty space. */
@@ -155,6 +185,9 @@ export function folderActions(canWrite: boolean, handlers: FolderHandlers): Entr
         run: handlers.paste,
       });
     }
+  }
+  if (handlers.favorite) {
+    actions.push(favoriteAction(handlers.favorite.path, handlers.favorite.favorites));
   }
   actions.push(
     {

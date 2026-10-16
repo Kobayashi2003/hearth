@@ -56,6 +56,17 @@ export class FfmpegAdapter {
     return summarise(parseProbe(output));
   }
 
+  /** The container's own tags (a FLAC's Vorbis comments, say), as ffprobe names them. */
+  async formatTags(filePath: string, signal?: AbortSignal): Promise<Record<string, string>> {
+    const output = await this.collect(
+      this.options.ffprobePath,
+      ['-v', 'quiet', '-print_format', 'json', '-show_entries', 'format_tags', filePath],
+      signal,
+    );
+    const payload = JSON.parse(output) as { format?: { tags?: Record<string, string> } };
+    return payload.format?.tags ?? {};
+  }
+
   /** Fragmented MP4 on stdout, playable before the encode finishes. */
   transcode(filePath: string, options: TranscodeOptions, signal: AbortSignal): Readable {
     const args: string[] = [];
@@ -95,6 +106,40 @@ export class FfmpegAdapter {
 
     const child = this.spawnBound(this.options.ffmpegPath, args, signal);
     return child.stdout;
+  }
+
+  /**
+   * Audio the browser cannot decode, as audio it can, on stdout from `startSeconds`.
+   * A lossless source stays lossless (FLAC); a lossy one becomes AAC rather
+   * than a lossless copy several times its size. Cover art is left out.
+   */
+  transcodeAudio(
+    filePath: string,
+    { startSeconds, codec }: { startSeconds: number; codec: string | null },
+    signal: AbortSignal,
+  ): { stream: Readable; contentType: string } {
+    const lossless = codec !== null && isLossless(codec);
+    const args = startSeconds > 0 ? ['-ss', startSeconds.toFixed(3)] : [];
+    args.push('-v', 'error', '-i', filePath, '-map', '0:a:0', '-vn');
+    if (lossless) {
+      // DSD runs at megahertz rates no browser takes; 88.2 kHz keeps it exact in 24 bits.
+      if (codec.startsWith('dsd')) args.push('-ar', '88200', '-sample_fmt', 's32');
+      args.push('-c:a', 'flac', '-f', 'flac', 'pipe:1');
+    } else {
+      args.push(
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        'frag_keyframe+empty_moov+default_base_moof',
+        '-f',
+        'mp4',
+        'pipe:1',
+      );
+    }
+    const child = this.spawnBound(this.options.ffmpegPath, args, signal);
+    return { stream: child.stdout, contentType: lossless ? 'audio/flac' : 'audio/mp4' };
   }
 
   /** Several subtitle tracks in one pass: extracting any one reads the whole file. */
@@ -266,7 +311,27 @@ function toTrack(stream: ProbeStream, ordinal: number): MediaTrack {
  * falls back to transcoding. AVI, MPEG-TS, FLV and ASF never play natively,
  * whatever codec they carry.
  */
-const BROWSER_CONTAINERS = ['mp4', 'mov', 'webm', 'matroska', 'ogg'];
+// The audio-only ones are files a browser plays from an <audio> element as they are.
+const BROWSER_CONTAINERS = ['mp4', 'mov', 'webm', 'matroska', 'ogg', 'mp3', 'flac', 'wav', 'aac'];
+
+/** Codecs that lose nothing; converting them to a lossy one would. */
+const LOSSLESS_PREFIXES = [
+  'ape',
+  'tta',
+  'wavpack',
+  'tak',
+  'alac',
+  'flac',
+  'pcm_',
+  'dsd_',
+  'mlp',
+  'truehd',
+  'shorten',
+];
+
+function isLossless(codec: string): boolean {
+  return LOSSLESS_PREFIXES.some(prefix => codec.startsWith(prefix));
+}
 
 function isBrowserPlayable(
   formatName: string | undefined,
@@ -276,6 +341,8 @@ function isBrowserPlayable(
   const containers = (formatName ?? '').split(',');
   if (!containers.some(name => BROWSER_CONTAINERS.includes(name))) return false;
   const videoOk = !videoCodec || BROWSER_VIDEO_CODECS.has(videoCodec);
-  const audioOk = !audioCodec || BROWSER_AUDIO_CODECS.has(audioCodec);
+  // Plain PCM only plays as a WAV file; inside a video container it is a conversion.
+  const pcmInWav = containers.includes('wav') && Boolean(audioCodec?.startsWith('pcm_'));
+  const audioOk = !audioCodec || BROWSER_AUDIO_CODECS.has(audioCodec) || pcmInWav;
   return videoOk && audioOk;
 }

@@ -49,6 +49,8 @@ import { createSessionStore } from './modules/warden/session-store.js';
 import { Warden } from './modules/warden/warden.js';
 import { systemRoutes } from './modules/system/routes.js';
 import { createAdminRoutes } from './modules/system/admin.routes.js';
+import { CueService } from './modules/kiln/cue.service.js';
+import { followAll } from './lib/path-follower.js';
 
 export interface BuildOptions {
   config: AppConfig;
@@ -101,6 +103,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
   );
   await ledger.migrate();
   const hob = new HobService(path.join(config.storage.dataDirectory, 'preferences'));
+  const followers = followAll([ledger, hob.favoritesFollower(() => runtime.activeRoot.id)]);
   const beacon = new Beacon(config, runtime, vault, logger.child({ module: 'search' }));
   const fileOps = new FileOpsService(vault);
   const trash = new TrashService(config, runtime, vault, logger.child({ module: 'trash' }));
@@ -127,6 +130,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
     text: new TextService(runtime),
     thumbnails: new ThumbnailService(config, ffmpeg),
     subtitles: new SubtitleService(config, ffmpeg),
+    cues: new CueService(ffmpeg),
     folderCovers: new FolderCoverService(runtime),
     comics: new ComicService(config),
     archives: new ArchiveService(runtime),
@@ -145,9 +149,9 @@ export async function buildApp({ config, logger }: BuildOptions) {
       await api.register(systemRoutes);
       await api.register(createAdminRoutes(warden));
       await api.register(createVaultRoutes(listing));
-      await api.register(createFileOpsRoutes(fileOps, listing, trash, ledger));
+      await api.register(createFileOpsRoutes(fileOps, listing, trash, followers));
       await api.register(createTransferRoutes({ uploads, chunked, downloads, listing, streams }));
-      await api.register(createEmberRoutes(trash, ledger));
+      await api.register(createEmberRoutes(trash, followers));
       await api.register(createLedgerRoutes(ledger));
       await api.register(createHobRoutes(hob));
       await api.register(createBeaconRoutes(beacon));

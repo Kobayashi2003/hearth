@@ -1,4 +1,6 @@
-import type { FastifyRequest } from 'fastify';
+import type { Readable } from 'node:stream';
+
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { ListingService } from '../vault/listing.service.js';
 import type { OpenedFile } from './stream.service.js';
@@ -33,4 +35,16 @@ export async function openFile(
 ): Promise<OpenedFile> {
   const target = request.resolvePath(path, 'read');
   return { target, entry: await listing.assertFile(target) };
+}
+
+/**
+ * A conversion as ffmpeg produces it. Not byte-seekable and never the same
+ * twice: the client seeks by asking again with a new `start`.
+ */
+export function sendConversion(reply: FastifyReply, stream: Readable, contentType: string) {
+  return reply
+    .header('Content-Type', contentType)
+    .header('Cache-Control', 'no-store')
+    .header('Accept-Ranges', 'none')
+    .send(stream);
 }

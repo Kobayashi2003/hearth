@@ -103,6 +103,8 @@ export interface AppConfig {
     readonly transcodeCrf: number;
     readonly transcodePreset: string;
     readonly thumbnailMaxWidth: number;
+    /** Seek-bar preview frames one video can have; a request snaps to the nearest. */
+    readonly framePreviewPoints: number;
     readonly maxTextBytes: number;
     readonly maxTextSaveBytes: number;
     readonly archiveMaxEntries: number;
@@ -253,6 +255,7 @@ export function loadConfig(development = false): AppConfig {
       transcodeCrf: envInt('TRANSCODE_CRF', 23),
       transcodePreset: envString('TRANSCODE_PRESET', 'veryfast'),
       thumbnailMaxWidth: envLimit('THUMBNAIL_MAX_WIDTH', 2048),
+      framePreviewPoints: envLimit('FRAME_PREVIEW_POINTS', 100),
       maxTextBytes: envLimit('MAX_TEXT_SIZE_MB', 8, MB),
       maxTextSaveBytes: envLimit('MAX_TEXT_SAVE_SIZE_MB', 32, MB),
       archiveMaxEntries: envLimit('ARCHIVE_MAX_ENTRIES', 5000),

@@ -5,6 +5,7 @@ import type { Progress, ProgressMap } from '@hearth/shared';
 
 import { HearthError } from '../../lib/errors.js';
 import { readJsonFile, UserDocuments, writeJsonFileAtomic } from '../../lib/json-store.js';
+import { isUnder, type PathFollower } from '../../lib/path-follower.js';
 
 export interface LedgerLimits {
   maxProgressEntries: number;
@@ -31,7 +32,7 @@ type SessionMap = Record<string, StoredSession>;
  * `reprefix` / `forget` must be called whenever Hearth itself moves or deletes
  * something (see the backend structure doc for why not a content hash).
  */
-export class LedgerService {
+export class LedgerService implements PathFollower {
   private readonly progress: UserDocuments<ProgressMap>;
   private readonly sessions: UserDocuments<SessionMap>;
 
@@ -133,12 +134,6 @@ export class LedgerService {
       }
     }
   }
-}
-
-/** A prefix match must land on a path boundary: `Anime` must not match `Anime Movies`. */
-function isUnder(candidate: string, prefix: string): boolean {
-  if (candidate === prefix) return true;
-  return candidate.startsWith(prefix) && /[/\\]/.test(candidate.charAt(prefix.length));
 }
 
 function remap<T>(

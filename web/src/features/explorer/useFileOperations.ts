@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { FileEntry, OperationResponse } from '@hearth/shared';
 
 import { api, mediaUrls } from '@/lib/api';
+import { usePreferences } from '@/features/preferences/preferences';
 
 interface Clipboard {
   paths: string[];
@@ -12,6 +13,7 @@ interface Clipboard {
 
 export function useFileOperations(currentPath: string, onDone: () => void) {
   const queryClient = useQueryClient();
+  const { reload: reloadPreferences } = usePreferences();
   const [clipboard, setClipboard] = useState<Clipboard | null>(null);
 
   const refresh = useCallback(
@@ -35,9 +37,11 @@ export function useFileOperations(currentPath: string, onDone: () => void) {
         toast.error(error instanceof Error ? error.message : 'That did not work');
       } finally {
         refresh();
+        // Favorites under a folder that moved or went were rewritten by the server.
+        reloadPreferences();
       }
     },
-    [onDone, refresh],
+    [onDone, refresh, reloadPreferences],
   );
 
   const download = useCallback((entries: FileEntry[]) => {

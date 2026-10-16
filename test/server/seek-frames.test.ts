@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FfmpegAdapter } from '../../server/src/adapters/ffmpeg/ffmpeg.js';
 import type { AppConfig } from '../../server/src/config/index.js';
 import type { SafePath } from '../../server/src/lib/vault.js';
-import { ThumbnailService } from '../../server/src/modules/kiln/thumbnail.service.js';
+import { snapMoment, ThumbnailService } from '../../server/src/modules/kiln/thumbnail.service.js';
 
 let directory: string;
 let video: SafePath;
@@ -30,6 +30,8 @@ const isWebp = (bytes: Buffer) =>
 function fakeFfmpeg(answer: 'frame' | 'empty' = 'frame') {
   const calls: { atSeconds: number; width: number; exact?: boolean }[] = [];
   const ffmpeg = {
+    // Two minutes long.
+    probe: async () => ({ durationSeconds: 120 }),
     async extractFrame(
       _file: string,
       request: { atSeconds: number; width: number; exact?: boolean },
@@ -42,8 +44,10 @@ function fakeFfmpeg(answer: 'frame' | 'empty' = 'frame') {
   return { ffmpeg, calls };
 }
 
-function service(ffmpeg: FfmpegAdapter): ThumbnailService {
-  const config = { media: { thumbnailCacheDirectory: path.join(directory, 'cache') } };
+function service(ffmpeg: FfmpegAdapter, framePreviewPoints = 100): ThumbnailService {
+  const config = {
+    media: { thumbnailCacheDirectory: path.join(directory, 'cache'), framePreviewPoints },
+  };
   return new ThumbnailService(config as AppConfig, ffmpeg);
 }
 
@@ -64,12 +68,31 @@ describe('seek-bar frames', () => {
     ]);
   });
 
-  it('has no frame past the end of the stream, and does not cache the miss', async () => {
+  it('does not cache a moment ffmpeg found no frame at', async () => {
     const { ffmpeg, calls } = fakeFfmpeg('empty');
     const thumbnails = service(ffmpeg);
 
-    expect(await thumbnails.frameAt(video, { atSeconds: 9999, width: 240 })).toBeNull();
-    expect(await thumbnails.frameAt(video, { atSeconds: 9999, width: 240 })).toBeNull();
+    expect(await thumbnails.frameAt(video, { atSeconds: 50, width: 240 })).toBeNull();
+    expect(await thumbnails.frameAt(video, { atSeconds: 50, width: 240 })).toBeNull();
     expect(calls).toHaveLength(2);
+  });
+
+  it('keeps a video to its preview points, however it is asked', async () => {
+    const { ffmpeg, calls } = fakeFfmpeg();
+    const thumbnails = service(ffmpeg);
+    for (const at of [37.25, 37.3, 37.4, 9999]) {
+      await thumbnails.frameAt(video, { atSeconds: at, width: 240 });
+    }
+    // 100 points over 120 s, 1.2 s apart; past the end is the last one inside.
+    expect(calls.map(call => call.atSeconds)).toEqual([37.2, 118.8]);
+  });
+});
+
+describe('snapMoment', () => {
+  it('snaps to the grid, stays inside the video, and with no limit only rounds', () => {
+    expect(snapMoment(37.3, 120, 100)).toBe(37.2);
+    expect(snapMoment(-5, 120, 100)).toBe(0);
+    expect(snapMoment(119.9, 120, 100)).toBe(118.8);
+    expect(snapMoment(37.33, 120, Number.POSITIVE_INFINITY)).toBe(37.3);
   });
 });

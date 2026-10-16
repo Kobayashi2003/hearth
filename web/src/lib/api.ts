@@ -19,6 +19,7 @@ import type {
   Progress,
   ProgressMap,
   RootsResponse,
+  CueSheet,
   SearchHealth,
   SearchResponse,
   SessionResponse,
@@ -182,6 +183,9 @@ export const api = {
   writeText: (path: string, content: string, encoding?: string) =>
     send<{ ok: boolean }>('PUT', '/content', { path, content, encoding }),
   probe: (path: string, signal?: AbortSignal) => get<MediaProbe>('/media/probe', { path }, signal),
+  /** The tracks of an album ripped to one file; null for an ordinary file. */
+  cue: (path: string, signal?: AbortSignal) =>
+    get<CueSheet | undefined>('/media/cue', { path }, signal).then(sheet => sheet ?? null),
   openComic: (path: string, signal?: AbortSignal) => get<ComicManifest>('/comic', { path }, signal),
   openArchive: (path: string, signal?: AbortSignal) =>
     get<ArchiveListing>('/archive', { path }, signal),
@@ -234,6 +238,8 @@ export const mediaUrls = {
   transcode: (path: string, options: { audioTrack?: number; start?: number } = {}) =>
     apiUrl('/media/transcode', { path, ...options }),
   subtitle: (path: string, track: number) => apiUrl('/media/subtitle', { path, track }),
+  /** Audio the browser cannot decode, converted from `start` seconds on. */
+  audio: (path: string, start: number) => apiUrl('/media/audio', { path, start }),
   /** `version` (mtime and size) lets the browser keep a thumbnail until the file changes. */
   thumbnail: (path: string, width = 320, version?: string) =>
     apiUrl('/thumbnail', { path, width, v: version }),

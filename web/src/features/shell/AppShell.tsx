@@ -1,10 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import * as RadixDialog from '@radix-ui/react-dialog';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { LogoMark } from '@/brand/Logo';
 import { api, mediaUrls } from '@/lib/api';
-import { useIsWide } from '@/hooks/useMediaQuery';
+import { useKeyBindings } from '@/lib/keys';
 import { LoginPage } from '@/features/session/LoginPage';
 import { useSession } from '@/features/session/session';
 import { PreferencesProvider, usePreferences } from '@/features/preferences/preferences';
@@ -16,6 +15,8 @@ import { SettingsDialog } from '@/features/settings/SettingsDialog';
 import { DockProvider, DockSlot } from './Dock';
 import { ShellContext } from './shell-context';
 import { Sidebar } from './Sidebar';
+import { DockedSidebar, DrawerSidebar } from './SidebarFrame';
+import { useSidebarLayout } from './useSidebarLayout';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { identity, isLoading } = useSession();
@@ -43,19 +44,29 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 function Frame({ children }: { children: ReactNode }) {
-  const isWide = useIsWide();
   const { preferences } = usePreferences();
-  const [navOpen, setNavOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const roots = useQuery({ queryKey: ['roots'], queryFn: () => api.roots(), staleTime: 60_000 });
+  const nav = useNav();
 
   const shell = useMemo(
     () => ({
       openSettings: () => setSettingsOpen(true),
-      openNav: isWide ? undefined : () => setNavOpen(true),
+      openNav: nav.kind ? nav.open : undefined,
+      navKind: nav.kind,
       rootLabel: roots.data?.roots.find(root => root.active)?.label ?? 'Home',
     }),
-    [isWide, roots.data],
+    [nav.kind, nav.open, roots.data],
+  );
+  const sidebar = (
+    <Sidebar
+      onNavigate={nav.layout.mode === 'drawer' ? nav.close : undefined}
+      onHide={nav.layout.mode === 'docked' ? () => nav.layout.setHidden(true) : undefined}
+      onSettings={() => {
+        nav.close();
+        setSettingsOpen(true);
+      }}
+    />
   );
 
   return (
@@ -73,29 +84,12 @@ function Frame({ children }: { children: ReactNode }) {
           />
         ) : null}
 
-        {isWide ? (
-          <aside className="relative z-10 w-64 shrink-0 border-r border-line">
-            <Sidebar onSettings={() => setSettingsOpen(true)} />
-          </aside>
+        {nav.layout.mode === 'drawer' ? (
+          <DrawerSidebar open={nav.drawerOpen} onOpenChange={nav.setDrawerOpen}>
+            {sidebar}
+          </DrawerSidebar>
         ) : (
-          <RadixDialog.Root open={navOpen} onOpenChange={setNavOpen}>
-            <RadixDialog.Portal>
-              <RadixDialog.Overlay className="animate-fade fixed inset-0 z-50 bg-[var(--scrim)] data-[state=closed]:animate-fade-out" />
-              <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-bg pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] shadow-float outline-none animate-slide-in data-[state=closed]:animate-slide-out">
-                <RadixDialog.Title className="sr-only">Places</RadixDialog.Title>
-                <RadixDialog.Description className="sr-only">
-                  Folders and collections
-                </RadixDialog.Description>
-                <Sidebar
-                  onNavigate={() => setNavOpen(false)}
-                  onSettings={() => {
-                    setNavOpen(false);
-                    setSettingsOpen(true);
-                  }}
-                />
-              </RadixDialog.Content>
-            </RadixDialog.Portal>
-          </RadixDialog.Root>
+          <DockedSidebar layout={nav.layout}>{sidebar}</DockedSidebar>
         )}
 
         <main className="relative z-10 flex min-w-0 flex-1 flex-col">{children}</main>
@@ -108,4 +102,48 @@ function Frame({ children }: { children: ReactNode }) {
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </ShellContext>
   );
+}
+
+/**
+ * Where the sidebar is and how to bring it back. Ctrl+B shows or hides it,
+ * docked or as a drawer, from anywhere but a text field.
+ */
+function useNav() {
+  const layout = useSidebarLayout();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { mode, setHidden } = layout;
+  const open = useCallback(() => {
+    if (mode === 'drawer') setDrawerOpen(true);
+    else setHidden(false);
+  }, [mode, setHidden]);
+  const close = useCallback(() => setDrawerOpen(false), []);
+
+  useKeyBindings([
+    {
+      key: 'b',
+      ctrl: true,
+      shift: false,
+      run: () => {
+        if (mode === 'drawer') setDrawerOpen(value => !value);
+        else setHidden(mode === 'docked');
+      },
+    },
+  ]);
+
+  // Read by the dock along the bottom, which lives outside this frame.
+  const offset = mode === 'docked' ? layout.width : 0;
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-offset', `${offset}px`);
+  }, [offset]);
+
+  const kind =
+    mode === 'drawer' ? ('drawer' as const) : mode === 'hidden' ? ('hidden' as const) : null;
+  return {
+    layout,
+    kind,
+    open,
+    close,
+    drawerOpen: mode === 'drawer' && drawerOpen,
+    setDrawerOpen,
+  };
 }

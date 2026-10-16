@@ -38,6 +38,18 @@ export type Theme = 'light' | 'dark' | 'system';
 export type Density = 'comfortable' | 'compact';
 export type ViewMode = 'list' | 'grid';
 
+/** A folder kept in the sidebar. Paths are relative to a root, so the root is part of it. */
+export interface Favorite {
+  /** `RootDescriptor.id` of the root the path is inside. */
+  root: string;
+  path: string;
+  /** A name of your own; the folder's name when absent. */
+  label?: string;
+}
+
+/** Most favorites one person keeps; the sidebar is a shortlist, not a second tree. */
+export const MAX_FAVORITES = 100;
+
 export interface HobDocument {
   theme: Theme;
   density: Density;
@@ -48,6 +60,12 @@ export interface HobDocument {
   gridSize: number;
   /** Whether a folder borrows the cover of the first picture inside it. Costs a directory scan per tile. */
   folderCovers: boolean;
+  favorites: Favorite[];
+  /**
+   * The EPUB reader's colour theme, for every book: `hearth` follows Hearth's
+   * own light or dark, anything else is one of the reader's themes.
+   */
+  readerTheme: string;
 }
 
 export type HobPatch = Partial<HobDocument>;
@@ -60,4 +78,6 @@ export const DEFAULT_HOB: HobDocument = {
   wallpaperOpacity: 0.25,
   gridSize: 168,
   folderCovers: false,
+  favorites: [],
+  readerTheme: 'hearth',
 };

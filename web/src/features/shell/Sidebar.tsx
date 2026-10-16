@@ -1,15 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronsUpDown, Film, Folder, Image, LogOut, Music, Settings } from 'lucide-react';
+import { ChevronsUpDown, Film, Folder, Image, Music, PanelLeftClose } from 'lucide-react';
 import { toast } from 'sonner';
 import type { MediaKind, RootDescriptor } from '@hearth/shared';
 
 import { Wordmark } from '@/brand/Logo';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/cn';
 import { explorerRoute } from '@/features/explorer/search';
 import { useSession } from '@/features/session/session';
 import { Button } from '@/ui/Button';
 import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
+import { FavoritesSection } from './FavoritesSection';
+import { Item, Section, UserBar } from './SidebarParts';
 
 const COLLECTIONS: ReadonlyArray<[MediaKind, string, typeof Image]> = [
   ['image', 'Pictures', Image],
@@ -31,9 +32,12 @@ const ROOT_SCOPED = new Set([
 
 export function Sidebar({
   onNavigate,
+  onHide,
   onSettings,
 }: {
-  onNavigate?: () => void;
+  onNavigate?: (() => void) | undefined;
+  /** Present while docked: puts the sidebar away. */
+  onHide?: (() => void) | undefined;
   onSettings: () => void;
 }) {
   const { identity, can, signOut } = useSession();
@@ -47,15 +51,10 @@ export function Sidebar({
     refetchInterval: query =>
       query.state.data?.roots.some(root => !root.available) ? 30_000 : false,
   });
-  const top = useQuery({
-    queryKey: ['listing', '', 'name', 'asc', '', true, undefined],
-    queryFn: ({ signal }) => api.list({ path: '', sort: 'name', direction: 'asc' }, signal),
-    staleTime: 30_000,
-  });
 
   const active = roots.data?.roots.find(root => root.active);
-  const folders = (top.data?.items ?? []).filter(entry => entry.isDirectory);
-  const currentTop = search.path.split('/')[0] ?? '';
+  // The folder on screen; a search or a collection is not "in" one.
+  const here = !search.type && !search.q ? search.path : null;
 
   const go = (changes: Partial<typeof search>) => {
     void navigate({
@@ -67,49 +66,94 @@ export function Sidebar({
   const switchRoot = useRootSwitch(() => go({ path: '', type: search.type }));
 
   return (
-    <nav aria-label="Places" className="flex h-full flex-col gap-5 px-3 pb-3 pt-4">
-      <HomeButton root={active} onClick={() => go({ path: '' })} />
+    <nav aria-label="Places" className="flex h-full flex-col gap-3 pb-3 pt-4">
+      <div className="flex items-center gap-1 px-3">
+        <HomeButton root={active} onClick={() => go({ path: '' })} />
+        <span className="flex-1" />
+        {onHide ? (
+          <Button
+            size="icon"
+            onClick={onHide}
+            aria-label="Hide sidebar"
+            title="Hide sidebar (Ctrl+B)"
+            className="text-ink-3"
+          >
+            <PanelLeftClose />
+          </Button>
+        ) : null}
+      </div>
 
       {can('admin') && roots.data && roots.data.roots.length > 1 ? (
-        <RootSwitcher roots={roots.data.roots} onSwitch={id => void switchRoot(id)} />
+        <div className="flex flex-col px-3">
+          <RootSwitcher roots={roots.data.roots} onSwitch={id => void switchRoot(id)} />
+        </div>
       ) : null}
 
-      <Section title="Collections">
-        {COLLECTIONS.map(([kind, label, Icon]) => (
-          <Item
-            key={kind}
-            icon={<Icon />}
-            // A collection is the whole root; the same filter inside a folder is not it.
-            active={search.type === kind && !search.q && search.path === ''}
-            onClick={() => go({ path: '', type: kind })}
-          >
-            {label}
-          </Item>
-        ))}
-      </Section>
+      <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3">
+        <Section id="collections" title="Collections">
+          {COLLECTIONS.map(([kind, label, Icon]) => (
+            <Item
+              key={kind}
+              icon={<Icon />}
+              // A collection is the whole root; the same filter inside a folder is not it.
+              active={search.type === kind && !search.q && search.path === ''}
+              onClick={() => go({ path: '', type: kind })}
+            >
+              {label}
+            </Item>
+          ))}
+        </Section>
 
-      <Section title={active?.label ?? 'Folders'} grow>
-        {folders.map(folder => (
-          <Item
-            key={folder.path}
-            icon={<Folder />}
-            active={!search.type && !search.q && currentTop === folder.path}
-            onClick={() => go({ path: folder.path })}
-          >
-            {folder.name}
-          </Item>
-        ))}
-        {top.isSuccess && folders.length === 0 ? (
-          <p className="px-2.5 text-[12.5px] text-ink-3">No folders at the top level.</p>
-        ) : null}
-      </Section>
+        <FavoritesSection currentPath={here} root={active} onOpen={path => go({ path })} />
 
-      <UserBar
-        username={identity?.username ?? ''}
-        onSettings={onSettings}
-        onSignOut={() => void signOut()}
-      />
+        <TopFolders currentPath={here} root={active} onOpen={path => go({ path })} />
+      </div>
+
+      <div className="px-3">
+        <UserBar
+          username={identity?.username ?? ''}
+          onSettings={onSettings}
+          onSignOut={() => void signOut()}
+        />
+      </div>
     </nav>
+  );
+}
+
+/** The root's own first level of folders; the one the folder on screen is under is marked. */
+function TopFolders({
+  currentPath,
+  root,
+  onOpen,
+}: {
+  currentPath: string | null;
+  root: RootDescriptor | undefined;
+  onOpen: (path: string) => void;
+}) {
+  const currentTop = currentPath?.split('/')[0] ?? null;
+  const top = useQuery({
+    queryKey: ['listing', '', 'name', 'asc', '', true, undefined],
+    queryFn: ({ signal }) => api.list({ path: '', sort: 'name', direction: 'asc' }, signal),
+    staleTime: 30_000,
+  });
+  const folders = (top.data?.items ?? []).filter(entry => entry.isDirectory);
+  return (
+    <Section id="folders" title={root?.label ?? 'Folders'}>
+      {folders.map(folder => (
+        <Item
+          key={folder.path}
+          icon={<Folder />}
+          active={currentTop === folder.path}
+          onClick={() => onOpen(folder.path)}
+          title={folder.name}
+        >
+          {folder.name}
+        </Item>
+      ))}
+      {top.isSuccess && folders.length === 0 ? (
+        <p className="px-2.5 text-[12.5px] text-ink-3">No folders at the top level.</p>
+      ) : null}
+    </Section>
   );
 }
 
@@ -124,52 +168,6 @@ function HomeButton({ root, onClick }: { root: RootDescriptor | undefined; onCli
       title={`Back to the top of ${root?.label ?? 'the root'}`}
     >
       <Wordmark />
-    </button>
-  );
-}
-
-function Section({
-  title,
-  children,
-  grow,
-}: {
-  title: string;
-  children: React.ReactNode;
-  grow?: boolean;
-}) {
-  return (
-    <section className={cn('flex min-h-0 flex-col', grow && 'flex-1')}>
-      <h2 className="mb-1 truncate px-2.5 text-[12px] font-medium text-ink-3">{title}</h2>
-      <div className="scroll-thin -mr-1 min-h-0 overflow-auto pr-1">{children}</div>
-    </section>
-  );
-}
-
-function Item({
-  icon,
-  active,
-  onClick,
-  children,
-}: {
-  icon: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13.5px] text-ink-2 hover:bg-sunken hover:text-ink [&_svg]:size-4 [&_svg]:shrink-0',
-        // Big enough for a finger in the drawer.
-        '[@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:text-[15px]',
-        active && 'bg-surface font-medium text-ink shadow-sm [&_svg]:text-glaze',
-      )}
-    >
-      {icon}
-      <span className="truncate">{children}</span>
     </button>
   );
 }
@@ -241,30 +239,5 @@ function RootSwitcher({
         </MenuChoice>
       ))}
     </Menu>
-  );
-}
-
-function UserBar({
-  username,
-  onSettings,
-  onSignOut,
-}: {
-  username: string;
-  onSettings: () => void;
-  onSignOut: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-1 border-t border-line pt-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-glaze-wash text-[13px] font-semibold uppercase text-glaze-strong">
-        {username.slice(0, 1)}
-      </span>
-      <span className="min-w-0 flex-1 truncate px-1 text-[13px]">{username}</span>
-      <Button size="icon" onClick={onSettings} aria-label="Settings" title="Settings">
-        <Settings />
-      </Button>
-      <Button size="icon" onClick={onSignOut} aria-label="Sign out" title="Sign out">
-        <LogOut />
-      </Button>
-    </div>
   );
 }
