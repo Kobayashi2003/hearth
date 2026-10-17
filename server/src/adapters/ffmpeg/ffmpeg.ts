@@ -43,6 +43,11 @@ interface ProbePayload {
   streams?: ProbeStream[];
 }
 
+export interface TagsAndChapters {
+  tags: Record<string, string>;
+  chapters: Array<{ start: number; title: string | null }>;
+}
+
 export class FfmpegAdapter {
   constructor(private readonly options: FfmpegOptions) {}
 
@@ -56,15 +61,36 @@ export class FfmpegAdapter {
     return summarise(parseProbe(output));
   }
 
-  /** The container's own tags (a FLAC's Vorbis comments, say), as ffprobe names them. */
-  async formatTags(filePath: string, signal?: AbortSignal): Promise<Record<string, string>> {
+  /**
+   * The container's own tags (a FLAC's Vorbis comments, an audiobook's title
+   * and author) as ffprobe names them, and its chapters in order.
+   */
+  async tagsAndChapters(filePath: string, signal?: AbortSignal): Promise<TagsAndChapters> {
     const output = await this.collect(
       this.options.ffprobePath,
-      ['-v', 'quiet', '-print_format', 'json', '-show_entries', 'format_tags', filePath],
+      [
+        '-v',
+        'quiet',
+        '-print_format',
+        'json',
+        '-show_entries',
+        'format_tags',
+        '-show_chapters',
+        filePath,
+      ],
       signal,
     );
-    const payload = JSON.parse(output) as { format?: { tags?: Record<string, string> } };
-    return payload.format?.tags ?? {};
+    const payload = JSON.parse(output) as {
+      format?: { tags?: Record<string, string> };
+      chapters?: Array<{ start_time?: string; tags?: { title?: string } }>;
+    };
+    return {
+      tags: payload.format?.tags ?? {},
+      chapters: (payload.chapters ?? []).map(chapter => ({
+        start: Number.parseFloat(chapter.start_time ?? '0') || 0,
+        title: chapter.tags?.title?.trim() || null,
+      })),
+    };
   }
 
   /** Fragmented MP4 on stdout, playable before the encode finishes. */

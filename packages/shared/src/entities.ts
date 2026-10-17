@@ -83,10 +83,12 @@ export interface MediaProbe {
 }
 
 /**
- * The tracks of an album ripped to one file, from its cue sheet (beside it, or
- * embedded in a FLAC). Times are seconds from the start of that file.
+ * The parts of one audio file that holds many: an album's tracks, from its cue
+ * sheet (beside it, or embedded in a FLAC), or an audiobook's chapters. Times
+ * are seconds from the start of that file.
  */
 export interface CueSheet {
+  kind: 'tracks' | 'chapters';
   title: string | null;
   performer: string | null;
   /** `REM DATE`: usually just the year. */

@@ -5,7 +5,7 @@ import path from 'node:path';
 import iconv from 'iconv-lite';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { FfmpegAdapter } from '../../server/src/adapters/ffmpeg/ffmpeg.js';
+import type { FfmpegAdapter, TagsAndChapters } from '../../server/src/adapters/ffmpeg/ffmpeg.js';
 import type { SafePath } from '../../server/src/lib/vault.js';
 import { parseCue } from '../../server/src/modules/kiln/cue.js';
 import { CueService } from '../../server/src/modules/kiln/cue.service.js';
@@ -62,13 +62,15 @@ afterEach(() => {
 });
 
 /** A folder holding the given files, and the service with an ffmpeg that reports `tags`. */
-function album(files: Record<string, string | Buffer>, tags: Record<string, string> = {}) {
+function album(files: Record<string, string | Buffer>, inside: Partial<TagsAndChapters> = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-cue-'));
   directories.push(directory);
   for (const [name, content] of Object.entries(files)) {
     fs.writeFileSync(path.join(directory, name), content);
   }
-  const ffmpeg = { formatTags: async () => tags } as unknown as FfmpegAdapter;
+  const ffmpeg = {
+    tagsAndChapters: async () => ({ tags: {}, chapters: [], ...inside }),
+  } as unknown as FfmpegAdapter;
   const at = (name: string) => path.join(directory, name) as SafePath;
   return { service: new CueService(ffmpeg), at };
 }
@@ -110,7 +112,51 @@ describe('CueService', () => {
   });
 
   it('reads a sheet embedded in a FLAC when none is beside it', async () => {
-    const { service, at } = album({ 'Rip.flac': '' }, { CUESHEET: ALBUM });
+    const { service, at } = album({ 'Rip.flac': '' }, { tags: { CUESHEET: ALBUM } });
     expect((await service.sheetFor(at('Rip.flac')))?.tracks).toHaveLength(3);
+  });
+
+  it("lists an audiobook's own chapters when there is no cue sheet", async () => {
+    const { service, at } = album(
+      { 'Book.m4b': '' },
+      {
+        tags: { title: 'Part One', album: 'The Book', artist: 'The Author', date: '2020' },
+        chapters: [
+          { start: 0, title: 'Opening Credits' },
+          { start: 31.5, title: 'Chapter 1' },
+          { start: 1820, title: null },
+        ],
+      },
+    );
+    expect(await service.sheetFor(at('Book.m4b'))).toEqual({
+      kind: 'chapters',
+      title: 'The Book',
+      performer: 'The Author',
+      date: '2020',
+      tracks: [
+        { number: 1, title: 'Opening Credits', performer: null, start: 0 },
+        { number: 2, title: 'Chapter 1', performer: null, start: 31.5 },
+        { number: 3, title: null, performer: null, start: 1820 },
+      ],
+    });
+  });
+
+  it('falls back to the chapters when an embedded sheet is for another file', async () => {
+    const { service, at } = album(
+      { 'Book.m4b': '' },
+      {
+        tags: { CUESHEET: 'FILE "Other.wav" WAVE\nTRACK 01 AUDIO\nINDEX 01 00:00:00\n' },
+        chapters: [
+          { start: 0, title: 'One' },
+          { start: 60, title: 'Two' },
+        ],
+      },
+    );
+    expect((await service.sheetFor(at('Book.m4b')))?.kind).toBe('chapters');
+  });
+
+  it('is not an album with a single chapter', async () => {
+    const { service, at } = album({ 'Song.m4a': '' }, { chapters: [{ start: 0, title: 'Song' }] });
+    expect(await service.sheetFor(at('Song.m4a'))).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import type { CueSheet } from '@hearth/shared';
 import { albumOf, skipTarget, trackAt } from '@/features/preview/audio/album';
 
 const SHEET: CueSheet = {
+  kind: 'tracks',
   title: 'Album',
   performer: 'Band',
   date: null,

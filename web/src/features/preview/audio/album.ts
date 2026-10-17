@@ -24,6 +24,11 @@ export interface Album {
   current: number;
 }
 
+/** What an untitled part is called: "Track 3" on an album, "Chapter 3" in a book. */
+export function partName(album: Album, number: number): string {
+  return `${album.sheet.kind === 'chapters' ? 'Chapter' : 'Track'} ${number}`;
+}
+
 /** The stretch a seek bar spans: the album track playing, else the whole file. */
 export function playingSpan(album: Album | null, duration: number) {
   const track = album?.tracks[album.current];

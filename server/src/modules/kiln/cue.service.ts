@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import type { CueSheet } from '@hearth/shared';
 
-import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
+import type { FfmpegAdapter, TagsAndChapters } from '../../adapters/ffmpeg/ffmpeg.js';
 import { decodeText } from '../../lib/charset.js';
 import type { SafePath } from '../../lib/vault.js';
 import { parseCue, type ParsedCue } from './cue.js';
@@ -12,28 +12,29 @@ import { parseCue, type ParsedCue } from './cue.js';
 const MAX_CUE_BYTES = 512 * 1024;
 /** A folder of many cue sheets is a folder of many albums; the matching one is named after its audio. */
 const MAX_CANDIDATES = 16;
-/** Formats that carry a cue sheet inside them as a tag. */
-const EMBEDDING = new Set(['.flac', '.wv', '.ape', '.tta']);
 
 /**
- * Finds the tracks of an album ripped to one file. The sheet is beside it
- * (named after it, or naming it in a FILE line) or, in a FLAC, embedded. Like
- * a folder cover, a sheet beside the file is read with the file's own access.
+ * The tracks of a file that holds many: an album ripped to one file, from its
+ * cue sheet beside it (named after it, or naming it in a FILE line) or
+ * embedded in it (a FLAC's CUESHEET tag); otherwise the file's own chapters,
+ * as an audiobook (.m4b) has. Like a folder cover, a sheet beside the file is
+ * read with the file's own access.
  */
 export class CueService {
   constructor(private readonly ffmpeg: FfmpegAdapter) {}
 
-  /** Null when the file is not an album: no sheet, or one with fewer than two tracks for it. */
+  /** Null when the file is just one track: nothing found, or fewer than two tracks. */
   async sheetFor(target: SafePath, signal?: AbortSignal): Promise<CueSheet | null> {
     for (const candidate of await this.candidatesFor(target)) {
       const parsed = await readSheet(candidate);
       const sheet = parsed && sheetForFile(parsed, target, isNamedAfter(candidate, target));
       if (sheet) return sheet;
     }
-    if (!EMBEDDING.has(path.extname(target).toLowerCase())) return null;
-    const tags = await this.ffmpeg.formatTags(target, signal).catch(() => ({}));
-    const embedded = Object.entries(tags).find(([key]) => key.toLowerCase() === 'cuesheet')?.[1];
-    return embedded ? sheetForFile(parseCue(embedded), target, true) : null;
+    const inside = await this.ffmpeg.tagsAndChapters(target, signal).catch(() => null);
+    if (!inside) return null;
+    // An embedded sheet that does not describe this file gives way to the file's own chapters.
+    const embedded = tagOf(inside.tags, 'cuesheet');
+    return (embedded && sheetForFile(parseCue(embedded), target, true)) || chapterSheet(inside);
   }
 
   /** Sheets named after the file first, then the others in the folder. */
@@ -70,7 +71,38 @@ function sheetForFile(sheet: ParsedCue, target: string, namedAfter: boolean): Cu
     sheet.files.find(candidate => stemOf(candidate.name) === stem) ??
     (namedAfter && sheet.files.length === 1 ? sheet.files[0] : undefined);
   if (!file || file.tracks.length < 2) return null;
-  return { title: sheet.title, performer: sheet.performer, date: sheet.date, tracks: file.tracks };
+  return {
+    kind: 'tracks',
+    title: sheet.title,
+    performer: sheet.performer,
+    date: sheet.date,
+    tracks: file.tracks,
+  };
+}
+
+/** An audiobook's chapters as tracks: the book is the album, its author the performer. */
+export function chapterSheet({ tags, chapters }: TagsAndChapters): CueSheet | null {
+  if (chapters.length < 2) return null;
+  return {
+    kind: 'chapters',
+    title: tagOf(tags, 'album') ?? tagOf(tags, 'title'),
+    performer: tagOf(tags, 'artist') ?? tagOf(tags, 'album_artist'),
+    date: tagOf(tags, 'date'),
+    tracks: chapters.map((chapter, index) => ({
+      number: index + 1,
+      title: chapter.title,
+      performer: null,
+      start: chapter.start,
+    })),
+  };
+}
+
+/** Containers spell tag names in their own case (FLAC's TITLE, MP4's title). */
+function tagOf(tags: Record<string, string>, name: string): string | null {
+  const value = Object.entries(tags)
+    .find(([key]) => key.toLowerCase() === name)?.[1]
+    ?.trim();
+  return value || null;
 }
 
 /** `Album.cue` or `Album.flac.cue` for `Album.flac`. */

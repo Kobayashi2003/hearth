@@ -14,6 +14,7 @@
 #   .\start.ps1            # start with whatever is already built
 #   .\start.ps1 -Build     # pnpm build first
 #   .\start.ps1 -NoCaddy   # skip the edge (an external edge owns the port)
+#   .\start.ps1 -NoBrowser # do not open the browser
 #   .\start.ps1 -Bind :8080
 # ============================================================================
 
@@ -21,6 +22,8 @@
 param(
     [switch]$Build,
     [switch]$NoCaddy,
+    # Do not open the browser once the edge answers.
+    [switch]$NoBrowser,
     [string]$Bind = ':17012'
 )
 
@@ -109,6 +112,19 @@ try {
     # stop.ps1 reads this to stop the app from another window.
     $children | ForEach-Object { @{ ProcessId = $_.Id; StartTicks = $_.StartTime.Ticks } } |
         ConvertTo-Json -AsArray | Set-Content -LiteralPath $runFile
+
+    # Open the edge's page once it answers; the job ends with this script. Without the edge
+    # there is no page of this app's own to open.
+    if (-not $NoBrowser -and -not $NoCaddy) {
+        $null = Start-ThreadJob -ArgumentList "http://127.0.0.1:$bindPort$($caddyEnv.HEARTH_WEB_PREFIX)" -ScriptBlock {
+            param($url)
+            for ($i = 0; $i -lt 240; $i++) {
+                try { $null = Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 2; Start-Process $url; return }
+                catch { if ($_.Exception.Response) { Start-Process $url; return } }
+                Start-Sleep -Milliseconds 500
+            }
+        }
+    }
 
     Write-Host ''
     Write-Host 'Press Ctrl+C to stop.'

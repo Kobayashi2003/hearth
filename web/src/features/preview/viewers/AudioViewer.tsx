@@ -8,7 +8,7 @@ import { baseName, formatDuration, parentOf } from '@/lib/format';
 import { Scrubber } from '@/ui/Scrubber';
 import { usePreview } from '../PreviewProvider';
 import { ViewerFrame } from '../ViewerFrame';
-import { playingSpan, type Album } from '../audio/album';
+import { partName, playingSpan, type Album } from '../audio/album';
 import { usePlayer } from '../audio/PlayerProvider';
 import { ModeButtons, SkipButtons, VolumeControl } from '../audio/transport';
 import type { ViewerProps } from '../overlay';
@@ -95,7 +95,7 @@ function NowPlaying({ album }: { album: Album }) {
         className="truncate text-[17px] font-semibold text-stage-ink"
         title={track.title ?? undefined}
       >
-        {track.title ?? `Track ${track.number}`}
+        {track.title ?? partName(album, track.number)}
       </p>
       {from ? <p className="mt-0.5 truncate text-[13px] text-stage-ink/60">{from}</p> : null}
     </div>
@@ -126,10 +126,11 @@ function TrackScrubber({ album }: { album: Album | null }) {
 
 function AlbumTracks({ album, onSeek }: { album: Album; onSeek: (seconds: number) => void }) {
   const { sheet } = album;
+  const parts = sheet.kind === 'chapters' ? 'Chapters' : 'Tracks';
   return (
-    <section aria-label="Tracks">
+    <section aria-label={parts}>
       <header className="px-4 pb-2 pt-1">
-        <p className="truncate text-[13px] font-medium text-stage-ink">{sheet.title ?? 'Tracks'}</p>
+        <p className="truncate text-[13px] font-medium text-stage-ink">{sheet.title ?? parts}</p>
         <p className="truncate text-[12px] text-stage-ink/50">
           {[sheet.performer, sheet.date].filter(Boolean).join(', ')}
         </p>
@@ -143,7 +144,7 @@ function AlbumTracks({ album, onSeek }: { album: Album; onSeek: (seconds: number
               onClick={() => onSeek(track.start)}
               trailing={formatDuration(track.end - track.start)}
             >
-              <span className="block truncate">{track.title ?? `Track ${track.number}`}</span>
+              <span className="block truncate">{track.title ?? partName(album, track.number)}</span>
               {track.performer ? (
                 <span className="block truncate text-[12px] opacity-60">{track.performer}</span>
               ) : null}
