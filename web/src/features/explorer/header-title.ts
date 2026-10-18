@@ -11,8 +11,8 @@ export function headerTitle(explorer: Explorer, segments: string[], rootLabel: s
 
 export function countLine(explorer: Explorer, segments: string[], rootLabel: string): string {
   const { total, search } = explorer;
-  // No count yet: a no-break space keeps the line, so nothing shifts when it arrives.
-  if (explorer.isPending) return '\u00a0';
+  // No count yet, or none to give: a no-break space keeps the line, so nothing shifts.
+  if (explorer.isPending || explorer.error) return '\u00a0';
   if (explorer.isSearching) {
     return `${total.toLocaleString()} found ${scopePhrase(search.scope, segments.at(-1), rootLabel)}`;
   }

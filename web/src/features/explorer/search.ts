@@ -21,6 +21,8 @@ export interface ExplorerSearch {
   type?: MediaKind;
   /** An item to select and scroll to once the folder has loaded; dropped once used. */
   reveal?: string;
+  /** The root `path` is inside (`RootDescriptor.id`); see root-link.ts. */
+  root?: string;
 }
 
 export type SearchScope = 'here' | 'below';
@@ -39,6 +41,7 @@ export function validateExplorerSearch(raw: Record<string, unknown>): ExplorerSe
     scope: oneOf(SCOPES, raw.scope, 'below'),
     ...(MEDIA_KINDS.includes(raw.type as MediaKind) ? { type: raw.type as MediaKind } : {}),
     ...(typeof raw.reveal === 'string' && raw.reveal ? { reveal: raw.reveal } : {}),
+    ...(typeof raw.root === 'string' && raw.root ? { root: raw.root } : {}),
   };
 }
 

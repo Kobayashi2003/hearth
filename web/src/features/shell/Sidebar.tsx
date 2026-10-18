@@ -1,6 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronsUpDown, Film, Folder, Image, Music, PanelLeftClose } from 'lucide-react';
-import { toast } from 'sonner';
 import type { MediaKind, RootDescriptor } from '@hearth/shared';
 
 import { Wordmark } from '@/brand/Logo';
@@ -10,6 +9,7 @@ import { useSession } from '@/features/session/session';
 import { Button } from '@/ui/Button';
 import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
 import { FavoritesSection } from './FavoritesSection';
+import { useRootSwitch } from './root-switch';
 import { Item, Section, UserBar } from './SidebarParts';
 
 const COLLECTIONS: ReadonlyArray<[MediaKind, string, typeof Image]> = [
@@ -17,18 +17,6 @@ const COLLECTIONS: ReadonlyArray<[MediaKind, string, typeof Image]> = [
   ['video', 'Video', Film],
   ['audio', 'Music', Music],
 ];
-
-/** Query families whose keys are paths inside the active root. */
-const ROOT_SCOPED = new Set([
-  'listing',
-  'archive',
-  'comic',
-  'content',
-  'html',
-  'office',
-  'probe',
-  'trash',
-]);
 
 export function Sidebar({
   onNavigate,
@@ -58,12 +46,19 @@ export function Sidebar({
 
   const go = (changes: Partial<typeof search>) => {
     void navigate({
-      search: current => ({ ...current, q: '', type: undefined, scope: 'below', ...changes }),
+      search: current => ({
+        ...current,
+        q: '',
+        type: undefined,
+        scope: 'below',
+        root: active?.id,
+        ...changes,
+      }),
     });
     onNavigate?.();
   };
 
-  const switchRoot = useRootSwitch(() => go({ path: '', type: search.type }));
+  const switchRoot = useRootSwitch();
 
   return (
     <nav aria-label="Places" className="flex h-full flex-col gap-3 pb-3 pt-4">
@@ -85,7 +80,12 @@ export function Sidebar({
 
       {can('admin') && roots.data && roots.data.roots.length > 1 ? (
         <div className="flex flex-col px-3">
-          <RootSwitcher roots={roots.data.roots} onSwitch={id => void switchRoot(id)} />
+          <RootSwitcher
+            roots={roots.data.roots}
+            onSwitch={id =>
+              void switchRoot(id, () => go({ path: '', type: search.type, root: id }))
+            }
+          />
         </div>
       ) : null}
 
@@ -170,35 +170,6 @@ function HomeButton({ root, onClick }: { root: RootDescriptor | undefined; onCli
       <Wordmark />
     </button>
   );
-}
-
-/**
- * Switching roots: listings and file contents are keyed by root-relative
- * path, so the old root's would pass for the new one's. They are dropped
- * rather than refetched, and `leave` moves off the old path before anything
- * asks for it again; everything else is refetched from the new root.
- */
-function useRootSwitch(leave: () => void) {
-  const queryClient = useQueryClient();
-  return async (id: string) => {
-    try {
-      queryClient.setQueryData(['roots'], await api.switchRoot(id));
-      queryClient.removeQueries({
-        predicate: query => ROOT_SCOPED.has(String(query.queryKey[0])),
-      });
-      leave();
-      await queryClient.invalidateQueries({
-        predicate: query => {
-          const family = String(query.queryKey[0]);
-          return family !== 'roots' && !ROOT_SCOPED.has(family);
-        },
-      });
-    } catch (error) {
-      toast.error('The root could not be switched', {
-        description: error instanceof Error ? error.message : undefined,
-      });
-    }
-  };
 }
 
 /** Which root to serve; one whose drive is not connected cannot be chosen until it is. */

@@ -4,6 +4,7 @@ import type { FileEntry, ListResponse, SearchResponse, SortField } from '@hearth
 
 import { api } from '@/lib/api';
 import { childLeadingTo } from '@/lib/format';
+import { rootLinkOf } from './root-link';
 import { explorerRoute, type ExplorerSearch } from './search';
 
 export function useExplorer() {
@@ -21,6 +22,7 @@ export function useExplorer() {
     [navigate],
   );
 
+  const { rootLink, servedRoot } = useRootLink(search.root, navigate);
   const isSearching = search.q.trim().length > 0 || search.type !== undefined;
   // The root is always searched whole: that is what a collection is.
   const isRecursive = search.path === '' || search.scope !== 'here';
@@ -50,6 +52,8 @@ export function useExplorer() {
           )
         : api.list(common, signal);
     },
+    // Never a path looked up in a root it was not meant for.
+    enabled: rootLink.kind === 'here' || rootLink.kind === 'unnamed',
     // A re-sort keeps showing the rows it is reordering; a different folder or search does not.
     placeholderData: (previous, previousQuery) => {
       const key = previousQuery?.queryKey;
@@ -111,8 +115,29 @@ export function useExplorer() {
     goUp,
     sortBy,
     returningTo,
+    rootLink,
+    servedRoot,
     clearReturningTo: useCallback(() => setReturningTo(null), []),
   };
+}
+
+/**
+ * Which root the URL's folder is in (root-link.ts). A URL that names none is
+ * given the served root's name in place, so from then on it keeps meaning
+ * this folder whatever root is served later.
+ */
+function useRootLink(
+  named: string | undefined,
+  navigate: ReturnType<typeof explorerRoute.useNavigate>,
+) {
+  const roots = useQuery({ queryKey: ['roots'], queryFn: () => api.roots(), staleTime: 60_000 });
+  const rootLink = rootLinkOf(named, roots.data?.roots);
+  const servedRoot = roots.data?.roots.find(root => root.active);
+  const nameIt = rootLink.kind === 'unnamed' ? servedRoot?.id : undefined;
+  useEffect(() => {
+    if (nameIt) void navigate({ search: current => ({ ...current, root: nameIt }), replace: true });
+  }, [nameIt, navigate]);
+  return { rootLink, servedRoot };
 }
 
 export type Explorer = ReturnType<typeof useExplorer>;

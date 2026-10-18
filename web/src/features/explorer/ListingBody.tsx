@@ -3,6 +3,7 @@ import { FolderOpen, FolderPlus, SearchX, TriangleAlert, Upload } from 'lucide-r
 
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Feedback';
+import { OtherRootNotice } from './OtherRootNotice';
 import { FileGrid } from './FileGrid';
 import { FileList } from './FileList';
 import { ListingSkeleton } from './ListingSkeleton';
@@ -40,6 +41,9 @@ export function ListingBody({
   onUpload: () => void;
   onNewFolder: () => void;
 }) {
+  if (explorer.rootLink.kind === 'elsewhere') {
+    return <OtherRootNotice wanted={explorer.rootLink.root} served={explorer.servedRoot} />;
+  }
   if (explorer.isPending) {
     return (
       <ListingSkeleton
