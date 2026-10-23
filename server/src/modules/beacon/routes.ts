@@ -1,5 +1,10 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { MEDIA_KINDS, type MediaKind, type SearchResponse } from '@hearth/shared';
+import {
+  MEDIA_KINDS,
+  type MediaKind,
+  type SearchProviderResponse,
+  type SearchResponse,
+} from '@hearth/shared';
 
 import { HearthError } from '../../lib/errors.js';
 import { pageSize } from '../../lib/listing.js';
@@ -49,7 +54,11 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
       scope: request.relativePath(request.resolvePath(request.query.path, 'read')),
       type: type ?? request.query.type,
       recursive: request.query.recursive ?? true,
-      sort: { field: request.query.sort ?? 'name', direction: request.query.direction ?? 'asc' },
+      sort: {
+        field: request.query.sort ?? 'name',
+        direction: request.query.direction ?? 'asc',
+        natural: request.query.natural,
+      },
       page: request.query.page ?? 1,
       limit: pageSize(request.query.limit, app.hearth.runtime.get('listingMaxEntries')),
     });
@@ -91,6 +100,11 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
         return entry;
       },
     );
+    /** Which search answers, for anyone: it decides how far a long result list can be trusted to be in order. */
+    app.get('/system/search-provider', { config: { permission: 'read' } }, async () => {
+      const body: SearchProviderResponse = { provider: await beacon.providerName() };
+      return body;
+    });
     // Everything's address and health are for an administrator, like the rest of the settings.
     app.get('/system/search-status', { config: { permission: 'admin' } }, async () =>
       beacon.status(),

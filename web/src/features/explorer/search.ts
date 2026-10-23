@@ -46,6 +46,14 @@ export function validateExplorerSearch(raw: Record<string, unknown>): ExplorerSe
 }
 
 /**
+ * The order to show as chosen. By folder only means something across many
+ * folders; carried into a single one it orders by name, and says so.
+ */
+export function shownSort(sort: SortField, acrossFolders: boolean): SortField {
+  return sort === 'path' && !acrossFolders ? 'name' : sort;
+}
+
+/**
  * The explorer route, reached by its path: the router imports the pages, so a
  * page importing the router back would close a loop.
  */

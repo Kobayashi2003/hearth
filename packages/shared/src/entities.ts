@@ -2,7 +2,8 @@
 
 export type MediaKind = 'image' | 'audio' | 'video';
 
-export type SortField = 'name' | 'size' | 'mtime' | 'type';
+/** `path`: by the folder an item is in, then its name; what tells apart a search's results. */
+export type SortField = 'name' | 'size' | 'mtime' | 'type' | 'path';
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortSpec {
@@ -157,6 +158,11 @@ export interface TrashSettings {
 // ── Beacon: search backend health ───────────────────────────────────────────
 
 export type SearchProviderName = 'everything' | 'walk';
+
+/** Which search answers now, for anyone: how results are ordered depends on it. */
+export interface SearchProviderResponse {
+  provider: SearchProviderName;
+}
 
 export interface SearchHealth {
   provider: SearchProviderName;

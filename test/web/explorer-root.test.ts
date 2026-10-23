@@ -20,12 +20,15 @@ const api = vi.hoisted(() => ({
     ],
   })),
   list: vi.fn(async () => ({ items: [], total: 0, hasMore: false })),
+  // The person's settings, as a server that has none saved yet answers.
+  preferences: vi.fn(async () => ({})),
   search: vi.fn(),
 }));
 vi.mock('@/lib/api', () => ({ api }));
 
 const { useExplorer } = await import('@/features/explorer/useExplorer');
 const { validateExplorerSearch } = await import('@/features/explorer/search');
+const { PreferencesProvider } = await import('@/features/preferences/preferences');
 
 let seen: ReturnType<typeof useExplorer> | null = null;
 function Probe() {
@@ -47,7 +50,13 @@ function open(url: string) {
     history: createMemoryHistory({ initialEntries: [url] }),
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(createElement(QueryClientProvider, { client }, createElement(RouterProvider, { router })));
+  render(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(PreferencesProvider, null, createElement(RouterProvider, { router })),
+    ),
+  );
   return router;
 }
 
@@ -77,6 +86,7 @@ describe('a folder URL and the root it is in', () => {
   it('lists the folder when the URL names the root served', async () => {
     open('/?path=Music&root=d0');
     await waitFor(() => expect(api.list).toHaveBeenCalled());
-    expect(api.list.mock.calls[0]?.[0]).toMatchObject({ path: 'Music' });
+    // Natural order unless the person turned it off.
+    expect(api.list.mock.calls[0]?.[0]).toMatchObject({ path: 'Music', natural: true });
   });
 });

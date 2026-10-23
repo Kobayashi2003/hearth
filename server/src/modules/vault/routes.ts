@@ -9,6 +9,7 @@ export interface ListQueryString {
   path?: string;
   sort?: SortField;
   direction?: SortDirection;
+  natural?: boolean;
   page?: number;
   limit?: number;
 }
@@ -20,6 +21,7 @@ export const listingQuerySchema = {
     path: { type: 'string', maxLength: 4096 },
     sort: { type: 'string', enum: SORT_FIELDS as unknown as string[] },
     direction: { type: 'string', enum: SORT_DIRECTIONS as unknown as string[] },
+    natural: { type: 'boolean', default: true },
     page: { type: 'integer', minimum: 1 },
     limit: { type: 'integer', minimum: 1 },
   },
@@ -34,11 +36,11 @@ export function createVaultRoutes(listing: ListingService): FastifyPluginAsync {
         const directory = request.resolvePath(request.query.path, 'read');
         await listing.assertDirectory(directory);
 
-        const sorted = sortEntries(
-          await listing.readDirectory(directory),
-          request.query.sort ?? 'name',
-          request.query.direction ?? 'asc',
-        );
+        const sorted = sortEntries(await listing.readDirectory(directory), {
+          field: request.query.sort ?? 'name',
+          direction: request.query.direction ?? 'asc',
+          natural: request.query.natural,
+        });
         const body: ListResponse = {
           ...paginate(
             sorted,

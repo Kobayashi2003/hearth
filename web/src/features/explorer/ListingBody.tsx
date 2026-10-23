@@ -4,6 +4,7 @@ import { FolderOpen, FolderPlus, SearchX, TriangleAlert, Upload } from 'lucide-r
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Feedback';
 import { OtherRootNotice } from './OtherRootNotice';
+import { shownSort } from './search';
 import { FileGrid } from './FileGrid';
 import { FileList } from './FileList';
 import { ListingSkeleton } from './ListingSkeleton';
@@ -88,7 +89,7 @@ export function ListingBody({
   return (
     <FileList
       {...listing}
-      sort={search.sort}
+      sort={shownSort(search.sort, explorer.isSearching)}
       direction={search.direction}
       onSort={explorer.sortBy}
       showFolder={explorer.isSearching && explorer.isRecursive}

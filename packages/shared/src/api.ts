@@ -54,6 +54,8 @@ export interface ListQuery {
   path?: string;
   sort?: SortField;
   direction?: SortDirection;
+  /** Numbers in names compare by value ("2" before "10"); on unless false. */
+  natural?: boolean;
   page?: number;
   limit?: number;
 }

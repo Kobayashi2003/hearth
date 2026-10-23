@@ -1,6 +1,6 @@
 import type { MediaKind, SortField, SortDirection } from './entities.js';
 
-export const SORT_FIELDS: readonly SortField[] = ['name', 'size', 'mtime', 'type'];
+export const SORT_FIELDS: readonly SortField[] = ['name', 'size', 'mtime', 'type', 'path'];
 export const SORT_DIRECTIONS: readonly SortDirection[] = ['asc', 'desc'];
 export const MEDIA_KINDS: readonly MediaKind[] = ['image', 'audio', 'video'];
 

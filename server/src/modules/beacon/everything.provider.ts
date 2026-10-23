@@ -70,9 +70,10 @@ export class EverythingProvider implements SearchProvider {
 
     const total = Math.max(0, response.total - dropped);
 
-    // Everything cannot order by extension; reorder within the page.
-    const items =
-      query.sort.field === 'type' ? sortEntries(entries, 'type', query.sort.direction) : entries;
+    // Everything orders by its own rules: names character by character, no extension order,
+    // folders mixed in. The page is put in Hearth's order, so both providers agree; past the
+    // result cap, which items made the page was still Everything's choice.
+    const items = sortEntries(entries, query.sort);
 
     return {
       items,

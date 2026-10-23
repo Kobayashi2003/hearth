@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RootDescriptor } from '@hearth/shared';
 
 import { rootLinkOf } from '@/features/explorer/root-link';
-import { validateExplorerSearch } from '@/features/explorer/search';
+import { shownSort, validateExplorerSearch } from '@/features/explorer/search';
 
 const roots: RootDescriptor[] = [
   { id: 'd0', label: 'D:\\', active: true, available: true },
@@ -27,5 +27,13 @@ describe('which root a URL is in', () => {
   it('keeps the root named in the URL', () => {
     expect(validateExplorerSearch({ path: '同人', root: 'e0' })).toMatchObject({ root: 'e0' });
     expect(validateExplorerSearch({ path: '同人' })).not.toHaveProperty('root');
+  });
+});
+
+describe('the order shown as chosen', () => {
+  it('reads by folder as by name inside a single folder', () => {
+    expect(shownSort('path', false)).toBe('name');
+    expect(shownSort('path', true)).toBe('path');
+    expect(shownSort('size', false)).toBe('size');
   });
 });

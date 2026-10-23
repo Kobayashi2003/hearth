@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import type { SearchHealth } from '@hearth/shared';
+import type { SearchHealth, SearchProviderName } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
 import type { RuntimeState } from '../../config/runtime-state.js';
@@ -79,6 +79,11 @@ export class Beacon {
       );
       return this.walk.search(query, signal);
     }
+  }
+
+  /** The provider that would answer a search now. */
+  async providerName(): Promise<SearchProviderName> {
+    return (await this.selectProvider()).name;
   }
 
   async status(): Promise<SearchHealth> {

@@ -1,10 +1,6 @@
-import type {
-  FileEntry,
-  MediaKind,
-  SortDirection,
-  SortField,
-  SearchProviderName,
-} from '@hearth/shared';
+import type { FileEntry, MediaKind, SearchProviderName } from '@hearth/shared';
+
+import type { SortOrder } from '../../lib/listing.js';
 
 export interface SearchQuery {
   /** Raw text the user typed. */
@@ -15,7 +11,7 @@ export interface SearchQuery {
   type?: MediaKind | undefined;
   /** False restricts the search to direct children of `scope`. */
   recursive: boolean;
-  sort: { field: SortField; direction: SortDirection };
+  sort: SortOrder;
   page: number;
   limit: number;
 }

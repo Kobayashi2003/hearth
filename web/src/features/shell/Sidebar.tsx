@@ -5,6 +5,7 @@ import type { MediaKind, RootDescriptor } from '@hearth/shared';
 import { Wordmark } from '@/brand/Logo';
 import { api } from '@/lib/api';
 import { explorerRoute } from '@/features/explorer/search';
+import { usePreferences } from '@/features/preferences/preferences';
 import { useSession } from '@/features/session/session';
 import { Button } from '@/ui/Button';
 import { Menu, MenuChoice, MenuLabel } from '@/ui/Menu';
@@ -131,9 +132,11 @@ function TopFolders({
   onOpen: (path: string) => void;
 }) {
   const currentTop = currentPath?.split('/')[0] ?? null;
+  const natural = usePreferences().preferences.naturalSort;
   const top = useQuery({
-    queryKey: ['listing', '', 'name', 'asc', '', true, undefined],
-    queryFn: ({ signal }) => api.list({ path: '', sort: 'name', direction: 'asc' }, signal),
+    queryKey: ['listing', '', 'name', 'asc', '', true, undefined, natural],
+    queryFn: ({ signal }) =>
+      api.list({ path: '', sort: 'name', direction: 'asc', natural }, signal),
     staleTime: 30_000,
   });
   const folders = (top.data?.items ?? []).filter(entry => entry.isDirectory);

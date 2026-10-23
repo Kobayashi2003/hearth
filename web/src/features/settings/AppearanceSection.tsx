@@ -62,6 +62,7 @@ export function AppearanceSection() {
             label="Folder covers"
           />
         </SettingRow>
+        <NaturalSortRow />
       </SettingsGroup>
       <SettingsGroup title="Wallpaper">
         <SettingRow
@@ -102,5 +103,43 @@ export function AppearanceSection() {
         ) : null}
       </SettingsGroup>
     </>
+  );
+}
+
+/**
+ * Natural order, and what it cannot promise with Everything: results beyond
+ * the search cap are cut where Everything's own order puts them.
+ */
+function NaturalSortRow() {
+  const { preferences, update } = usePreferences();
+  const provider = useQuery({
+    queryKey: ['search-provider'],
+    queryFn: () => api.searchProvider(),
+    staleTime: 60_000,
+  });
+  const everything = provider.data?.provider === 'everything';
+  return (
+    <SettingRow
+      title="Natural sort"
+      description={
+        <>
+          Numbers in names count by value: Episode 2 comes before Episode 10.
+          {everything && preferences.naturalSort ? (
+            <span className="mt-1 block text-ink-3">
+              Search uses Everything, which orders names character by character. Hearth puts each
+              result list back in natural order, but when a search finds more than its result limit,
+              which items make the list is still decided by Everything&rsquo;s order, so a few near
+              the end may be missing in favour of others.
+            </span>
+          ) : null}
+        </>
+      }
+    >
+      <Switch
+        checked={preferences.naturalSort}
+        onChange={value => update('naturalSort', value)}
+        label="Natural sort"
+      />
+    </SettingRow>
   );
 }

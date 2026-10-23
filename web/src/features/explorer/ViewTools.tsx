@@ -16,14 +16,20 @@ import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
 import { Segmented } from '@/ui/Field';
 import { Menu, MenuChoice, MenuItem, MenuLabel, MenuSeparator } from '@/ui/Menu';
+import { shownSort } from './search';
 import type { Explorer } from './useExplorer';
 
 const SORTS: ReadonlyArray<[SortField, string]> = [
   ['name', 'Name'],
+  ['path', 'Folder'],
   ['mtime', 'Date modified'],
   ['size', 'Size'],
   ['type', 'Type'],
 ];
+
+/** By folder only where items come from many: in one folder it is the same as by name. */
+const sortsFor = (searching: boolean) =>
+  searching ? SORTS : SORTS.filter(([field]) => field !== 'path');
 
 /** What the toolbar acts on, in whichever layout it takes. */
 export interface ToolProps {
@@ -90,10 +96,10 @@ function SortChoices({ explorer }: { explorer: Explorer }) {
   return (
     <>
       <MenuLabel>Sort by</MenuLabel>
-      {SORTS.map(([field, label]) => (
+      {sortsFor(explorer.isSearching).map(([field, label]) => (
         <MenuChoice
           key={field}
-          checked={search.sort === field}
+          checked={shownSort(search.sort, explorer.isSearching) === field}
           onSelect={() => patch({ sort: field })}
         >
           {label}

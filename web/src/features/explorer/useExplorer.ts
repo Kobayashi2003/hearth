@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { FileEntry, ListResponse, SearchResponse, SortField } from '@hearth/shared';
 
 import { api } from '@/lib/api';
+import { usePreferences } from '@/features/preferences/preferences';
 import { childLeadingTo } from '@/lib/format';
 import { rootLinkOf } from './root-link';
 import { explorerRoute, type ExplorerSearch } from './search';
@@ -23,6 +24,7 @@ export function useExplorer() {
   );
 
   const { rootLink, servedRoot } = useRootLink(search.root, navigate);
+  const natural = usePreferences().preferences.naturalSort;
   const isSearching = search.q.trim().length > 0 || search.type !== undefined;
   // The root is always searched whole: that is what a collection is.
   const isRecursive = search.path === '' || search.scope !== 'here';
@@ -36,10 +38,16 @@ export function useExplorer() {
       search.q,
       search.scope,
       search.type,
+      natural,
     ],
     queryFn: ({ signal }) => {
       // No limit: the server returns the whole folder, up to its configured cap.
-      const common = { path: search.path, sort: search.sort, direction: search.direction };
+      const common = {
+        path: search.path,
+        sort: search.sort,
+        direction: search.direction,
+        natural,
+      };
       return isSearching
         ? api.search(
             {

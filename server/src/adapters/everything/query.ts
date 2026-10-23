@@ -43,6 +43,7 @@ const SORT_FIELD_MAP = {
   size: 'size',
   mtime: 'date_modified',
   type: 'name',
+  path: 'path',
 } as const;
 
 export type HearthSortField = keyof typeof SORT_FIELD_MAP;

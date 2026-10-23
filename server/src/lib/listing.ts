@@ -2,9 +2,41 @@ import path from 'node:path';
 
 import type { FileEntry, Page, SortDirection, SortField } from '@hearth/shared';
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+/**
+ * Natural order compares the numbers in names by value ("Episode 2" before
+ * "Episode 10"); plain order compares them character by character, which is
+ * what Everything does.
+ */
+const COLLATORS = {
+  natural: new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }),
+  plain: new Intl.Collator(undefined, { sensitivity: 'base' }),
+};
 
-function compareBy(field: SortField, a: FileEntry, b: FileEntry): number {
+export interface SortOrder {
+  field: SortField;
+  direction: SortDirection;
+  /** Natural order (the default) or plain. */
+  natural?: boolean | undefined;
+}
+
+/**
+ * Folder by folder, then the name: `A/x` before `A/B/y` before `A B/z`.
+ * Comparing the whole path as one string would put `A B/z` first, a space
+ * sorting before the slash.
+ */
+function comparePaths(collator: Intl.Collator, a: string, b: string): number {
+  const left = a.split('/');
+  const right = b.split('/');
+  const folders = Math.min(left.length, right.length) - 1;
+  for (let index = 0; index < folders; index += 1) {
+    const order = collator.compare(left[index]!, right[index]!);
+    if (order !== 0) return order;
+  }
+  // The shorter folder is the parent: its own items come before its subfolders'.
+  return left.length - right.length || collator.compare(left.at(-1)!, right.at(-1)!);
+}
+
+function compareBy(field: SortField, collator: Intl.Collator, a: FileEntry, b: FileEntry): number {
   switch (field) {
     case 'name':
       return collator.compare(a.name, b.name);
@@ -14,19 +46,18 @@ function compareBy(field: SortField, a: FileEntry, b: FileEntry): number {
       return Date.parse(a.mtime) - Date.parse(b.mtime);
     case 'type':
       return collator.compare(path.extname(a.name), path.extname(b.name));
+    case 'path':
+      return comparePaths(collator, a.path, b.path);
   }
 }
 
 /** Directories always lead, regardless of field or direction. */
-export function sortEntries(
-  entries: FileEntry[],
-  field: SortField,
-  direction: SortDirection,
-): FileEntry[] {
-  const sign = direction === 'asc' ? 1 : -1;
+export function sortEntries(entries: FileEntry[], order: SortOrder): FileEntry[] {
+  const sign = order.direction === 'asc' ? 1 : -1;
+  const collator = order.natural === false ? COLLATORS.plain : COLLATORS.natural;
   return [...entries].sort((a, b) => {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-    const primary = compareBy(field, a, b);
+    const primary = compareBy(order.field, collator, a, b);
     return primary !== 0 ? sign * primary : collator.compare(a.name, b.name);
   });
 }

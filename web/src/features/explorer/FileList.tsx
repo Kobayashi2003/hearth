@@ -74,7 +74,19 @@ export function FileList({
           COLUMNS,
         )}
       >
-        <SortHeader field="name" label="Name" sort={sort} direction={direction} onSort={onSort} />
+        <div className="flex min-w-0 items-center gap-3">
+          <SortHeader field="name" label="Name" sort={sort} direction={direction} onSort={onSort} />
+          {/* Results from many folders show each one's folder; it sorts like a column of its own. */}
+          {showFolder ? (
+            <SortHeader
+              field="path"
+              label="Folder"
+              sort={sort}
+              direction={direction}
+              onSort={onSort}
+            />
+          ) : null}
+        </div>
         <SortHeader
           field="mtime"
           label="Modified"

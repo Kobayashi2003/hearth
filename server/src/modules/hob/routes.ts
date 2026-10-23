@@ -16,6 +16,7 @@ const patchSchema = {
       wallpaperOpacity: { type: 'number', minimum: 0, maximum: 1 },
       gridSize: { type: 'number', minimum: 96, maximum: 320 },
       folderCovers: { type: 'boolean' },
+      naturalSort: { type: 'boolean' },
       favorites: {
         type: 'array',
         maxItems: MAX_FAVORITES,

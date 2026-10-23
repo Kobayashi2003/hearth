@@ -37,7 +37,7 @@ export class WalkProvider implements SearchProvider {
 
     const response = await runWorker<WalkRequest, WalkResponse>('walk', request, signal);
     const entries = response.matches.map(match => this.toEntry(match));
-    const sorted = sortEntries(entries, query.sort.field, query.sort.direction);
+    const sorted = sortEntries(entries, query.sort);
     const page = paginate(sorted, query.page, query.limit);
 
     return {

@@ -61,6 +61,8 @@ export interface HobDocument {
   /** Whether a folder borrows the cover of the first picture inside it. Costs a directory scan per tile. */
   folderCovers: boolean;
   favorites: Favorite[];
+  /** Names compare with their numbers by value: "Episode 2" before "Episode 10". */
+  naturalSort: boolean;
   /**
    * The EPUB reader's colour theme, for every book: `hearth` follows Hearth's
    * own light or dark, anything else is one of the reader's themes.
@@ -79,5 +81,6 @@ export const DEFAULT_HOB: HobDocument = {
   gridSize: 168,
   folderCovers: false,
   favorites: [],
+  naturalSort: true,
   readerTheme: 'hearth',
 };

@@ -21,6 +21,7 @@ import type {
   RootsResponse,
   CueSheet,
   SearchHealth,
+  SearchProviderResponse,
   SearchResponse,
   SessionResponse,
   SortDirection,
@@ -135,6 +136,8 @@ export interface ListParams {
   path: string;
   sort: SortField;
   direction: SortDirection;
+  /** Numbers in names by value; the person's setting (Hob). */
+  natural: boolean;
   limit?: number;
 }
 
@@ -217,6 +220,7 @@ export const api = {
   roots: () => get<RootsResponse>('/system/roots'),
   switchRoot: (id: string) => send<RootsResponse>('POST', '/system/roots', { id }),
   searchStatus: () => get<SearchHealth>('/system/search-status'),
+  searchProvider: () => get<SearchProviderResponse>('/system/search-provider'),
 
   users: () => get<UsersResponse>('/admin/users'),
   createUser: (body: CreateUserRequest) => send<unknown>('POST', '/admin/users', body),
