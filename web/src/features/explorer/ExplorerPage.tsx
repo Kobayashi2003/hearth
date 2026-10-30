@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FileEntry } from '@hearth/shared';
 
@@ -71,8 +71,9 @@ export function ExplorerPage() {
   });
   const operations = useFileOperations(search.path, selection.clear);
 
-  // A selection belongs to the folder it was made in.
-  useEffect(() => {
+  // A selection belongs to the folder it was made in. Before drawing and ahead of the landing
+  // below, which may then put the cursor back on the folder just left.
+  useLayoutEffect(() => {
     selection.reset();
     setMenu(null);
     scrollRef.current?.scrollTo({ top: 0 });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { OperationResult } from '@hearth/shared';
 
 import { fromNodeError, HearthError } from '../../lib/errors.js';
-import { assertValidEntryName, type SafePath, type Vault } from '../../lib/vault.js';
+import type { SafePath, Vault } from '../../lib/vault.js';
 
 const MAX_COLLISION_ATTEMPTS = 1000;
 
@@ -23,8 +23,7 @@ export class FileOpsService {
   }
 
   async rename(target: SafePath, name: string): Promise<string> {
-    assertValidEntryName(name);
-    const destination = path.join(path.dirname(target), name) as SafePath;
+    const destination = this.vault.child(path.dirname(target) as SafePath, name);
 
     // A pure case change would otherwise look like a collision on Windows.
     if (destination.toLowerCase() !== target.toLowerCase() && (await exists(destination))) {
@@ -118,14 +117,22 @@ export async function exists(target: string): Promise<boolean> {
 
 /** A free path for `name` in `directory`, suffixed "(2)", "(3)"… the way Windows does. */
 export async function resolveCollision(directory: string, name: string): Promise<string> {
-  const candidate = path.join(directory, name);
-  if (!(await exists(candidate))) return candidate;
+  for (const candidate of collisionCandidates(directory, name)) {
+    if (!(await exists(candidate))) return candidate;
+  }
+  throw tooManyCollisions();
+}
 
+/** `name` in `directory`, then the same suffixed "(2)", "(3)"…, in the order to try them. */
+export function* collisionCandidates(directory: string, name: string): Generator<string> {
+  yield path.join(directory, name);
   const extension = path.extname(name);
   const stem = name.slice(0, name.length - extension.length);
   for (let attempt = 2; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
-    const next = path.join(directory, `${stem} (${attempt})${extension}`);
-    if (!(await exists(next))) return next;
+    yield path.join(directory, `${stem} (${attempt})${extension}`);
   }
-  throw HearthError.conflict('Too many items with that name already exist here');
+}
+
+export function tooManyCollisions(): HearthError {
+  return HearthError.conflict('Too many items with that name already exist here');
 }

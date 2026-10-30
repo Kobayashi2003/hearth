@@ -21,11 +21,21 @@ const COMMON_HAN = new Set(
     '這來國個們為說時會過學對後麼沒於還發當開經頭動兩長樣現將與實點種話兒問機給幾業間電門東無從見車總書員報馬張難數應聽氣關並內軍產萬處場師體別眼讀題',
 );
 
+/**
+ * Syllables frequent in real Korean text. EUC-KR's syllables sit on the same
+ * byte values as GBK's most common ideographs, so Chinese read as Korean comes
+ * out as valid but rare syllables (拷贝 as 옙굔); only these count fully.
+ */
+const COMMON_HANGUL = new Set(
+  '이의는다에을를가고하지한서로기도사리자대수인시과국어일정적상해부게나보아내전성들그만것소주우요연위년있없되말장제화문중실동방신원구관경모회비거라면조마저생개분세물심교학까자여통지금작업래간공정무용가운식결계발명미선마음양오진치행세모두',
+);
+
 /** Code point ranges outside ASCII, and what a character there says about a guess. */
 const WEIGHTS: ReadonlyArray<[low: number, high: number, weight: number]> = [
   [0x3040, 0x30ff, 2], // hiragana, katakana
   [0x4e00, 0x9fff, 1], // CJK ideographs
-  [0xac00, 0xd7a3, 1.2], // hangul
+  // Below an ideograph: a rare syllable is what GBK misread as EUC-KR looks like.
+  [0xac00, 0xd7a3, 0.5], // hangul
   [0xff61, 0xff9f, -1], // half-width kana: GBK misread as Shift_JIS
   [0x3000, 0x303f, 1], // CJK punctuation
   [0xff01, 0xff60, 1], // full-width forms
@@ -36,7 +46,7 @@ function weightOf(character: string): number {
   if (code === 0xfffd) return -20;
   if (code < 0x20) return code === 9 || code === 10 || code === 13 ? 0 : -5;
   if (code < 0x80) return 0;
-  if (COMMON_HAN.has(character)) return 3;
+  if (COMMON_HAN.has(character) || COMMON_HANGUL.has(character)) return 3;
   const range = WEIGHTS.find(([low, high]) => code >= low && code <= high);
   return range ? range[2] : -1;
 }

@@ -1,20 +1,29 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { CueSheet, MediaProbe } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
 import { isAbortError } from '../../lib/errors.js';
 import { maximum } from '../../lib/limits.js';
 import { abortSignalOf } from '../../lib/request.js';
+import type { SafePath } from '../../lib/vault.js';
 import type { ListingService } from '../vault/listing.service.js';
 import type { CueService } from './cue.service.js';
 import type { FolderCoverService } from './folder-cover.service.js';
-import { openFile, pathQuery, sendConversion, STREAM } from './route-helpers.js';
+import type { ArchiveMemberService } from './archive-member.service.js';
+import {
+  openFile,
+  pathQuery,
+  sendConversion,
+  STREAM_FILE,
+  type FileSources,
+} from './route-helpers.js';
 import type { StreamService } from './stream.service.js';
 import type { SubtitleService } from './subtitle.service.js';
 import type { ThumbnailService } from './thumbnail.service.js';
 
 export interface MediaRouteServices {
   listing: ListingService;
+  members: ArchiveMemberService;
   streams: StreamService;
   ffmpeg: FfmpegAdapter;
   subtitles: SubtitleService;
@@ -36,17 +45,17 @@ export function createMediaRoutes(services: MediaRouteServices): FastifyPluginAs
  * The tracks of an album ripped to one file (204 when it is just a file), and
  * audio the browser cannot decode as audio it can.
  */
-function albumRoutes({ listing, cues, ffmpeg }: MediaRouteServices): FastifyPluginAsync {
+function albumRoutes({ listing, members, cues, ffmpeg }: MediaRouteServices): FastifyPluginAsync {
   return async app => {
     /** Like a video conversion, not seekable: the client seeks by asking again with a new `start`. */
     app.get<{ Querystring: { path: string; token?: string; start?: number } }>(
       '/media/audio',
       {
         schema: { querystring: pathQuery({ start: { type: 'number', minimum: 0 } }) },
-        config: STREAM,
+        config: STREAM_FILE,
       },
       async (request, reply) => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const signal = abortSignalOf(request);
         const probe = await ffmpeg.probe(target, signal);
         const { stream, contentType } = ffmpeg.transcodeAudio(
@@ -60,9 +69,9 @@ function albumRoutes({ listing, cues, ffmpeg }: MediaRouteServices): FastifyPlug
 
     app.get<{ Querystring: { path: string; token?: string } }>(
       '/media/cue',
-      { schema: { querystring: pathQuery() }, config: STREAM },
+      { schema: { querystring: pathQuery() }, config: STREAM_FILE },
       async (request, reply) => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const sheet: CueSheet | null = await cues.sheetFor(target, abortSignalOf(request));
         // Not cached by the browser: a sheet dropped in beside the file should show up.
         reply.header('Cache-Control', 'no-cache');
@@ -75,6 +84,7 @@ function albumRoutes({ listing, cues, ffmpeg }: MediaRouteServices): FastifyPlug
 /** A file as it is, its probe, a conversion the browser can play, and its subtitles as WebVTT. */
 function playbackRoutes({
   listing,
+  members,
   streams,
   ffmpeg,
   subtitles,
@@ -84,17 +94,21 @@ function playbackRoutes({
       method: ['GET', 'HEAD'],
       url: '/media/raw',
       schema: { querystring: pathQuery() },
-      config: STREAM,
+      config: STREAM_FILE,
       handler: async (request, reply) => {
-        return streams.send(request, reply, await openFile(listing, request, request.query.path));
+        return streams.send(
+          request,
+          reply,
+          await openFile({ listing, members }, request, request.query.path),
+        );
       },
     });
 
     app.get<{ Querystring: { path: string; token?: string } }>(
       '/media/probe',
-      { schema: { querystring: pathQuery() }, config: STREAM },
+      { schema: { querystring: pathQuery() }, config: STREAM_FILE },
       async request => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const body: MediaProbe = await ffmpeg.probe(target, abortSignalOf(request));
         return body;
       },
@@ -112,10 +126,10 @@ function playbackRoutes({
             start: { type: 'number', minimum: 0 },
           }),
         },
-        config: STREAM,
+        config: STREAM_FILE,
       },
       async (request, reply) => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const stream = ffmpeg.transcode(
           target,
           { audioTrack: request.query.audioTrack, startSeconds: request.query.start },
@@ -129,10 +143,10 @@ function playbackRoutes({
       '/media/subtitle',
       {
         schema: { querystring: pathQuery({ track: { type: 'integer', minimum: 0, maximum: 64 } }) },
-        config: STREAM,
+        config: STREAM_FILE,
       },
       async (request, reply) => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const vtt = await subtitles.vtt(target, request.query.track ?? 0, abortSignalOf(request));
         return reply
           .header('Content-Type', 'text/vtt; charset=utf-8')
@@ -145,6 +159,7 @@ function playbackRoutes({
 
 function thumbnailRoutes({
   listing,
+  members,
   thumbnails,
   folderCovers,
 }: MediaRouteServices): FastifyPluginAsync {
@@ -167,14 +182,10 @@ function thumbnailRoutes({
             v: { type: 'string', maxLength: 64 },
           }),
         },
-        config: STREAM,
+        config: STREAM_FILE,
       },
       async (request, reply) => {
-        const target = request.resolvePath(request.query.path, 'read');
-        const entry = await listing.require(target);
-        const source = entry.isDirectory
-          ? await folderCovers.sourceFor(target, abortSignalOf(request))
-          : target;
+        const source = await thumbnailSource(request, { listing, members }, folderCovers);
 
         // "Nothing to show" is an answer, not an error; the client keeps its icon.
         if (!source) return reply.code(204).send();
@@ -225,10 +236,10 @@ function thumbnailRoutes({
             ['path', 'at'],
           ),
         },
-        config: STREAM,
+        config: STREAM_FILE,
       },
       async (request, reply) => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const frame = await thumbnails
           .frameAt(
             target,
@@ -251,4 +262,26 @@ function thumbnailRoutes({
       },
     );
   };
+}
+
+/**
+ * What a thumbnail is drawn from: the file, a file inside an archive, or for a
+ * folder the picture chosen as its cover (null when there is none).
+ */
+async function thumbnailSource(
+  request: FastifyRequest<{ Querystring: { path: string } }>,
+  files: FileSources,
+  folderCovers: FolderCoverService,
+): Promise<SafePath | null> {
+  const target = request.resolvePath(request.query.path, 'read');
+  const entry = await files.listing.require(target);
+  if (entry.isDirectory) return folderCovers.sourceFor(target, abortSignalOf(request));
+  const { member } = request.query as { member?: string };
+  if (!member) return target;
+  const picture = await files.members.openPicture(
+    target,
+    await files.listing.assertFile(target),
+    member,
+  );
+  return picture.target;
 }

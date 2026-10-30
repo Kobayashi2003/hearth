@@ -4,7 +4,7 @@ import type { AppConfig } from '../../config/index.js';
 import type { RuntimeState } from '../../config/runtime-state.js';
 import { HearthError } from '../../lib/errors.js';
 import { MediaTokenIssuer } from './media-token.js';
-import { PermissionRegistry, actionsFromPermissionString } from './permissions.js';
+import { ACTION_CHARS, PermissionRegistry, actionsFromPermissionString } from './permissions.js';
 import type { Session, SessionStore } from './session-store.js';
 import { UserDirectory } from './user-directory.js';
 
@@ -77,6 +77,21 @@ export class Warden {
     }
   }
 
+  /** `assertCan` for a path and everything inside it (`PermissionRegistry.allowsTree`). */
+  assertCanTree(
+    session: Session,
+    action: PermissionAction,
+    relativePath: string,
+    exists: (relativePath: string) => boolean,
+  ): void {
+    const { username, permissions } = session;
+    if (!this.permissions.allowsTree(username, permissions, relativePath, action, exists)) {
+      throw HearthError.forbidden(
+        `Something inside this folder is not yours to ${action}, so the folder cannot be either`,
+      );
+    }
+  }
+
   issueMediaToken(username: string, relativePath: string): { token: string; expiresAt: number } {
     return this.mediaTokens.issue(username, relativePath, this.runtime.get('activeRootId'));
   }
@@ -99,23 +114,25 @@ export class Warden {
   }
 
   /**
-   * Who a site request acts as: the token's user as they are now, since the
-   * token may outlive a change. A removed user gets nothing, admin-only mode
-   * locks others out as it does at sign-in, and their current permissions apply.
+   * Who a link made earlier acts as (a page, a media token, a zip ticket): its
+   * user as they are now, since the link may outlive a change. A removed user
+   * gets nothing, admin-only mode locks others out as it does at sign-in, and
+   * their current permissions apply, cut down to `most` when given.
    */
-  siteSession(username: string): Session {
+  sessionAsNow(username: string, id: string, most?: PermissionAction): Session {
     const user = this.users.list().find(candidate => candidate.username === username);
-    if (!user) throw HearthError.unauthorized('This page link is no longer valid');
+    if (!user) throw HearthError.unauthorized('This link is no longer valid');
     if (this.runtime.get('adminOnly') && !user.permissions.includes('a')) {
       throw HearthError.forbidden('The server is currently limited to administrators');
     }
-    return {
-      id: 'site',
-      username,
-      permissions: user.permissions,
-      createdAt: Date.now(),
-      expiresAt: null,
-    };
+    const allowed = actionsFromPermissionString(user.permissions);
+    const permissions =
+      most === undefined ? user.permissions : allowed.includes(most) ? ACTION_CHARS[most] : '';
+    return { id, username, permissions, createdAt: Date.now(), expiresAt: null };
+  }
+
+  siteSession(username: string): Session {
+    return this.sessionAsNow(username, 'site');
   }
 
   verifySiteToken(token: string): { username: string; folder: string } | null {

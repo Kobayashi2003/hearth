@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { FileEntry } from '@hearth/shared';
 
 import { explorerRoute, useRevealInFolder } from '@/features/explorer/search';
+import { isInArchive } from '@/lib/archive-path';
 import { mediaUrls } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { parentOf } from '@/lib/format';
@@ -151,8 +152,10 @@ function useBarActions(entry: FileEntry) {
   const { closeThen, isFullscreen, toggleFullscreen } = useOverlay();
   const search = explorerRoute.useSearch();
   const revealInFolder = useRevealInFolder();
+  // A file inside an archive is shown over the archive; there is no folder of its own to go to.
   const awayFromFolder =
-    search.q.trim() !== '' || search.type !== undefined || parentOf(entry.path) !== search.path;
+    !isInArchive(entry.path) &&
+    (search.q.trim() !== '' || search.type !== undefined || parentOf(entry.path) !== search.path);
   return {
     awayFromFolder,
     reveal: () => closeThen(() => revealInFolder(entry.path)),

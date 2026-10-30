@@ -1,24 +1,15 @@
-import {
-  Component,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import { TriangleAlert } from 'lucide-react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { viewerKindFor } from '@/lib/file-kind';
-import { isTypingTarget } from '@/lib/keys';
 import { useProgress } from '@/features/progress/progress';
-import { Button } from '@/ui/Button';
-import { Centered, Notice, Spinner } from '@/ui/Feedback';
+import { Centered, Spinner } from '@/ui/Feedback';
 import { OverlayContext, type OverlayValue } from './overlay';
+import { useInnerLayers } from './inner-layers';
+import { useOverlayKeys } from './overlay-keys';
+import { InnerLayer, ViewerBoundary } from './PreviewLayers';
 import { usePreview } from './PreviewProvider';
 import { useBackToClose } from './useBackToClose';
-import { STEPS_WITH_ARROWS, VIEWERS } from './viewers';
+import { VIEWERS } from './viewers';
 
 /** The full-bleed stage a file is shown on. Mounted by the shell, above the routed page. */
 export function PreviewOverlay() {
@@ -28,6 +19,7 @@ export function PreviewOverlay() {
   const [isFullscreen, setFullscreen] = useState(false);
 
   useBackToClose(current !== null, close);
+  const inner = useInnerLayers(current);
 
   useEffect(() => {
     const sync = () => setFullscreen(document.fullscreenElement !== null);
@@ -79,35 +71,20 @@ export function PreviewOverlay() {
   const index = current ? current.gallery.findIndex(item => item.path === current.entry.path) : -1;
   const total = current?.gallery.length ?? 0;
 
-  useEffect(() => {
-    if (!current) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || isTypingTarget(event.target)) return;
-      if (event.key === 'Escape' && !document.fullscreenElement) {
-        // Radix menus and dialogs inside the viewer handle their own Escape.
-        if (
-          document.querySelector(
-            '[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"]',
-          )
-        )
-          return;
-        event.preventDefault();
-        closeAll();
-      } else if (
-        STEPS_WITH_ARROWS.has(kind) &&
-        (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
-      ) {
-        event.preventDefault();
-        step(event.key === 'ArrowLeft' ? -1 : 1);
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [current, kind, closeAll, step]);
+  useOverlayKeys({ active: current !== null, ...inner.keysOver(kind, closeAll, step) });
 
   const value = useMemo<OverlayValue>(
-    () => ({ close: closeAll, closeThen, step, index, total, isFullscreen, toggleFullscreen }),
-    [closeAll, closeThen, step, index, total, isFullscreen, toggleFullscreen],
+    () => ({
+      close: closeAll,
+      closeThen,
+      step,
+      index,
+      total,
+      isFullscreen,
+      toggleFullscreen,
+      openInside: inner.open,
+    }),
+    [closeAll, closeThen, step, index, total, isFullscreen, toggleFullscreen, inner.open],
   );
 
   // Closing fades out an empty stage; the viewer itself unmounts at once, so
@@ -148,9 +125,18 @@ export function PreviewOverlay() {
           }
         >
           {progressReady ? (
-            <ViewerBoundary key={current.entry.path} onClose={closeAll}>
-              <Viewer entry={current.entry} />
-            </ViewerBoundary>
+            <>
+              <ViewerBoundary key={current.entry.path} onClose={closeAll}>
+                <Viewer entry={current.entry} />
+              </ViewerBoundary>
+              {/* The file it was opened over stays mounted underneath, as it was left. */}
+              <InnerLayer
+                layer={inner.top}
+                overlay={value}
+                onClose={inner.closeTop}
+                onStep={inner.stepTop}
+              />
+            </>
           ) : (
             <Centered>
               <Spinner />
@@ -160,32 +146,4 @@ export function PreviewOverlay() {
       </OverlayContext>
     </div>
   );
-}
-
-/** A viewer that throws takes down only itself, not the explorer behind it. */
-class ViewerBoundary extends Component<
-  { children: ReactNode; onClose: () => void },
-  { error: Error | null }
-> {
-  override state = { error: null as Error | null };
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  override render() {
-    if (!this.state.error) return this.props.children;
-    return (
-      <Notice
-        icon={<TriangleAlert />}
-        title="This file could not be shown"
-        body={`${this.state.error.message}. Download it to open it in another app.`}
-        action={
-          <Button variant="stage" onClick={this.props.onClose}>
-            Close
-          </Button>
-        }
-      />
-    );
-  }
 }

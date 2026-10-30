@@ -6,7 +6,7 @@ import type { Readable } from 'node:stream';
 import archiver from 'archiver';
 
 import { HearthError } from '../../lib/errors.js';
-import type { SafePath, Vault } from '../../lib/vault.js';
+import type { SafePath } from '../../lib/vault.js';
 
 interface ZipTicket {
   token: string;
@@ -25,10 +25,7 @@ interface ZipTicket {
 export class DownloadService {
   private readonly tickets = new Map<string, ZipTicket>();
 
-  constructor(
-    private readonly vault: Vault,
-    private readonly ticketTtlMs: number,
-  ) {}
+  constructor(private readonly ticketTtlMs: number) {}
 
   issueZipTicket(
     username: string,
@@ -86,10 +83,6 @@ export class DownloadService {
 
     void archive.finalize();
     return archive;
-  }
-
-  resolveTicketPaths(ticket: ZipTicket): SafePath[] {
-    return ticket.paths.map(relative => this.vault.resolve(relative));
   }
 
   private sweepExpired(): void {

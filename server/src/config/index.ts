@@ -98,6 +98,8 @@ export interface AppConfig {
     readonly comicCacheDirectory: string;
     readonly psdCacheDirectory: string;
     readonly subtitleCacheDirectory: string;
+    /** Files unpacked from archives to be opened like any other. */
+    readonly archiveMemberCacheDirectory: string;
     readonly ffmpegPath: string;
     readonly ffprobePath: string;
     readonly transcodeCrf: number;
@@ -117,6 +119,7 @@ export interface AppConfig {
     readonly comicMaxAgeMs: number;
     readonly psdMaxAgeMs: number;
     readonly subtitleMaxAgeMs: number;
+    readonly archiveMemberMaxAgeMs: number;
   };
   readonly ledger: {
     readonly maxProgressEntries: number;
@@ -147,6 +150,8 @@ export interface AppConfig {
     readonly htmlRuffleEnabled: boolean;
     /** Video a page embeds for a long-gone plugin plays in <video>, transcoded when the browser cannot. */
     readonly htmlVideoEnabled: boolean;
+    /** A file inside an archive opens in the usual viewer, unpacked to a cache first. */
+    readonly archivePreviewEnabled: boolean;
     /** The self-hosted Ruffle build (ruffle.js and its .wasm). */
     readonly ruffleDirectory: string;
   };
@@ -249,6 +254,10 @@ export function loadConfig(development = false): AppConfig {
       comicCacheDirectory: envPath('COMIC_CACHE_DIR', './server/temp/comics'),
       psdCacheDirectory: envPath('PSD_CACHE_DIR', './server/temp/psd'),
       subtitleCacheDirectory: envPath('SUBTITLE_CACHE_DIR', './server/temp/subtitles'),
+      archiveMemberCacheDirectory: envPath(
+        'ARCHIVE_MEMBER_CACHE_DIR',
+        './server/temp/archive-members',
+      ),
       // Bare names resolve on PATH.
       ffmpegPath: envString('FFMPEG_PATH', 'ffmpeg'),
       ffprobePath: envString('FFPROBE_PATH', 'ffprobe'),
@@ -268,6 +277,7 @@ export function loadConfig(development = false): AppConfig {
       comicMaxAgeMs: envLimit('CACHE_COMIC_DAYS', 7, DAY_MS),
       psdMaxAgeMs: envLimit('CACHE_PSD_DAYS', 7, DAY_MS),
       subtitleMaxAgeMs: envLimit('CACHE_SUBTITLE_DAYS', 30, DAY_MS),
+      archiveMemberMaxAgeMs: envLimit('CACHE_ARCHIVE_MEMBER_DAYS', 3, DAY_MS),
     },
     ledger: {
       maxProgressEntries: envLimit('LEDGER_MAX_PROGRESS', 1000),
@@ -293,6 +303,7 @@ export function loadConfig(development = false): AppConfig {
       htmlScriptsEnabled: envBool('HTML_SCRIPTS', false),
       htmlRuffleEnabled: envBool('HTML_RUFFLE', false),
       htmlVideoEnabled: envBool('HTML_VIDEO', false),
+      archivePreviewEnabled: envBool('ARCHIVE_PREVIEW', true),
       ruffleDirectory: envPath('RUFFLE_DIRECTORY', './web/public/ruffle'),
     },
     adminOnly: envBool('ADMIN_ONLY_MODE', false),

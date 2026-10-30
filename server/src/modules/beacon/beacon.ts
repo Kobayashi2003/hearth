@@ -3,6 +3,7 @@ import type { SearchHealth, SearchProviderName } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
 import type { RuntimeState } from '../../config/runtime-state.js';
+import { paginate } from '../../lib/listing.js';
 import type { Vault } from '../../lib/vault.js';
 import { EverythingProvider } from './everything.provider.js';
 import { WalkProvider } from './walk.provider.js';
@@ -40,23 +41,34 @@ export class Beacon {
     });
   }
 
-  /** `canRead` filters every result; listing a path the user cannot open is itself a disclosure. */
+  /**
+   * `canRead` filters every result; listing a path the user cannot open is
+   * itself a disclosure. Where some of the scope may be unreadable
+   * (`allReadable` false), the results are filtered before they are paged, so
+   * pages and totals count only what the user may see: a provider's own page
+   * could otherwise be all refused while readable matches wait on the next.
+   */
   async search(
     query: SearchQuery,
     canRead: (relativePath: string) => boolean,
+    allReadable: boolean,
     signal?: AbortSignal,
   ): Promise<SearchPage> {
-    const page = await this.searchWithProvider(query, signal);
+    if (allReadable) {
+      const page = await this.searchWithProvider(query, signal);
+      return { ...page, items: page.items.filter(item => canRead(item.path)) };
+    }
 
-    const permitted = page.items.filter(item => canRead(item.path));
-    const denied = page.items.length - permitted.length;
-    if (denied === 0) return page;
-
+    // Everything the provider returns (up to its result cap), then paged here.
+    const whole = await this.searchWithProvider(
+      { ...query, page: 1, limit: Number.POSITIVE_INFINITY },
+      signal,
+    );
+    const permitted = whole.items.filter(item => canRead(item.path));
     return {
-      ...page,
-      items: permitted,
-      total: Math.max(permitted.length, page.total - denied),
-      approximate: true,
+      ...paginate(permitted, query.page, query.limit),
+      provider: whole.provider,
+      approximate: whole.approximate || whole.hasMore,
     };
   }
 

@@ -1,5 +1,5 @@
 import { SettingsGroup } from '@/ui/Field';
-import { SettingNumber } from './admin-settings';
+import { SettingNumber, SettingSwitch } from './admin-settings';
 
 /**
  * The caps an administrator can change while Hearth runs. Each starts from
@@ -33,6 +33,11 @@ export function LimitsSection() {
           name="maxTextSizeMB"
           title="Largest text file shown in full"
           description="Bigger files show their beginning."
+        />
+        <SettingSwitch
+          name="archivePreview"
+          title="Open files inside archives"
+          description="A file in a zip or rar opens in its usual viewer, as one on disk does. It is unpacked into the server's cache first: the first open waits for that (in a solid RAR, for everything stored before it too), the archive is read whole into memory to do it, and unpacked files take disk space until the cache is cleaned. Showing an archive as covers unpacks all of its pictures at once. Off, files inside open in a new tab or download, and covers show icons."
         />
         <SettingNumber
           name="archiveMaxEntries"

@@ -26,7 +26,6 @@ export default function VideoViewer({ entry }: ViewerProps) {
 
   const [rate, setRate] = useState(1);
   const [failure, setFailure] = useState<string | null>(null);
-  const { state, events, stopWaiting } = usePlaybackState();
   const { volume, muted, setMuted, applyVolume, toggleMute } = useVolume(videoRef);
 
   const { data: probe, isPending: probing } = useQuery({
@@ -36,6 +35,7 @@ export default function VideoViewer({ entry }: ViewerProps) {
     retry: false,
   });
   const video = useVideoSource(path, probe);
+  const { state, events, stopWaiting } = usePlaybackState(video.source);
   const { transcoding, restartAt } = video;
 
   useEffect(() => pauseMusic(), [pauseMusic]);
@@ -114,10 +114,13 @@ export default function VideoViewer({ entry }: ViewerProps) {
             onPointerDown={onPointerDown}
             onClick={() => isMouse() && toggle()}
             onLoadedMetadata={event => {
+              // A new source is a new element: it takes on how the last one was set.
               const element = event.currentTarget;
               element.volume = volume;
+              element.muted = muted;
               element.playbackRate = rate;
-              const at = takeResume(duration || element.duration);
+              const resumed = takeResume(duration || element.duration);
+              const at = video.takePendingSeek() ?? resumed;
               if (at !== null) seek(at);
             }}
             onVolumeChange={event => setMuted(event.currentTarget.muted)}

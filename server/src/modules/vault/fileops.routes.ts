@@ -11,6 +11,7 @@ import type {
 import { HearthError } from '../../lib/errors.js';
 import { maxItems } from '../../lib/limits.js';
 import type { PathFollower } from '../../lib/path-follower.js';
+import type { SafePath } from '../../lib/vault.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
 import type { TrashService } from '../ember/trash.service.js';
 import type { FileOpsService } from './fileops.service.js';
@@ -84,7 +85,8 @@ export function createFileOpsRoutes(
       '/fs/rename',
       { schema: schemas.rename, config: writeConfig },
       async request => {
-        const target = request.resolvePath(request.body.path, 'write');
+        // A folder's new name moves everything in it, out from under rules that name its paths.
+        const target = notTheRoot(request, request.resolveTree(request.body.path, 'write'));
         await listing.require(target);
         const renamed = await fileOps.rename(target, request.body.name);
         await followers.reprefix(request.relativePath(target), renamed);
@@ -97,10 +99,11 @@ export function createFileOpsRoutes(
         `/fs/${mode}`,
         { schema: schemas.transfer, config: writeConfig },
         async request => {
-          // A move removes the source, so it needs delete permission there.
+          // A move removes the source, so it needs delete permission there. A copy
+          // reads everything inside, and would carry it out from under its rules.
           const sourceAction = mode === 'move' ? 'delete' : 'read';
           const sources = request.body.sources.map(source =>
-            request.resolvePath(source, sourceAction),
+            notTheRoot(request, request.resolveTree(source, sourceAction)),
           );
           const destination = request.resolvePath(request.body.destination, 'write');
           await listing.assertDirectory(destination);
@@ -130,6 +133,17 @@ export function createFileOpsRoutes(
   };
 }
 
+/**
+ * The root is where Hearth is configured to look, not an item in it: renamed,
+ * moved or deleted, it would leave Hearth serving a folder that is gone.
+ */
+function notTheRoot(request: FastifyRequest, target: SafePath): SafePath {
+  if (request.relativePath(target) === '') {
+    throw HearthError.badRequest('The root itself cannot be renamed, moved or deleted');
+  }
+  return target;
+}
+
 async function followMoves(followers: PathFollower, results: OperationResult[]) {
   for (const result of results) {
     if (result.ok && result.resultPath) await followers.reprefix(result.path, result.resultPath);
@@ -144,7 +158,7 @@ async function deleteOne(
   useTrash: boolean,
 ): Promise<OperationResult> {
   try {
-    const target = request.resolvePath(requested, 'delete');
+    const target = notTheRoot(request, request.resolveTree(requested, 'delete'));
     const entry = await listing.require(target);
     if (useTrash) {
       // Progress is kept: restoring to the same path restores where you were.

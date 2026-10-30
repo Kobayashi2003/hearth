@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
+import { writeFileAtomically } from './atomic-file.js';
+
 export function readJsonFile<T>(filePath: string): T | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
@@ -12,10 +14,7 @@ export function readJsonFile<T>(filePath: string): T | null {
 
 /** Written to a sibling temp file and renamed, so a crash cannot truncate the previous copy. */
 export async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<void> {
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${process.pid}.tmp`;
-  await fsp.writeFile(tempPath, JSON.stringify(value, null, 2), 'utf8');
-  await fsp.rename(tempPath, filePath);
+  await writeFileAtomically(filePath, JSON.stringify(value, null, 2));
 }
 
 /** One JSON file with an in-memory copy and serialised writes. */

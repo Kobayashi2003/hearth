@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen } from 'lucide-react';
 
+import { isInArchive } from '@/lib/archive-path';
 import { api, mediaUrls } from '@/lib/api';
 import { usePreferences } from '@/features/preferences/preferences';
 import { useResolvedTheme } from '@/features/preferences/resolved-theme';
@@ -65,7 +66,8 @@ export default function EpubViewer({ entry }: ViewerProps) {
     return {
       load: key => (key === path ? applyTheme(latest) : null),
       save: (key, record) => {
-        if (key !== path) return;
+        // A book inside an archive is read where it is, its place not kept.
+        if (key !== path || isInArchive(path)) return;
         latest = record;
         window.clearTimeout(timer);
         timer = window.setTimeout(
@@ -85,7 +87,7 @@ export default function EpubViewer({ entry }: ViewerProps) {
         }
       },
       remove: key => {
-        if (key !== path) return;
+        if (key !== path || isInArchive(path)) return;
         latest = null;
         void api.removeReadingSession(path).catch(() => undefined);
       },

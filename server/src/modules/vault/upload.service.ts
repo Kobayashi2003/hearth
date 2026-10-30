@@ -1,4 +1,3 @@
-import { createWriteStream } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -12,7 +11,7 @@ import type { RuntimeState } from '../../config/runtime-state.js';
 import { fromNodeError, HearthError } from '../../lib/errors.js';
 import { mimeForPath } from '../../lib/mime.js';
 import { assertValidEntryName, type SafePath, type Vault } from '../../lib/vault.js';
-import { resolveCollision } from './fileops.service.js';
+import { collisionCandidates, tooManyCollisions } from './fileops.service.js';
 
 const MAGIC_NUMBER_SAMPLE_BYTES = 4100;
 
@@ -23,6 +22,14 @@ export interface StoredUpload {
   size: number;
 }
 
+/**
+ * Refuses (throws) unless the uploader may write `target`. Called for every
+ * folder an upload would create and for the file itself, before either is made:
+ * a folder upload names its own subfolders, which the request's own path does
+ * not cover.
+ */
+export type MayWrite = (target: SafePath) => void;
+
 export class UploadService {
   constructor(
     private readonly config: AppConfig,
@@ -31,21 +38,27 @@ export class UploadService {
   ) {}
 
   /** `relativeName` may contain directory segments (folder uploads); each is validated. */
-  async store(directory: SafePath, relativeName: string, content: Readable): Promise<StoredUpload> {
+  async store(
+    directory: SafePath,
+    relativeName: string,
+    content: Readable,
+    mayWrite: MayWrite,
+  ): Promise<StoredUpload> {
     const segments = splitRelativeName(relativeName);
     const filename = segments.pop()!;
 
-    const parent =
-      segments.length > 0
-        ? this.vault.resolve(path.join(this.vault.relativize(directory), ...segments))
-        : directory;
-
-    await fsp.mkdir(parent, { recursive: true });
-    const target = await resolveCollision(parent, filename);
+    let parent = directory;
+    for (const segment of segments) {
+      parent = this.vault.resolve(path.join(this.vault.relativize(parent), segment));
+      mayWrite(parent);
+    }
 
     const source = this.config.upload.validateMagicNumber
       ? await this.verifiedStream(content, filename)
       : content;
+
+    await fsp.mkdir(parent, { recursive: true });
+    const { target, file } = await this.claim(parent, filename, mayWrite);
 
     let written = 0;
     const counter = new PassThrough();
@@ -59,38 +72,68 @@ export class UploadService {
     });
 
     try {
-      await pipeline(source, counter, createWriteStream(target));
+      await pipeline(source, counter, file.createWriteStream());
     } catch (error) {
+      // Only this upload's own file: the name was claimed, so no other upload wrote it.
       await fsp.rm(target, { force: true });
       throw error instanceof HearthError ? error : fromNodeError(error, 'Could not save that file');
     }
 
-    return { path: this.vault.relativize(target as SafePath), size: written };
+    return { path: this.vault.relativize(target), size: written };
   }
 
-  /** Rejects content that contradicts its extension; the sampled head is replayed so the rest still streams. */
+  /**
+   * The first free name, created on the spot so it is this upload's alone: two
+   * uploads of one name at once get two files, never one written over the other.
+   */
+  private async claim(
+    parent: SafePath,
+    filename: string,
+    mayWrite: MayWrite,
+  ): Promise<{ target: SafePath; file: fsp.FileHandle }> {
+    for (const candidate of collisionCandidates(parent, filename)) {
+      const target = this.vault.resolve(this.vault.relativize(candidate));
+      mayWrite(target);
+      try {
+        return { target, file: await fsp.open(target, 'wx') };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw fromNodeError(error, 'Could not save that file');
+        }
+      }
+    }
+    throw tooManyCollisions();
+  }
+
+  /**
+   * Rejects content that contradicts its extension; the sampled head is
+   * replayed so the rest still streams. One iterator, stepped by hand: leaving
+   * a `for await` early would destroy the stream before the rest is read.
+   */
   private async verifiedStream(content: Readable, filename: string): Promise<Readable> {
+    const iterator = content[Symbol.asyncIterator]() as AsyncIterator<Buffer>;
     const chunks: Buffer[] = [];
     let sampled = 0;
 
-    for await (const chunk of content) {
-      const buffer = chunk as Buffer;
-      chunks.push(buffer);
-      sampled += buffer.length;
-      if (sampled >= MAGIC_NUMBER_SAMPLE_BYTES) break;
+    while (sampled < MAGIC_NUMBER_SAMPLE_BYTES) {
+      const step = await iterator.next();
+      if (step.done) break;
+      const chunk = Buffer.from(step.value);
+      chunks.push(chunk);
+      sampled += chunk.length;
     }
 
     const sample = Buffer.concat(chunks);
     const detected = await fileTypeFromBuffer(sample);
     assertContentMatchesExtension(filename, detected?.mime);
 
-    return Readable.from(replay(sample, content));
+    return Readable.from(replay(sample, iterator));
   }
 }
 
-async function* replay(sample: Buffer, rest: Readable): AsyncGenerator<Buffer> {
+async function* replay(sample: Buffer, rest: AsyncIterator<Buffer>): AsyncGenerator<Buffer> {
   yield sample;
-  for await (const chunk of rest) yield chunk as Buffer;
+  for (let step = await rest.next(); !step.done; step = await rest.next()) yield step.value;
 }
 
 /** Only a contradiction is an error: unrecognised content (text, code) passes. */

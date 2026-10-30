@@ -36,6 +36,8 @@ import type {
   ZipTokenResponse,
 } from '@hearth/shared';
 
+import { splitMemberPath } from './archive-path';
+
 /**
  * Root-absolute. Overridden at runtime by `<meta name="hearth-api-base">`, or at
  * build time by HEARTH_WEB_API_BASE (keep it equal to the server's HEARTH_API_PREFIX).
@@ -53,6 +55,9 @@ function apiUrl(path: string, params?: Record<string, unknown>): string {
 function withQuery(path: string, params?: Record<string, unknown>): string {
   if (!params) return path;
   const query = new URLSearchParams();
+  // A file inside an archive travels as the archive's path and its name inside.
+  const inside = typeof params.path === 'string' ? splitMemberPath(params.path) : null;
+  if (inside) params = { ...params, path: inside.archive, member: inside.member };
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === '') continue;
     query.set(key, String(value));

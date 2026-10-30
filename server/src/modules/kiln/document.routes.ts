@@ -8,6 +8,7 @@ import type {
 } from '@hearth/shared';
 
 import { decodeText } from '../../lib/charset.js';
+import { HearthError } from '../../lib/errors.js';
 import { bodyLimit } from '../../lib/limits.js';
 import { inlineSafetyHeaders, mimeForPath } from '../../lib/mime.js';
 import { abortSignalOf } from '../../lib/request.js';
@@ -17,12 +18,14 @@ import type { ArchiveService } from './archive.service.js';
 import type { BackgroundService } from './background.service.js';
 import type { ComicService } from './comic.service.js';
 import type { DocumentService } from './document.service.js';
-import { openFile, pathQuery, READ, STREAM } from './route-helpers.js';
+import type { ArchiveMemberService } from './archive-member.service.js';
+import { openFile, pathQuery, READ, READ_FILE, STREAM, STREAM_FILE } from './route-helpers.js';
 import { contentDisposition, type StreamService } from './stream.service.js';
 import type { TextService } from './text.service.js';
 
 export interface DocumentRouteServices {
   listing: ListingService;
+  members: ArchiveMemberService;
   streams: StreamService;
   text: TextService;
   comics: ComicService;
@@ -41,7 +44,7 @@ export function createDocumentRoutes(services: DocumentRouteServices): FastifyPl
 }
 
 /** A text file decoded for reading, and saved back in the encoding it was read in. */
-function textRoutes({ listing, text }: DocumentRouteServices): FastifyPluginAsync {
+function textRoutes({ listing, members, text }: DocumentRouteServices): FastifyPluginAsync {
   return async app => {
     const rateLimits = buildRateLimits(app.hearth.config);
 
@@ -49,10 +52,10 @@ function textRoutes({ listing, text }: DocumentRouteServices): FastifyPluginAsyn
       '/content',
       {
         schema: { querystring: pathQuery({ encoding: { type: 'string', maxLength: 32 } }) },
-        config: READ,
+        config: READ_FILE,
       },
       async request => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const body: TextContentResponse = await text.read(target, request.query.encoding);
         return body;
       },
@@ -87,6 +90,7 @@ function textRoutes({ listing, text }: DocumentRouteServices): FastifyPluginAsyn
 /** Comics page by page, and archives entry by entry. */
 function bookRoutes({
   listing,
+  members,
   streams,
   comics,
   archives,
@@ -94,30 +98,37 @@ function bookRoutes({
   return async app => {
     app.get<{ Querystring: { path: string } }>(
       '/comic',
-      { schema: { querystring: pathQuery() }, config: READ },
+      { schema: { querystring: pathQuery() }, config: READ_FILE },
       async request => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const body: ComicManifest = await comics.open(target, abortSignalOf(request));
         return body;
       },
     );
 
-    /** The page name is checked against the cached manifest, never joined blindly. */
+    /**
+     * The page name is checked against the cached manifest, never joined blindly.
+     * Unpacked once is not allowed for good: each page asks again whether its
+     * archive may be read, in the root served now, and is the same file still.
+     */
     app.get<{ Params: { key: string; page: string } }>(
       '/comic/:key/:page',
       { config: STREAM },
-      async (request, reply) =>
-        streams.sendGenerated(
-          reply,
-          await comics.pagePath(request.params.key, request.params.page),
-        ),
+      async (request, reply) => {
+        const { file, source } = await comics.page(request.params.key, request.params.page);
+        const gone = () => HearthError.notFound('That comic is no longer open');
+        if (source === null) throw gone();
+        const archive = request.resolvePath(request.relativePath(source), 'read');
+        if (!(await comics.isKeyOf(request.params.key, archive))) throw gone();
+        return streams.sendGenerated(reply, file);
+      },
     );
 
     app.get<{ Querystring: { path: string } }>(
       '/archive',
-      { schema: { querystring: pathQuery() }, config: READ },
+      { schema: { querystring: pathQuery() }, config: READ_FILE },
       async request => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const body: ArchiveListing = await archives.list(target, abortSignalOf(request));
         return body;
       },
@@ -130,10 +141,10 @@ function bookRoutes({
         schema: {
           querystring: pathQuery({ entry: { type: 'string', maxLength: 4096 } }, ['path', 'entry']),
         },
-        config: STREAM,
+        config: STREAM_FILE,
       },
       async (request, reply) => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const member = await archives.read(target, request.query.entry, abortSignalOf(request));
         const mimeType = mimeForPath(member.name);
         // Text inside an archive keeps its original encoding; the browser would guess. Send UTF-8.
@@ -153,6 +164,7 @@ function bookRoutes({
 /** Office documents as HTML, and the wallpapers offered under Appearance. */
 function officeRoutes({
   listing,
+  members,
   streams,
   documents,
   backgrounds,
@@ -160,9 +172,9 @@ function officeRoutes({
   return async app => {
     app.get<{ Querystring: { path: string } }>(
       '/office',
-      { schema: { querystring: pathQuery() }, config: READ },
+      { schema: { querystring: pathQuery() }, config: READ_FILE },
       async request => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         const body: OfficeContentResponse = await documents.renderOffice(
           target,
           abortSignalOf(request),

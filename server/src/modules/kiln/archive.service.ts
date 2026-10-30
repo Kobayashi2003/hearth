@@ -8,19 +8,22 @@ import {
 
 import type { RuntimeState } from '../../config/runtime-state.js';
 import { HearthError } from '../../lib/errors.js';
+import { mimeForPath } from '../../lib/mime.js';
 import { runWorker, unreadable } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
 import type {
   ArchiveListResponse,
   ArchiveReadResponse,
   ArchiveRequest,
+  ArchiveUnpackResponse,
+  UnpackTarget,
 } from '../../workers/archive.worker.js';
 
 const MB = 1024 * 1024;
 const DAMAGED =
   'This archive could not be read; it may be damaged or in a format Hearth cannot open';
 
-/** An archive's listing and single members. Unlike comics, nothing is cached or unpacked to disk. */
+/** An archive's listing and single members, read into memory; `ArchiveMemberService` caches them on disk. */
 export class ArchiveService {
   constructor(private readonly runtime: RuntimeState) {}
 
@@ -34,10 +37,14 @@ export class ArchiveService {
     ).catch(unreadable(DAMAGED));
 
     return {
-      entries: response.entries,
+      entries: response.entries.map(entry => ({
+        ...entry,
+        mimeType: entry.isDirectory ? '' : mimeForPath(entry.name, entry.size),
+      })),
       total: response.total,
       hasMore: response.hasMore,
       looksLikeComic: response.looksLikeComic,
+      membersOpen: this.runtime.get('archivePreview'),
     };
   }
 
@@ -74,6 +81,25 @@ export class ArchiveService {
       content: Buffer.from(response.content),
       name: path.posix.basename(entryName) || 'file',
     };
+  }
+
+  /**
+   * Several members, each written to its file, in one reading of the archive.
+   * Returns the names written: a missing, encrypted or too large one is skipped.
+   */
+  async unpack(target: SafePath, members: UnpackTarget[], signal?: AbortSignal): Promise<string[]> {
+    this.assertReadable(target);
+    const response = await runWorker<ArchiveRequest, ArchiveUnpackResponse>(
+      'archive',
+      {
+        kind: 'unpack',
+        archivePath: target,
+        members,
+        maxBytes: this.runtime.get('archiveMaxMemberSizeMB') * MB,
+      },
+      signal,
+    ).catch(unreadable(DAMAGED));
+    return response.written;
   }
 
   private assertReadable(target: string): void {

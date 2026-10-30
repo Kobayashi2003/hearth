@@ -64,8 +64,18 @@ export function createBeaconRoutes(beacon: Beacon): FastifyPluginAsync {
     });
 
     /** Search as this user: results they may not read are left out, and leaving stops the search. */
-    const searchFor = (request: FastifyRequest, query: SearchQuery): Promise<SearchResponse> =>
-      beacon.search(query, readFilterFor(request), abortSignalOf(request));
+    const searchFor = (request: FastifyRequest, query: SearchQuery): Promise<SearchResponse> => {
+      const { username, permissions } = request.session!;
+      // No rule below the scope refuses anything: the provider's own pages can stand.
+      const allReadable = warden.permissions.allowsTree(
+        username,
+        permissions,
+        query.scope,
+        'read',
+        () => true,
+      );
+      return beacon.search(query, readFilterFor(request), allReadable, abortSignalOf(request));
+    };
 
     app.get<{ Querystring: SearchQueryString }>(
       '/search',

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
@@ -30,31 +31,72 @@ type SessionMap = Record<string, StoredSession>;
 /**
  * Ledger: per user, where each file was left. Keyed by root-relative path, so
  * `reprefix` / `forget` must be called whenever Hearth itself moves or deletes
- * something (see the backend structure doc for why not a content hash).
+ * something (see the backend structure doc for why not a content hash). Each
+ * root keeps its own, under `<kind>/<root id>/`: the same path in two roots is
+ * two unrelated files.
  */
 export class LedgerService implements PathFollower {
-  private readonly progress: UserDocuments<ProgressMap>;
-  private readonly sessions: UserDocuments<SessionMap>;
+  private readonly stores = new Map<
+    string,
+    { progress: UserDocuments<ProgressMap>; sessions: UserDocuments<SessionMap> }
+  >();
 
   constructor(
     private readonly directory: string,
     private readonly limits: LedgerLimits = UNLIMITED,
-  ) {
-    this.progress = new UserDocuments<ProgressMap>(path.join(directory, 'progress'), () => ({}));
-    this.sessions = new UserDocuments<SessionMap>(path.join(directory, 'sessions'), () => ({}));
+    /** The root served now; everything here acts on its ledger. */
+    private readonly rootId: () => string = () => 'default',
+  ) {}
+
+  private get progress(): UserDocuments<ProgressMap> {
+    return this.storesFor(this.rootId()).progress;
   }
 
-  /** Moves pre-2.0 ledgers (`<user>.json` holding `{ progress, recent, pinned }`) into `progress/`. */
+  private get sessions(): UserDocuments<SessionMap> {
+    return this.storesFor(this.rootId()).sessions;
+  }
+
+  private storesFor(rootId: string) {
+    let stores = this.stores.get(rootId);
+    if (!stores) {
+      const folder = rootFolderName(rootId);
+      stores = {
+        progress: new UserDocuments(path.join(this.directory, 'progress', folder), () => ({})),
+        sessions: new UserDocuments(path.join(this.directory, 'sessions', folder), () => ({})),
+      };
+      this.stores.set(rootId, stores);
+    }
+    return stores;
+  }
+
+  /**
+   * Pre-2.0 ledgers (`<user>.json` holding `{ progress, recent, pinned }`) and
+   * ledgers from before roots had their own (`progress/<user>.json`,
+   * `sessions/<user>.json`) are given to the root served when they are found:
+   * which root they were written in was never recorded.
+   */
   async migrate(): Promise<void> {
+    const folder = rootFolderName(this.rootId());
     const names = await fsp.readdir(this.directory).catch(() => [] as string[]);
     for (const name of names.filter(candidate => candidate.endsWith('.json'))) {
       const legacyPath = path.join(this.directory, name);
       const legacy = readJsonFile<{ progress?: ProgressMap }>(legacyPath);
-      const target = path.join(this.directory, 'progress', name);
+      const target = path.join(this.directory, 'progress', folder, name);
       if (legacy?.progress && readJsonFile(target) === null) {
         await writeJsonFileAtomic(target, legacy.progress);
       }
       await fsp.rm(legacyPath, { force: true });
+    }
+    for (const kind of ['progress', 'sessions']) {
+      const kindDirectory = path.join(this.directory, kind);
+      const files = await fsp.readdir(kindDirectory).catch(() => [] as string[]);
+      for (const name of files.filter(candidate => candidate.endsWith('.json'))) {
+        const unscoped = path.join(kindDirectory, name);
+        const target = path.join(kindDirectory, folder, name);
+        await fsp.mkdir(path.dirname(target), { recursive: true });
+        if (readJsonFile(target) === null) await fsp.rename(unscoped, target);
+        else await fsp.rm(unscoped, { force: true });
+      }
     }
   }
 
@@ -109,7 +151,7 @@ export class LedgerService implements PathFollower {
     });
   }
 
-  /** Follow a move for every user; a directory rename rewrites every path beneath it. */
+  /** Follow a move in the root served, for every user; a directory rename rewrites every path beneath it. */
   async reprefix(from: string, to: string): Promise<void> {
     if (from === to) return;
     await this.rewriteAll(key => (isUnder(key, from) ? to + key.slice(from.length) : key));
@@ -134,6 +176,13 @@ export class LedgerService implements PathFollower {
       }
     }
   }
+}
+
+/** A root id as a folder name: kept as it is when it is already a safe one. */
+function rootFolderName(rootId: string): string {
+  return /^[A-Za-z0-9_-]{1,64}$/.test(rootId)
+    ? rootId
+    : crypto.createHash('sha1').update(rootId).digest('hex');
 }
 
 function remap<T>(

@@ -10,11 +10,13 @@ import { abortSignalOf } from '../../lib/request.js';
 import type { SafePath } from '../../lib/vault.js';
 import type { ListingService } from '../vault/listing.service.js';
 import { siteSandboxed, type DocumentService } from './document.service.js';
-import { openFile, pathQuery, READ } from './route-helpers.js';
+import type { ArchiveMemberService } from './archive-member.service.js';
+import { openFile, pathQuery, READ_FILE } from './route-helpers.js';
 import type { StreamService } from './stream.service.js';
 
 export interface SiteRouteServices {
   listing: ListingService;
+  members: ArchiveMemberService;
   streams: StreamService;
   documents: DocumentService;
   ffmpeg: FfmpegAdapter;
@@ -95,15 +97,15 @@ export function createSiteRoutes(services: SiteRouteServices): FastifyPluginAsyn
 }
 
 /** How to show an .html file: on its own, or as a page of a site served from its folder. */
-function htmlProxyRoute({ listing, documents }: SiteRouteServices): FastifyPluginAsync {
+function htmlProxyRoute({ listing, members, documents }: SiteRouteServices): FastifyPluginAsync {
   return async app => {
     const { runtime, warden, vault } = app.hearth;
 
     app.get<{ Querystring: { path: string } }>(
       '/html-proxy',
-      { schema: { querystring: pathQuery() }, config: READ },
+      { schema: { querystring: pathQuery() }, config: READ_FILE },
       async request => {
-        const { target } = await openFile(listing, request, request.query.path);
+        const { target } = await openFile({ listing, members }, request, request.query.path);
         if (!runtime.get('htmlLocalResources')) {
           const body: HtmlPreview = { mode: 'document', ...(await documents.renderHtml(target)) };
           return body;

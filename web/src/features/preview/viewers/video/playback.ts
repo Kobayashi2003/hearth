@@ -20,15 +20,23 @@ const RESUME_END_MARGIN = 20;
 
 type VideoEvent = SyntheticEvent<HTMLVideoElement>;
 
-/** What the element reports as it plays, and the handlers that keep it current. */
-export function usePlaybackState() {
-  const [state, setState] = useState({
+/**
+ * What the element reports as it plays, and the handlers that keep it current.
+ * Its clock belongs to the source it was read from: a new source (a conversion
+ * restarted somewhere else) is a new element whose clock starts at 0, and until
+ * it reports, the old element's time must not be added to the new start.
+ */
+export function usePlaybackState(source: string) {
+  const [reported, setState] = useState({
     playing: false,
     time: 0,
     duration: 0,
     buffered: 0,
     waiting: true,
+    /** The source `time` and `buffered` were read from. */
+    clockOf: '',
   });
+  const state = reported.clockOf === source ? reported : { ...reported, time: 0, buffered: 0 };
 
   const events = useMemo(
     () => ({
@@ -45,7 +53,8 @@ export function usePlaybackState() {
       onTimeUpdate: (event: VideoEvent) => {
         const video = event.currentTarget;
         const buffered = video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
-        setState(current => ({ ...current, time: video.currentTime, buffered }));
+        const clockOf = video.getAttribute('src') ?? '';
+        setState(current => ({ ...current, time: video.currentTime, buffered, clockOf }));
       },
     }),
     [],
@@ -66,10 +75,14 @@ export function useVideoSource(path: string, probe: MediaProbe | undefined) {
   const [audioChoice, setAudioChoice] = useState<number | null>(null);
   const [offset, setOffset] = useState(0);
   const [refused, setRefused] = useState(false);
+  /** Where the original file should be sought to once it loads, after leaving a conversion. */
+  const pendingSeek = useRef<number | null>(null);
 
   const audioTracks = probe?.audioTracks ?? [];
   const audioTrack = audioChoice ?? preferredAudio(audioTracks);
-  const transcoding = refused || (probe ? !probe.browserPlayable || audioTrack > 0 : false);
+  const convertsWith = (track: number) =>
+    refused || (probe ? !probe.browserPlayable || track > 0 : false);
+  const transcoding = convertsWith(audioTrack);
   const source = transcoding
     ? mediaUrls.transcode(path, { audioTrack, start: offset })
     : mediaUrls.raw(path);
@@ -77,14 +90,26 @@ export function useVideoSource(path: string, probe: MediaProbe | undefined) {
   return {
     source,
     transcoding,
-    offset,
+    /** Where the stream playing starts in the film; the original file starts at its beginning. */
+    offset: transcoding ? offset : 0,
     restartAt: setOffset,
     audioTracks,
     audioTrack,
     chooseAudio: (track: number, at: number) => {
       rememberAudio(audioTracks.find(candidate => candidate.index === track));
-      setOffset(at);
+      // A conversion starts at `at`; the original file starts at 0 and is sought there.
+      if (convertsWith(track)) setOffset(at);
+      else {
+        setOffset(0);
+        pendingSeek.current = at;
+      }
       setAudioChoice(track);
+    },
+    /** The seek a source switch left to do, once; null when there is none. */
+    takePendingSeek: (): number | null => {
+      const at = pendingSeek.current;
+      pendingSeek.current = null;
+      return at;
     },
     convertFrom: (at: number) => {
       setOffset(at);

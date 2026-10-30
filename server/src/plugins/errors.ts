@@ -18,11 +18,12 @@ const errorsPlugin: FastifyPluginAsync = async app => {
       return;
     }
 
-    // The request's own log line reports the refusal; it needs only the reason.
+    // The request's own log line reports the refusal, with whatever detail lies behind it (a
+    // library's own message may name host paths); the client gets only the reason.
     if (error instanceof HearthError) {
       const body: ApiErrorBody = { code: error.code, message: error.message };
-      if (error.details !== undefined) body.details = error.details;
-      request.failure = `${error.code}: ${error.message}`;
+      const behind = error.details === undefined ? '' : ` ${JSON.stringify(error.details)}`;
+      request.failure = `${error.code}: ${error.message}${behind}`;
       void reply.status(error.statusCode).send(body);
       return;
     }
@@ -33,7 +34,6 @@ const errorsPlugin: FastifyPluginAsync = async app => {
         code: error.code ?? 'BAD_REQUEST',
         message: error.message,
       };
-      if (error.validation) body.details = error.validation;
       request.failure = `${body.code}: ${error.message}`;
       void reply.status(status).send(body);
       return;

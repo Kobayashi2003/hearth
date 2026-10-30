@@ -143,18 +143,51 @@ export class Vault {
       throw HearthError.forbidden('That path is outside the current root');
     }
 
-    // A symlink may point out of the root even though its own path does not.
-    try {
-      const real = fs.realpathSync.native(resolved);
-      if (!containedIn(real, this.canonicalRoot)) {
-        throw HearthError.forbidden('That path is outside the current root');
-      }
-    } catch (error) {
-      // A path that does not exist yet (upload, mkdir) passes on the string check alone.
-      if (error instanceof HearthError) throw error;
+    // A symlink or junction may point out of the root even though its own path
+    // does not. For a path that does not exist yet (an upload, a new folder),
+    // the folders it would be made in are what must stay inside.
+    if (!containedIn(this.realOf(resolved), this.canonicalRoot)) {
+      throw HearthError.forbidden('That path is outside the current root');
     }
 
     return resolved as SafePath;
+  }
+
+  /**
+   * Where `target` really is: its own realpath, or for one not there yet, its
+   * nearest existing folder's realpath with the missing names after it. Any
+   * other failure to tell refuses, rather than letting the string check stand.
+   */
+  private realOf(target: string): string {
+    const missing: string[] = [];
+    for (let current = target; ; current = path.dirname(current)) {
+      try {
+        return path.join(fs.realpathSync.native(current), ...missing.reverse());
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if ((code !== 'ENOENT' && code !== 'ENOTDIR') || path.dirname(current) === current) {
+          throw HearthError.forbidden('That path cannot be checked');
+        }
+        missing.push(path.basename(current));
+      }
+    }
+  }
+
+  /**
+   * The same file as the filesystem spells it, root-relative: Windows takes
+   * `BUNDLE/SECRET.TXT`, `bundle~1/secret.txt` or `secret.txt.` for
+   * `bundle/secret.txt`, and a rule written for one must hold for all. Null
+   * when it does not exist or lies outside the root's own tree (through a link).
+   */
+  realRelative(target: SafePath): string | null {
+    let real: string;
+    try {
+      real = fs.realpathSync.native(target);
+    } catch {
+      return null;
+    }
+    if (!containedIn(real, this.canonicalRoot)) return null;
+    return path.relative(this.canonicalRoot, real).replace(/\\/g, '/');
   }
 
   /** Root-relative, forward slashes: the only path shape the client sees. */

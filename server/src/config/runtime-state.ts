@@ -40,6 +40,7 @@ const STATE_FILENAME = 'runtime.json';
  * its .env default. Readers ask on each use, so a change applies at once.
  */
 export class RuntimeState {
+  private writing: Promise<void> = Promise.resolve();
   private readonly defaults: SettingValues;
   private overrides: Partial<SettingValues> = {};
   private activeRootId: string;
@@ -120,15 +121,29 @@ export class RuntimeState {
     }));
   }
 
-  /** In-memory is authoritative; a failed persist is reported, not fatal. */
+  /**
+   * In-memory is authoritative; a failed persist is reported, not fatal.
+   * Writes go one after another, each of the state as it is when its turn
+   * comes, so the last on disk is always the latest.
+   */
   private persist(): void {
+    this.writing = this.writing.then(() =>
+      writeJsonFileAtomic(this.statePath, this.snapshot()).catch(error => {
+        this.onPersistError?.(error as Error);
+      }),
+    );
+  }
+
+  /** Every change made so far is on disk (or reported as failed). */
+  settled(): Promise<void> {
+    return this.writing;
+  }
+
+  private snapshot(): StateFile {
     const overrides = Object.fromEntries(
       Object.entries(this.overrides).map(([key, value]) => [key, serialiseSetting(value)]),
     );
-    const file: StateFile = { activeRootId: this.activeRootId, overrides };
-    writeJsonFileAtomic(this.statePath, file).catch(error => {
-      this.onPersistError?.(error as Error);
-    });
+    return { activeRootId: this.activeRootId, overrides };
   }
 
   private notify(change: RuntimeChange): void {

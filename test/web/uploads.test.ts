@@ -147,6 +147,27 @@ describe('upload queue', () => {
     expect(api.abortChunkedUpload).toHaveBeenCalledWith('u1');
   });
 
+  it('sends nothing for a file cancelled while its upload was being set up', async () => {
+    let setUp!: () => void;
+    api.startChunkedUpload.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          setUp = () =>
+            resolve({ uploadId: 'slow', chunkSize: 4, totalChunks: 1, receivedChunks: [] });
+        }),
+    );
+    const { result } = mount();
+    act(() => result.current.start([queued('a')], ''));
+    await waitFor(() => expect(api.startChunkedUpload).toHaveBeenCalled());
+    act(() => result.current.cancel(result.current.jobs[0]!.id));
+    await act(async () => setUp());
+
+    await waitFor(() => expect(result.current.jobs[0]!.status).toBe('cancelled'));
+    expect(FakeRequest.sent).toHaveLength(0);
+    expect(api.completeChunkedUpload).not.toHaveBeenCalled();
+    expect(api.abortChunkedUpload).toHaveBeenCalledWith('slow');
+  });
+
   it('marks a refused chunk as failed with the server reason and cleans up', async () => {
     const { result } = mount();
     act(() => result.current.start([queued('a')], ''));

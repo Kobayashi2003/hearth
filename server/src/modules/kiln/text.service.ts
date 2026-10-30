@@ -47,7 +47,10 @@ export class TextService {
   async write(target: SafePath, content: string, encoding = 'utf8'): Promise<void> {
     assertSupportedEncoding(encoding);
     try {
-      await fsp.writeFile(target, iconv.encode(content, encoding));
+      // UTF-16 is told from other text by its byte-order mark; without one the
+      // next read takes it for UTF-8 with a NUL between every letter.
+      const addBOM = /^(utf-?16|ucs-?2)/i.test(encoding);
+      await fsp.writeFile(target, iconv.encode(content, encoding, { addBOM }));
     } catch (error) {
       throw fromNodeError(error, 'Could not save that file');
     }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 /**
@@ -46,15 +46,16 @@ export function useListingRows({
     scrollPaddingStart: scrollMargin,
   });
 
-  useEffect(() => virtualizer.measure(), [rowHeight, virtualizer]);
+  useLayoutEffect(() => virtualizer.measure(), [rowHeight, virtualizer]);
   // Every move of the focus, even within a row: the list may have been scrolled away from it.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (focused >= 0) virtualizer.scrollToIndex(Math.floor(focused / perRow), { align: 'auto' });
   }, [focused, perRow, virtualizer]);
+  // Before the rows are drawn, so they show where the focus is rather than jump there.
   // After the effect above, so a landing is centred rather than edged into view; once each,
   // and only when its row is known.
   const centred = useRef(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (landing === centred.current || focused < 0) return;
     centred.current = landing;
     virtualizer.scrollToIndex(Math.floor(focused / perRow), { align: 'center' });

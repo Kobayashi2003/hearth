@@ -123,6 +123,10 @@ export interface ArchiveEntry {
   isDirectory: boolean;
   /** Epoch milliseconds, or 0 when the archive does not record one. */
   mtime: number;
+  /** Password-protected: listed, but its contents cannot be shown without the password. */
+  encrypted: boolean;
+  /** Guessed from the name, as for a file on disk; empty for a folder. */
+  mimeType: string;
 }
 
 export interface ArchiveListing {
@@ -133,6 +137,8 @@ export interface ArchiveListing {
   hasMore: boolean;
   /** True when every file inside is an image, so it can be read as a comic. */
   looksLikeComic: boolean;
+  /** Files inside open in the usual viewers; false while an administrator has that turned off. */
+  membersOpen: boolean;
 }
 
 // ── Ember: recycle bin ──────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ import { createTransferRoutes } from './modules/vault/transfer.routes.js';
 import { UploadService } from './modules/vault/upload.service.js';
 import { FfmpegAdapter } from './adapters/ffmpeg/ffmpeg.js';
 import { BackgroundService } from './modules/kiln/background.service.js';
+import { ArchiveMemberService } from './modules/kiln/archive-member.service.js';
 import { ArchiveService } from './modules/kiln/archive.service.js';
 import { ComicService } from './modules/kiln/comic.service.js';
 import { DocumentService } from './modules/kiln/document.service.js';
@@ -100,6 +101,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
   const ledger = new LedgerService(
     path.join(config.storage.dataDirectory, 'ledger'),
     config.ledger,
+    () => runtime.activeRoot.id,
   );
   await ledger.migrate();
   const hob = new HobService(path.join(config.storage.dataDirectory, 'preferences'));
@@ -115,7 +117,7 @@ export async function buildApp({ config, logger }: BuildOptions) {
     uploads,
     logger.child({ module: 'upload' }),
   );
-  const downloads = new DownloadService(vault, config.upload.zipLinkTtlMs);
+  const downloads = new DownloadService(config.upload.zipLinkTtlMs);
 
   const ffmpeg = new FfmpegAdapter({
     ffmpegPath: config.media.ffmpegPath,
@@ -123,6 +125,8 @@ export async function buildApp({ config, logger }: BuildOptions) {
     crf: config.media.transcodeCrf,
     preset: config.media.transcodePreset,
   });
+  const archives = new ArchiveService(runtime);
+  const members = new ArchiveMemberService(config, runtime, archives);
   const kiln = {
     listing,
     streams,
@@ -133,7 +137,8 @@ export async function buildApp({ config, logger }: BuildOptions) {
     cues: new CueService(ffmpeg),
     folderCovers: new FolderCoverService(runtime),
     comics: new ComicService(config),
-    archives: new ArchiveService(runtime),
+    archives,
+    members,
     documents: new DocumentService(runtime, config.viewers.ruffleDirectory),
     backgrounds: new BackgroundService(config),
   };
@@ -150,7 +155,9 @@ export async function buildApp({ config, logger }: BuildOptions) {
       await api.register(createAdminRoutes(warden));
       await api.register(createVaultRoutes(listing));
       await api.register(createFileOpsRoutes(fileOps, listing, trash, followers));
-      await api.register(createTransferRoutes({ uploads, chunked, downloads, listing, streams }));
+      await api.register(
+        createTransferRoutes({ uploads, chunked, downloads, listing, members, streams }),
+      );
       await api.register(createEmberRoutes(trash, followers));
       await api.register(createLedgerRoutes(ledger));
       await api.register(createHobRoutes(hob));

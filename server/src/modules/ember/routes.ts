@@ -1,11 +1,14 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
   OperationResult,
+  PermissionAction,
+  TrashItem,
   TrashListResponse,
   TrashRestoreRequest,
   TrashSettings,
 } from '@hearth/shared';
 
+import { HearthError } from '../../lib/errors.js';
 import { maxItems } from '../../lib/limits.js';
 import type { PathFollower } from '../../lib/path-follower.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
@@ -31,8 +34,27 @@ export function createEmberRoutes(
     const rateLimits = buildRateLimits(app.hearth.config);
     const deleteConfig = { permission: 'delete' as const, rateLimit: rateLimits.write };
 
-    app.get('/trash', { config: { permission: 'delete' } }, async () => {
-      const body: TrashListResponse = await trash.list();
+    /**
+     * Each item answers to the rules of the place it was deleted from, as it
+     * would have there: seeing it to read, restoring it to write, purging it to
+     * delete. Rules for what was inside a folder still count; it is all in the bin.
+     */
+    const may = (request: FastifyRequest, action: PermissionAction, item: TrashItem) => {
+      try {
+        app.hearth.warden.assertCanTree(request.session!, action, item.originalPath, () => true);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const assertMay = (request: FastifyRequest, action: PermissionAction, item: TrashItem) => {
+      if (!may(request, action, item)) {
+        throw HearthError.forbidden(`You do not have ${action} permission for that item`);
+      }
+    };
+
+    app.get('/trash', { config: { permission: 'delete' } }, async request => {
+      const body: TrashListResponse = await trash.list(item => may(request, 'read', item));
       return body;
     });
 
@@ -46,6 +68,7 @@ export function createEmberRoutes(
         const results: OperationResult[] = [];
         for (const id of request.body.ids) {
           try {
+            assertMay(request, 'write', trash.item(id));
             const { path, originalPath } = await trash.restore(id);
             await followers.reprefix(originalPath, path);
             results.push({ path: id, ok: true, resultPath: path });
@@ -65,12 +88,16 @@ export function createEmberRoutes(
       '/trash/:id',
       { config: deleteConfig },
       async request => {
+        assertMay(request, 'delete', trash.item(request.params.id));
         await trash.purge(request.params.id);
         return { ok: true };
       },
     );
 
-    app.delete('/trash', { config: deleteConfig }, async () => ({ removed: await trash.empty() }));
+    // What this user may not delete stays for someone who may.
+    app.delete('/trash', { config: deleteConfig }, async request => ({
+      removed: await trash.empty(item => may(request, 'delete', item)),
+    }));
 
     /**
      * What a delete will do, for anyone who can delete; the settings themselves

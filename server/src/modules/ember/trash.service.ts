@@ -79,6 +79,8 @@ export class TrashService {
     } catch (error) {
       throw fromNodeError(error, 'Could not move that item to the recycle bin');
     }
+    // A listing gives a folder no size; what the bin holds is everything in it.
+    if (isDirectory) size = await treeSize(this.payloadPath(id));
 
     const record: TrashRecord = {
       id,
@@ -93,8 +95,14 @@ export class TrashService {
     return id;
   }
 
-  /** Records whose payload went missing (bin edited from outside) are dropped. */
-  async list(): Promise<{ items: TrashItem[]; totalSize: number }> {
+  /**
+   * Records whose payload went missing (bin edited from outside) are dropped.
+   * `visible` leaves out what this user may not see.
+   */
+  async list(
+    visible: (item: TrashItem) => boolean = () => true,
+  ): Promise<{ items: TrashItem[]; totalSize: number }> {
+    await this.measureFolders();
     const rootId = this.runtime.get('activeRootId');
     const records = this.index.read().items.filter(record => record.rootId === rootId);
 
@@ -111,12 +119,20 @@ export class TrashService {
       }));
     }
 
-    return {
-      items: live
-        .map(({ rootId: _rootId, ...item }) => item)
-        .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt)),
-      totalSize: live.reduce((sum, record) => sum + record.size, 0),
-    };
+    const items = live
+      .map(({ rootId: _rootId, ...item }) => item)
+      .filter(visible)
+      .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+    return { items, totalSize: items.reduce((sum, item) => sum + item.size, 0) };
+  }
+
+  /** One item of the active root's, for deciding whether a user may act on it. */
+  item(id: string): TrashItem {
+    const { rootId, ...item } = this.requireRecord(id);
+    if (rootId !== this.runtime.get('activeRootId')) {
+      throw HearthError.badRequest('That item belongs to a different root');
+    }
+    return item;
   }
 
   /** Returns both paths: a collision brings the item back as "name (2)", and Ledger must follow. */
@@ -144,13 +160,13 @@ export class TrashService {
     await this.drop(new Set([id]));
   }
 
-  /** Only the active root's items. */
-  async empty(): Promise<number> {
+  /** Only the active root's items, and of those only what `mayDelete` allows. */
+  async empty(mayDelete: (item: TrashItem) => boolean = () => true): Promise<number> {
     const rootId = this.runtime.get('activeRootId');
     const doomed = new Set(
       this.index
         .read()
-        .items.filter(record => record.rootId === rootId)
+        .items.filter(record => record.rootId === rootId && mayDelete(record))
         .map(record => record.id),
     );
     await this.drop(doomed);
@@ -159,6 +175,7 @@ export class TrashService {
 
   /** Past the retention window first, then oldest-first until under the size cap. */
   async cleanup(): Promise<void> {
+    await this.measureFolders();
     const retentionDays = this.runtime.get('trashRetentionDays');
     const maxSizeBytes = this.runtime.get('trashMaxSizeMB') * MB;
     const records = [...this.index.read().items].sort((a, b) =>
@@ -187,6 +204,28 @@ export class TrashService {
     this.logger.info({ removed: doomed.size }, 'recycle bin cleaned up');
   }
 
+  /**
+   * Folders binned before their contents were counted were recorded as empty;
+   * count them now, so the total and the size cap see what they really hold.
+   */
+  private async measureFolders(): Promise<void> {
+    const unmeasured = this.index
+      .read()
+      .items.filter(record => record.isDirectory && record.size === 0);
+    if (unmeasured.length === 0) return;
+    const sizes = new Map<string, number>();
+    for (const record of unmeasured) {
+      const size = await treeSize(this.payloadPath(record.id)).catch(() => 0);
+      if (size > 0) sizes.set(record.id, size);
+    }
+    if (sizes.size === 0) return;
+    await this.index.update(current => ({
+      items: current.items.map(record =>
+        sizes.has(record.id) ? { ...record, size: sizes.get(record.id)! } : record,
+      ),
+    }));
+  }
+
   private async drop(ids: Set<string>): Promise<void> {
     for (const id of ids) await fsp.rm(this.payloadPath(id), { recursive: true, force: true });
     await this.index.update(current => ({
@@ -203,4 +242,15 @@ export class TrashService {
   private payloadPath(id: string): string {
     return path.join(this.payloadRoot, id);
   }
+}
+
+/** Bytes in every file under `directory`. */
+async function treeSize(directory: string): Promise<number> {
+  let total = 0;
+  for (const dirent of await fsp.readdir(directory, { withFileTypes: true, recursive: true })) {
+    if (!dirent.isFile()) continue;
+    const stats = await fsp.stat(path.join(dirent.parentPath, dirent.name)).catch(() => null);
+    total += stats?.size ?? 0;
+  }
+  return total;
 }

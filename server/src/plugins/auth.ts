@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { PermissionAction } from '@hearth/shared';
@@ -19,6 +22,22 @@ const authPlugin: FastifyPluginAsync = async app => {
   });
 
   app.decorateRequest(
+    'resolveTree',
+    function (
+      this: FastifyRequest,
+      userPath: string | undefined,
+      action: PermissionAction,
+    ): SafePath {
+      const resolved = this.resolvePath(userPath, action);
+      const exists = (relative: string) => fs.existsSync(path.join(vault.rootPath, relative));
+      warden.assertCanTree(this.session!, action, vault.relativize(resolved), exists);
+      const real = vault.realRelative(resolved);
+      if (real !== null) warden.assertCanTree(this.session!, action, real, exists);
+      return resolved;
+    },
+  );
+
+  app.decorateRequest(
     'resolvePath',
     function (
       this: FastifyRequest,
@@ -26,14 +45,18 @@ const authPlugin: FastifyPluginAsync = async app => {
       action: PermissionAction,
     ): SafePath {
       const resolved = vault.resolve(userPath);
-      const relative = vault.relativize(resolved);
       if (!this.session) throw HearthError.unauthorized();
-      warden.assertCan(this.session, action, relative);
+      warden.assertCan(this.session, action, vault.relativize(resolved));
+      // Rules name paths as written; the file may have been asked for by another spelling.
+      const real = vault.realRelative(resolved);
+      if (real !== null) warden.assertCan(this.session, action, real);
       return resolved;
     },
   );
 
   app.addHook('onRequest', async request => {
+    refuseMemberUnlessOpened(request);
+
     const mode = request.routeOptions.config.auth ?? 'session';
     if (mode === 'public') return;
 
@@ -59,6 +82,18 @@ const authPlugin: FastifyPluginAsync = async app => {
   });
 };
 
+/**
+ * `member` names a file inside the archive `path` names. Only a route that
+ * opens its file through `openFile` knows that; any other would act on the
+ * whole archive, so it is refused rather than ignored.
+ */
+function refuseMemberUnlessOpened(request: FastifyRequest): void {
+  const { member } = (request.query ?? {}) as { member?: unknown };
+  if (member !== undefined && !request.routeOptions.config.member) {
+    throw HearthError.badRequest('That cannot be done to a file inside an archive');
+  }
+}
+
 function hasGlobalVerb(session: Session, action: PermissionAction): boolean {
   return actionsFromPermissionString(session.permissions).includes(action);
 }
@@ -82,13 +117,8 @@ async function sessionFromMediaToken(
   const verified = warden.verifyMediaToken(query.token, relative);
   if (!verified) return null;
 
-  return {
-    id: 'media-token',
-    username: verified.username,
-    permissions: 'r',
-    createdAt: Date.now(),
-    expiresAt: Date.now() + 60_000,
-  };
+  // Reading only, and only while its user still may; the route then checks the path as for anyone.
+  return warden.sessionAsNow(verified.username, 'media-token', 'read');
 }
 
 export default fp(authPlugin, { name: 'hearth-auth' });

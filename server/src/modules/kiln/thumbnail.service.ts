@@ -13,8 +13,10 @@ import {
 
 import type { AppConfig } from '../../config/index.js';
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
+import { writeFileAtomically } from '../../lib/atomic-file.js';
 import { Gate } from '../../lib/gate.js';
 import { mediaKindOf, mimeForPath } from '../../lib/mime.js';
+import { SharedJobs } from '../../lib/shared-jobs.js';
 import { runWorker } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
 import type { PsdRequest, PsdResponse } from '../../workers/psd.worker.js';
@@ -40,6 +42,9 @@ export function snapMoment(at: number, duration: number, points: number): number
   return Math.round(index * step * 10) / 10;
 }
 
+/** ffmpeg runs at once for video frames, whatever the core count; see `videoFrames`. */
+const VIDEO_FRAMES_AT_ONCE = 2;
+
 /** Seek previews are small and passing; they need less quality than a cover. */
 const FRAME_QUALITY = 60;
 
@@ -56,6 +61,14 @@ export class ThumbnailService {
    * what someone is watching, often a video decoded on this same machine.
    */
   private readonly decoding = new Gate(Math.max(2, Math.floor(os.availableParallelism() / 2)));
+  /**
+   * Video frames wait for a narrower gate of their own: an ffmpeg decoding a
+   * 4K or 8K source holds far more memory than a picture being resized, and a
+   * collection of videos asks for a frame of each at once.
+   */
+  private readonly videoFrames = new Gate(VIDEO_FRAMES_AT_ONCE);
+  /** Several tabs, or one picture shown twice, asking for the same thumbnail draw it once. */
+  private readonly drawing = new SharedJobs<Buffer | null>();
 
   constructor(
     private readonly config: AppConfig,
@@ -74,14 +87,20 @@ export class ThumbnailService {
     const cached = await fsp.readFile(cachePath).catch(() => null);
     if (cached) return cached;
 
-    const thumbnail = await this.decoding.run(
-      () => this.draw(target, stats.size, request, signal),
+    const gate =
+      mediaKindOf(mimeForPath(target, stats.size)) === 'video' ? this.videoFrames : this.decoding;
+    return this.drawing.run(
+      cachePath,
+      async shared => {
+        const thumbnail = await gate.run(
+          () => this.draw(target, stats.size, request, shared),
+          shared,
+        );
+        if (thumbnail) await cache(cachePath, thumbnail);
+        return thumbnail;
+      },
       signal,
     );
-    if (!thumbnail) return null;
-
-    await writeAtomically(cachePath, thumbnail);
-    return thumbnail;
   }
 
   private async draw(
@@ -127,16 +146,22 @@ export class ThumbnailService {
     const cached = await fsp.readFile(cachePath).catch(() => null);
     if (cached) return cached;
 
-    const frame = await this.decoding.run(async () => {
-      const jpeg = await this.ffmpeg.extractFrame(
-        target,
-        { atSeconds, width, exact: true },
-        signal,
-      );
-      return jpeg.length > 0 ? sharp(jpeg).webp({ quality: FRAME_QUALITY }).toBuffer() : null;
-    }, signal);
-    if (frame) await writeAtomically(cachePath, frame);
-    return frame;
+    return this.drawing.run(
+      cachePath,
+      async shared => {
+        const frame = await this.videoFrames.run(async () => {
+          const jpeg = await this.ffmpeg.extractFrame(
+            target,
+            { atSeconds, width, exact: true },
+            shared,
+          );
+          return jpeg.length > 0 ? sharp(jpeg).webp({ quality: FRAME_QUALITY }).toBuffer() : null;
+        }, shared);
+        if (frame) await cache(cachePath, frame);
+        return frame;
+      },
+      signal,
+    );
   }
 
   private readonly durations = new Map<string, number | null>();
@@ -258,12 +283,13 @@ async function audioArtwork(target: SafePath): Promise<Buffer | null> {
   const scan = await albumArtwork(path.dirname(target));
   return scan ? fsp.readFile(scan) : null;
 }
-/** Written beside, then renamed: a reader never sees half a file. */
-async function writeAtomically(target: string, bytes: Buffer): Promise<void> {
-  await fsp.mkdir(path.dirname(target), { recursive: true });
-  const temporaryPath = `${target}.${process.pid}.tmp`;
-  await fsp.writeFile(temporaryPath, bytes);
-  await fsp.rename(temporaryPath, target);
+/**
+ * Kept for next time if the disk allows. A thumbnail already drawn is served
+ * either way: failing to cache it (a full disk, the file held open by a reader
+ * on Windows) is no reason to fail the request.
+ */
+async function cache(file: string, bytes: Buffer): Promise<void> {
+  await writeFileAtomically(file, bytes).catch(() => undefined);
 }
 
 /** The cover embedded in an audio file's tags; only the metadata is parsed. */

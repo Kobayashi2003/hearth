@@ -29,6 +29,10 @@ export class CacheCleanupService {
         directory: config.media.subtitleCacheDirectory,
         maxAgeMs: config.cache.subtitleMaxAgeMs,
       },
+      {
+        directory: config.media.archiveMemberCacheDirectory,
+        maxAgeMs: config.cache.archiveMemberMaxAgeMs,
+      },
     ].filter(target => Number.isFinite(target.maxAgeMs));
   }
 

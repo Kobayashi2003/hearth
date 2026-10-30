@@ -36,6 +36,8 @@ function sendChunk(
 ) {
   const { uploadId, index, blob } = chunk;
   return new Promise<void>((resolve, reject) => {
+    // A listener added to a signal already aborted never fires.
+    if (signal.aborted) return reject(new DOMException('Cancelled', 'AbortError'));
     const request = new XMLHttpRequest();
     request.open('POST', `${apiBase}/upload/chunked/${uploadId}/${index}`);
     request.withCredentials = true;
@@ -88,6 +90,9 @@ export function useUploads() {
           chunkSize: 0,
         });
         uploadId = session.uploadId;
+        // Cancelled while the upload was being set up: nothing is sent, and the
+        // server's half-made upload is dropped below like any other.
+        controller.signal.throwIfAborted();
         for (let index = 0; index < session.totalChunks; index += 1) {
           const start = index * session.chunkSize;
           await sendChunk(
@@ -100,6 +105,7 @@ export function useUploads() {
             controller.signal,
           );
         }
+        controller.signal.throwIfAborted();
         await api.completeChunkedUpload(session.uploadId);
         patch(job.id, { status: 'done', sent: file.size });
       } catch (error) {

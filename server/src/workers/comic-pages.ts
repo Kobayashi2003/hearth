@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 import type AdmZip from 'adm-zip';
 import type { IZipEntry } from 'adm-zip';
@@ -109,7 +110,9 @@ const UTF8_NAME_FLAG = 0x800;
  */
 export function zipEntryNames(entries: readonly IZipEntry[]): Map<IZipEntry, string> {
   const isUtf8 = (entry: IZipEntry) => (entry.header.flags & UTF8_NAME_FLAG) !== 0;
-  const legacy = entries.filter(entry => !isUtf8(entry));
+  const unicode = new Map(entries.map(entry => [entry, unicodePath(entry)]));
+  // Only names with nothing better to go on are guessed at, and only they sway the guess.
+  const legacy = entries.filter(entry => !isUtf8(entry) && unicode.get(entry) === null);
   const encoding =
     legacy.length > 0
       ? detectEncoding(
@@ -121,9 +124,34 @@ export function zipEntryNames(entries: readonly IZipEntry[]): Map<IZipEntry, str
       entry,
       isUtf8(entry)
         ? entry.rawEntryName.toString('utf8')
-        : decodeText(entry.rawEntryName, encoding),
+        : (unicode.get(entry) ?? decodeText(entry.rawEntryName, encoding)),
     ]),
   );
+}
+
+/** Info-ZIP's Unicode Path extra field. */
+const UNICODE_PATH_FIELD = 0x7075;
+
+/**
+ * The name in UTF-8 that many zip tools store beside the legacy one: exact,
+ * where the legacy name has to be guessed at. It counts only while its CRC
+ * matches the legacy name, which a tool renaming the entry would have changed.
+ */
+function unicodePath(entry: IZipEntry): string | null {
+  const extra = entry.extra;
+  for (let offset = 0; offset + 4 <= extra.length;) {
+    const id = extra.readUInt16LE(offset);
+    const size = extra.readUInt16LE(offset + 2);
+    const body = extra.subarray(offset + 4, offset + 4 + size);
+    // Version 1, then the CRC-32 of the legacy name, then the name itself.
+    if (id === UNICODE_PATH_FIELD && body.length > 5 && body[0] === 1) {
+      return body.readUInt32LE(1) === zlib.crc32(entry.rawEntryName)
+        ? body.subarray(5).toString('utf8')
+        : null;
+    }
+    offset += 4 + size;
+  }
+  return null;
 }
 
 /** A file's bytes as the standalone ArrayBuffer unrar wants (not a view into Node's pool). */

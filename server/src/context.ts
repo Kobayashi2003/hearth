@@ -25,6 +25,12 @@ declare module 'fastify' {
     /** The only way to obtain a `SafePath`: resolves against the active root and authorises `action` in one step. */
     resolvePath(userPath: string | undefined, action: PermissionAction): SafePath;
 
+    /**
+     * `resolvePath` for a path and everything inside it, for what acts on a
+     * folder's contents too (copy, move, delete, rename, zip).
+     */
+    resolveTree(userPath: string | undefined, action: PermissionAction): SafePath;
+
     /** Root-relative, forward-slash form of an absolute path inside the root. */
     relativePath(absolute: string): string;
 
@@ -47,5 +53,11 @@ declare module 'fastify' {
      * routes send their own CSP instead.
      */
     framable?: boolean;
+    /**
+     * Opens the file it names through `openFile`, so it can take `member` to
+     * mean a file inside that archive. Any other route refuses `member`
+     * rather than quietly acting on the whole archive.
+     */
+    member?: boolean;
   }
 }

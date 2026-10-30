@@ -6,6 +6,7 @@ import { isTextSubtitle } from '@hearth/shared';
 
 import type { FfmpegAdapter } from '../../adapters/ffmpeg/ffmpeg.js';
 import type { AppConfig } from '../../config/index.js';
+import { temporaryBeside } from '../../lib/atomic-file.js';
 import { HearthError } from '../../lib/errors.js';
 import type { SafePath } from '../../lib/vault.js';
 
@@ -53,7 +54,7 @@ export class SubtitleService {
     if (tracks.length === 0) return;
 
     // Written beside the final directory and renamed in, so a half-written set is never served.
-    const staging = `${directory}.${process.pid}.tmp`;
+    const staging = temporaryBeside(directory);
     await fsp.mkdir(staging, { recursive: true });
     try {
       await this.ffmpeg.extractSubtitles(

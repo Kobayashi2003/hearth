@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
+import { isInArchive } from '@/lib/archive-path';
 import { api } from '@/lib/api';
 import { useRemembered } from '@/lib/storage';
 import { useSession } from '@/features/session/session';
@@ -38,7 +39,7 @@ export default function TextViewer({ entry }: ViewerProps) {
   );
   const rememberScroll = useScrollPlace(scrollRef, path, [data, highlighted, markdown]);
 
-  const editable = can('write') && data && !data.truncated ? data : null;
+  const editable = editableText(data, can('write'), entry.path);
   const actions = editing ? (
     <EditActions
       isSaving={edit.isSaving}
@@ -91,4 +92,16 @@ export default function TextViewer({ entry }: ViewerProps) {
       )}
     </ViewerFrame>
   );
+}
+
+/**
+ * What can be edited: all of the text, by someone who may write, in a file
+ * of its own. A file inside an archive is read only: nothing to write back to.
+ */
+function editableText<T extends { truncated: boolean }>(
+  data: T | undefined,
+  canWrite: boolean,
+  path: string,
+): T | null {
+  return canWrite && data && !data.truncated && !isInArchive(path) ? data : null;
 }

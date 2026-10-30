@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Progress, ProgressMap } from '@hearth/shared';
 
+import { isInArchive } from '@/lib/archive-path';
 import { api } from '@/lib/api';
 
 const FLUSH_INTERVAL_MS = 4000;
@@ -60,7 +61,10 @@ export function useProgress() {
   }, [queryClient]);
 
   const progressFor = useCallback((path: string): Progress | undefined => data?.[path], [data]);
-  const save = useCallback((path: string, progress: Progress) => enqueue(path, progress), []);
+  // A file inside an archive has no place in the Ledger: it is not a path the server keeps.
+  const save = useCallback((path: string, progress: Progress) => {
+    if (!isInArchive(path)) enqueue(path, progress);
+  }, []);
   const forget = useCallback((path: string) => enqueue(path, null), []);
 
   // Settled either way: a viewer must not start (and then save) before it could see the saved position.

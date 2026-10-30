@@ -50,6 +50,11 @@ export const SETTINGS: Record<SettingKey, Definition> = {
   },
   htmlRuffle: { variable: 'HTML_RUFFLE', unit: null, fallback: c => c.viewers.htmlRuffleEnabled },
   htmlVideo: { variable: 'HTML_VIDEO', unit: null, fallback: c => c.viewers.htmlVideoEnabled },
+  archivePreview: {
+    variable: 'ARCHIVE_PREVIEW',
+    unit: null,
+    fallback: c => c.viewers.archivePreviewEnabled,
+  },
 
   listingMaxEntries: {
     variable: 'LISTING_MAX_ENTRIES',

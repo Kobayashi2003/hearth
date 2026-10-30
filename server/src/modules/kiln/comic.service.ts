@@ -5,6 +5,7 @@ import path from 'node:path';
 import { COMIC_EXTENSIONS, type ComicManifest } from '@hearth/shared';
 
 import type { AppConfig } from '../../config/index.js';
+import { writeFileAtomically } from '../../lib/atomic-file.js';
 import { HearthError } from '../../lib/errors.js';
 import { runWorker, unreadable } from '../../lib/worker.js';
 import type { SafePath } from '../../lib/vault.js';
@@ -13,6 +14,14 @@ import type { ComicRequest, ComicResponse } from '../../workers/comic.worker.js'
 interface CachedComic {
   key: string;
   pages: string[];
+  /** The archive the pages came from, absolute: whoever asks for a page must still be allowed it. */
+  source?: string;
+}
+
+export interface ComicPage {
+  file: string;
+  /** Absolute; null for a cache written before sources were recorded. */
+  source: string | null;
 }
 
 const MANIFEST_FILENAME = 'pages.json';
@@ -32,7 +41,10 @@ export class ComicService {
     const key = cacheKeyFor(target, stats.mtimeMs, stats.size);
 
     const cached = await this.readManifest(key);
-    if (cached) return { key, pageCount: cached.pages.length, pages: cached.pages };
+    if (cached) {
+      if (cached.source === undefined) await this.writeManifest({ ...cached, source: target });
+      return { key, pageCount: cached.pages.length, pages: cached.pages };
+    }
 
     const extraction = this.extracting.get(key) ?? this.extract(target, key, signal);
     this.extracting.set(key, extraction);
@@ -46,14 +58,20 @@ export class ComicService {
   }
 
   /** The page name is checked against the manifest, so a crafted name cannot read other files. */
-  async pagePath(key: string, pageName: string): Promise<string> {
+  async page(key: string, pageName: string): Promise<ComicPage> {
     assertCacheKey(key);
 
     const manifest = await this.readManifest(key);
     if (!manifest) throw HearthError.notFound('That comic is no longer open');
     if (!manifest.pages.includes(pageName)) throw HearthError.notFound('No such page');
 
-    return path.join(this.directoryFor(key), pageName);
+    return { file: path.join(this.directoryFor(key), pageName), source: manifest.source ?? null };
+  }
+
+  /** Whether `key` is still this file's pages: the same path, unchanged since. */
+  async isKeyOf(key: string, target: SafePath): Promise<boolean> {
+    const stats = await fsp.stat(target).catch(() => null);
+    return stats !== null && cacheKeyFor(target, stats.mtimeMs, stats.size) === key;
   }
 
   private async extract(target: SafePath, key: string, signal?: AbortSignal): Promise<CachedComic> {
@@ -71,9 +89,16 @@ export class ComicService {
       throw HearthError.badRequest('That archive contains no readable pages');
     }
 
-    const manifest: CachedComic = { key, pages };
-    await fsp.writeFile(path.join(cacheDirectory, MANIFEST_FILENAME), JSON.stringify(manifest));
+    const manifest: CachedComic = { key, pages, source: target };
+    await this.writeManifest(manifest);
     return manifest;
+  }
+
+  private async writeManifest(manifest: CachedComic): Promise<void> {
+    await writeFileAtomically(
+      path.join(this.directoryFor(manifest.key), MANIFEST_FILENAME),
+      JSON.stringify(manifest),
+    );
   }
 
   private async readManifest(key: string): Promise<CachedComic | null> {

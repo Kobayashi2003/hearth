@@ -1,4 +1,6 @@
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import path from 'node:path';
+
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
   ChunkedUploadInitRequest,
   UploadResponse,
@@ -10,11 +12,18 @@ import { HearthError } from '../../lib/errors.js';
 import { isoOrNull, maxItems } from '../../lib/limits.js';
 import { usernameOf } from '../../lib/request.js';
 import { buildRateLimits } from '../../plugins/rate-limit.js';
+import type { ArchiveMemberService } from '../kiln/archive-member.service.js';
+import { openFile } from '../kiln/route-helpers.js';
 import { contentDisposition, type StreamService } from '../kiln/stream.service.js';
 import type { ChunkedUploadService } from './chunked-upload.service.js';
 import { type DownloadService, suggestArchiveName } from './download.service.js';
 import type { ListingService } from './listing.service.js';
-import type { StoredUpload, UploadService } from './upload.service.js';
+import {
+  splitRelativeName,
+  type MayWrite,
+  type StoredUpload,
+  type UploadService,
+} from './upload.service.js';
 
 const schemasFor = (batch: number) =>
   ({
@@ -56,6 +65,7 @@ interface TransferServices {
   chunked: ChunkedUploadService;
   downloads: DownloadService;
   listing: ListingService;
+  members: ArchiveMemberService;
   streams: StreamService;
 }
 
@@ -66,6 +76,11 @@ export function createTransferRoutes(services: TransferServices): FastifyPluginA
     await app.register(chunkedRoutes(services));
     await app.register(downloadRoutes(services));
   };
+}
+
+/** The request's own user may write there, by the same rules as any path they name. */
+function mayWriteFor(request: FastifyRequest): MayWrite {
+  return target => void request.resolvePath(request.relativePath(target), 'write');
 }
 
 function writeConfigFor(app: FastifyInstance) {
@@ -102,6 +117,7 @@ function uploadRoutes({ uploads, listing }: TransferServices): FastifyPluginAsyn
               directory,
               uploadRelativeName(part.fieldname, part.filename),
               part.file,
+              mayWriteFor(request),
             ),
           );
         }
@@ -126,6 +142,11 @@ function chunkedRoutes({ chunked, listing }: TransferServices): FastifyPluginAsy
         const directory = request.resolvePath(request.body.path, 'write');
         await listing.assertDirectory(directory);
         const { relativePath, size, chunkSize } = request.body;
+        // Refused now rather than after every chunk has been sent.
+        request.resolvePath(
+          path.posix.join(request.relativePath(directory), ...splitRelativeName(relativePath)),
+          'write',
+        );
         return chunked.begin(usernameOf(request), directory, { relativePath, size, chunkSize });
       },
     );
@@ -155,7 +176,11 @@ function chunkedRoutes({ chunked, listing }: TransferServices): FastifyPluginAsy
       '/upload/chunked/:uploadId/complete',
       { config: writeConfig },
       async request => {
-        const file = await chunked.complete(usernameOf(request), request.params.uploadId);
+        const file = await chunked.complete(
+          usernameOf(request),
+          request.params.uploadId,
+          mayWriteFor(request),
+        );
         const body: UploadResponse = { files: [file] };
         return body;
       },
@@ -172,19 +197,24 @@ function chunkedRoutes({ chunked, listing }: TransferServices): FastifyPluginAsy
   };
 }
 
-function downloadRoutes({ downloads, listing, streams }: TransferServices): FastifyPluginAsync {
+function downloadRoutes({
+  downloads,
+  listing,
+  members,
+  streams,
+}: TransferServices): FastifyPluginAsync {
   return async app => {
-    const { config, runtime } = app.hearth;
+    const { config, runtime, warden } = app.hearth;
     const schemas = schemasFor(config.listing.maxBatchItems);
 
-    app.route<{ Querystring: { path: string; token?: string } }>({
+    /** A file, or with `member` one file out of an archive. */
+    app.route<{ Querystring: { path: string; token?: string; member?: string } }>({
       method: ['GET', 'HEAD'],
       url: '/download',
-      config: { auth: 'media-token', permission: 'read' },
+      config: { auth: 'media-token', permission: 'read', member: true },
       handler: async (request, reply) => {
-        const target = request.resolvePath(request.query.path, 'read');
-        const entry = await listing.assertFile(target);
-        return streams.send(request, reply, { target, entry }, { download: true });
+        const opened = await openFile({ listing, members }, request, request.query.path);
+        return streams.send(request, reply, opened, { download: true });
       },
     });
 
@@ -192,9 +222,9 @@ function downloadRoutes({ downloads, listing, streams }: TransferServices): Fast
       '/download/zip',
       { schema: schemas.zip, config: { permission: 'read' } },
       async request => {
-        // Authorised now, so redemption cannot reach anything the requester could not read.
+        // Authorised now, everything inside included, and again when the link is used.
         const relativePaths = request.body.paths.map(candidate =>
-          request.relativePath(request.resolvePath(candidate, 'read')),
+          request.relativePath(request.resolveTree(candidate, 'read')),
         );
 
         const { token, expiresAt } = downloads.issueZipTicket(
@@ -218,7 +248,9 @@ function downloadRoutes({ downloads, listing, streams }: TransferServices): Fast
       { config: { auth: 'public' } },
       async (request, reply) => {
         const ticket = downloads.redeem(request.params.token, runtime.get('activeRootId'));
-        const sources = downloads.resolveTicketPaths(ticket);
+        // The ticket is a few minutes old: read for its user as they are now.
+        request.session = warden.sessionAsNow(ticket.username, 'zip-ticket', 'read');
+        const sources = ticket.paths.map(relative => request.resolveTree(relative, 'read'));
 
         const controller = new AbortController();
         request.raw.on('close', () => {

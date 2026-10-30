@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import type { FileEntry } from '@hearth/shared';
 
 import type { Explorer } from './useExplorer';
@@ -7,7 +7,8 @@ import type { Selection } from './useSelection';
 /**
  * Where the cursor lands when a folder opens: on the folder just left after
  * going up, or on the item "show in folder" was asked for (selected and in
- * view; the URL parameter that carried it is dropped once used).
+ * view; the URL parameter that carried it is dropped once used). Both happen
+ * before the folder is drawn, so it never shows at its top first.
  */
 export function useLanding(
   explorer: Explorer,
@@ -15,7 +16,7 @@ export function useLanding(
   entries: readonly FileEntry[],
 ): void {
   const { returningTo } = explorer;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!returningTo || !entries.some(entry => entry.path === returningTo)) return;
     selection.land(returningTo);
     explorer.clearReturningTo();
@@ -23,7 +24,7 @@ export function useLanding(
   }, [returningTo, entries]);
 
   const target = explorer.search.reveal;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!target || explorer.isPending) return;
     if (entries.some(entry => entry.path === target)) selection.reveal(target);
     explorer.patch({ reveal: undefined });

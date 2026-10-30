@@ -48,6 +48,13 @@ export interface TagsAndChapters {
   chapters: Array<{ start: number; title: string | null }>;
 }
 
+/** Longest one poster or seek frame may take before it is given up. */
+const FRAME_TIMEOUT_MS = 30_000;
+
+function isSignal(signal: AbortSignal | undefined): signal is AbortSignal {
+  return signal !== undefined;
+}
+
 export class FfmpegAdapter {
   constructor(private readonly options: FfmpegOptions) {}
 
@@ -184,7 +191,11 @@ export class FfmpegAdapter {
   /**
    * One frame as JPEG. By default the most representative of the next 60
    * frames, so a poster is not a fade or a black cut; `exact` takes the frame
-   * at that moment, as a seek preview must.
+   * at that moment, as a seek preview must. The candidates are scaled down
+   * before they are compared: `thumbnail` holds all of them at once, and 60
+   * frames of an 8K source would take gigabytes. A frame that takes longer than
+   * `FRAME_TIMEOUT_MS` (a damaged file, a stream with nothing to seek by) is
+   * given up on.
    */
   async extractFrame(
     filePath: string,
@@ -209,14 +220,14 @@ export class FfmpegAdapter {
         '-frames:v',
         '1',
         '-vf',
-        exact ? `scale=${width}:-2` : `thumbnail=60,scale=${width}:-2`,
+        exact ? `scale=${width}:-2` : `scale=${width}:-2,thumbnail=60`,
         '-f',
         'image2',
         '-c:v',
         'mjpeg',
         'pipe:1',
       ],
-      signal,
+      AbortSignal.any([signal, AbortSignal.timeout(FRAME_TIMEOUT_MS)].filter(isSignal)),
       { background: true },
     );
   }
@@ -250,6 +261,9 @@ export class FfmpegAdapter {
 
     child.stdout.once('close', kill);
     child.once('error', kill);
+    // Read whether or not anyone wants it: a full stderr pipe blocks ffmpeg, and a
+    // stream would stop mid-file. Whoever wants it adds a listener of their own.
+    child.stderr.resume();
 
     return child;
   }

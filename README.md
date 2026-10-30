@@ -127,6 +127,12 @@ Configuration lives in `.env` at the repository root. Every variable is optional
 and listed in [`.env.example`](.env.example) and `docs/后端代码结构.md`; the
 defaults serve the bundled `./example` tree so a fresh clone runs without any setup.
 
+If the sign-in page says Hearth is not reachable, the page loaded but nothing answered
+behind it: start the backend (`start.ps1`, or `pnpm dev` while developing), check that
+`HEARTH_PORT` is the port Caddy or the dev proxy forwards to, and read the server's log for
+why it stopped or would not start. The page itself says no more than that, since anyone can
+reach it.
+
 ---
 
 ## License

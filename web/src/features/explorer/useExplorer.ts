@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FileEntry, ListResponse, SearchResponse, SortField } from '@hearth/shared';
 
@@ -97,13 +97,14 @@ export function useExplorer() {
   );
 
   // Derived from the path pair, so Back and breadcrumb clicks land the same way as "up".
-  const cameFrom = useRef(search.path);
+  // Worked out while rendering the new folder, not after it is drawn: a frame later the
+  // list would first show at its top, then jump to the folder just left.
+  const [cameFrom, setCameFrom] = useState(search.path);
   const [returningTo, setReturningTo] = useState<string | null>(null);
-  useEffect(() => {
-    const previous = cameFrom.current;
-    cameFrom.current = search.path;
-    if (previous !== search.path) setReturningTo(childLeadingTo(search.path, previous));
-  }, [search.path]);
+  if (cameFrom !== search.path) {
+    setCameFrom(search.path);
+    setReturningTo(childLeadingTo(search.path, cameFrom));
+  }
 
   return {
     search,

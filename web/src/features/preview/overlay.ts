@@ -22,6 +22,11 @@ export interface OverlayValue {
   total: number;
   isFullscreen: boolean;
   toggleFullscreen: () => void;
+  /**
+   * Show another file over this one, in its own viewer (a file inside an
+   * archive); closing it comes back here. `gallery` is what its arrows step through.
+   */
+  openInside: (entry: FileEntry, gallery: FileEntry[]) => void;
 }
 
 export const OverlayContext = createContext<OverlayValue | null>(null);

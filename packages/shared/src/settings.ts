@@ -13,6 +13,7 @@ export const SWITCH_SETTINGS = [
   'htmlScripts',
   'htmlRuffle',
   'htmlVideo',
+  'archivePreview',
 ] as const;
 
 /** Caps where 0 means unlimited. */
