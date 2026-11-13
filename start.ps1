@@ -13,6 +13,8 @@
 # Usage:
 #   .\start.ps1            # start with whatever is already built
 #   .\start.ps1 -Build     # pnpm build first
+#   .\start.ps1 -BuildBackend   # build only the backend (and the shared package)
+#   .\start.ps1 -BuildFrontend  # build only the web app (and the shared package)
 #   .\start.ps1 -NoCaddy   # skip the edge (an external edge owns the port)
 #   .\start.ps1 -NoBrowser # do not open the browser
 #   .\start.ps1 -Bind :8080
@@ -21,6 +23,8 @@
 [CmdletBinding()]
 param(
     [switch]$Build,
+    [switch]$BuildBackend,
+    [switch]$BuildFrontend,
     [switch]$NoCaddy,
     # Do not open the browser once the edge answers.
     [switch]$NoBrowser,
@@ -52,10 +56,15 @@ if (-not (Test-Path (Join-Path $root 'node_modules'))) {
     throw 'Dependencies are not installed. Run `pnpm install` in the repository root first.'
 }
 
-if ($Build) {
-    Write-Host '[BUILD] pnpm build' -ForegroundColor Cyan
+# Both parts import @hearth/shared, so building either one builds it first.
+$buildArgs = if ($Build) { @('-r', 'build') }
+    elseif ($BuildBackend -and $BuildFrontend) { @('-r', 'build') }
+    elseif ($BuildBackend) { @('--filter', '@hearth/server...', 'build') }
+    elseif ($BuildFrontend) { @('--filter', '@hearth/web...', 'build') }
+if ($buildArgs) {
+    Write-Host "[BUILD] pnpm $($buildArgs -join ' ')" -ForegroundColor Cyan
     Push-Location $root
-    try { pnpm build } finally { Pop-Location }
+    try { pnpm @buildArgs } finally { Pop-Location }
     # A failed build would otherwise launch the previous, stale artifacts.
     if ($LASTEXITCODE -ne 0) { throw "pnpm build failed (exit $LASTEXITCODE)" }
 }
@@ -70,9 +79,9 @@ $webIndex  = Join-Path $root 'web\dist\index.html'
 
 # Fail with a clear reason rather than letting node die on MODULE_NOT_FOUND or
 # Caddy serve a 404 for a missing bundle.
-if (-not (Test-Path $backendJs)) { throw "Backend not built: $backendJs is missing. Run with -Build first." }
+if (-not (Test-Path $backendJs)) { throw "Backend not built: $backendJs is missing. Run with -Build or -BuildBackend first." }
 if (-not $NoCaddy -and -not (Test-Path $webIndex)) {
-    throw "Frontend not built: $webIndex is missing. Run with -Build first."
+    throw "Frontend not built: $webIndex is missing. Run with -Build or -BuildFrontend first."
 }
 
 $children = @()
