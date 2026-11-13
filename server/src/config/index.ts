@@ -14,9 +14,11 @@ import {
   envString,
   projectRoot,
 } from './env.js';
+import { parseEverythingSources, type EverythingSource } from './everything-sources.js';
 import { defaultRootOf, parseRoots, type RootConfig } from './roots.js';
 import { parseStaticUsers, type StaticUser } from './users.js';
 
+export type { EverythingSource } from './everything-sources.js';
 export type { RootConfig } from './roots.js';
 export type { StaticUser } from './users.js';
 
@@ -85,9 +87,8 @@ export interface AppConfig {
   };
   readonly search: {
     readonly provider: SearchProviderChoice;
-    readonly everythingUrl: string;
-    readonly everythingUsername: string | undefined;
-    readonly everythingPassword: string | undefined;
+    /** This machine's Everything first, then those on other machines. */
+    readonly everythingSources: readonly EverythingSource[];
     readonly everythingTimeoutMs: number;
     readonly maxResults: number;
     readonly maxQueryLength: number;
@@ -241,9 +242,7 @@ export function loadConfig(development = false): AppConfig {
     },
     search: {
       provider: envEnum('SEARCH_PROVIDER', ['everything', 'walk', 'auto'] as const, 'auto'),
-      everythingUrl: envString('EVERYTHING_URL', 'http://127.0.0.1:8081'),
-      everythingUsername: envOptional('EVERYTHING_USERNAME'),
-      everythingPassword: envOptional('EVERYTHING_PASSWORD'),
+      everythingSources: parseEverythingSources(),
       everythingTimeoutMs: envPositive('EVERYTHING_TIMEOUT_MS', 5000),
       maxResults: envLimitRenamed('SEARCH_MAX_RESULTS', 'EVERYTHING_MAX_RESULTS', 10_000),
       maxQueryLength: envLimit('SEARCH_MAX_QUERY_LENGTH', 512),

@@ -6,21 +6,22 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { EverythingProvider } from '../../server/src/modules/beacon/everything.provider.js';
 import { Vault } from '../../server/src/lib/vault.js';
-import type { AppConfig } from '../../server/src/config/index.js';
+import type { EverythingSource } from '../../server/src/config/index.js';
 import type { RuntimeState } from '../../server/src/config/runtime-state.js';
 import type { SearchQuery } from '../../server/src/modules/beacon/provider.js';
 
 let rootDirectory: string;
 let outsideDirectory: string;
+let runtime: RuntimeState;
 let provider: EverythingProvider;
 
-const config = {
-  search: {
-    everythingUrl: 'http://127.0.0.1:8081',
-    everythingUsername: undefined,
-    everythingPassword: undefined,
-  },
-} as unknown as AppConfig;
+const source: EverythingSource = {
+  name: 'local',
+  url: 'http://127.0.0.1:8081',
+  username: undefined,
+  password: undefined,
+  maps: null,
+};
 
 const query: SearchQuery = {
   text: 'secret',
@@ -48,13 +49,13 @@ beforeAll(() => {
   fs.writeFileSync(path.join(rootDirectory, 'secret-inside.txt'), 'ok');
   fs.writeFileSync(path.join(outsideDirectory, 'secret-outside.txt'), 'leak');
 
-  const runtime = {
+  runtime = {
     activeRoot: { id: 'test', absolutePath: rootDirectory, label: 'root' },
     onChange: () => () => {},
     get: (key: string) => ({ everythingTimeoutMs: 1000, searchMaxResults: 1000 })[key],
   } as unknown as RuntimeState;
 
-  provider = new EverythingProvider(config, runtime, new Vault(runtime));
+  provider = new EverythingProvider(source, runtime, new Vault(runtime));
 });
 
 afterEach(() => {
@@ -115,6 +116,52 @@ describe('post-retrieval containment', () => {
 
     const page = await provider.search(query);
     expect(page.items.map(item => item.name)).toEqual(['secret-inside.txt']);
+  });
+
+  it('maps an Everything on another machine to the folder as Hearth reaches it', async () => {
+    // One Everything for several shared folders: the one holding the scope is used.
+    const nas = new EverythingProvider(
+      {
+        ...source,
+        name: 'nas',
+        maps: [
+          { local: outsideDirectory, remote: 'E:\\' },
+          { local: rootDirectory, remote: 'D:\\Media' },
+        ],
+      },
+      runtime,
+      new Vault(runtime),
+    );
+    respondWith([
+      { type: 'file', name: 'secret-inside.txt', path: 'D:\\Media' },
+      { type: 'file', name: 'deep.txt', path: 'd:\\media\\sub' },
+      { type: 'file', name: 'secret-sibling.txt', path: 'D:\\Media2' },
+      { type: 'file', name: 'secret-up.txt', path: 'D:\\Media\\..\\Private' },
+      { type: 'file', name: 'secret-other.txt', path: 'C:\\Users' },
+    ]);
+
+    const page = await nas.search(query);
+
+    const sent = new URL(vi.mocked(fetch).mock.calls[0]![0] as string).searchParams.get('s');
+    expect(sent).toContain('path:"D:\\Media"');
+    expect(page.items.map(item => item.path).sort()).toEqual(['secret-inside.txt', 'sub/deep.txt']);
+    expect(page.total).toBe(2);
+  });
+
+  it('tells a folder its Everything has not indexed from one it has', async () => {
+    const nas = new EverythingProvider(
+      { ...source, name: 'nas', maps: [{ local: rootDirectory, remote: 'D:\\Media' }] },
+      runtime,
+      new Vault(runtime),
+    );
+
+    respondWith([], 0);
+    expect((await nas.coverage(rootDirectory)).covered).toBe(false);
+    const sent = new URL(vi.mocked(fetch).mock.calls[0]![0] as string).searchParams.get('s');
+    expect(sent).toBe('path:"D:\\Media\\"');
+
+    respondWith([{ type: 'file', name: 'secret-inside.txt', path: 'D:\\Media' }]);
+    expect(await nas.coverage(rootDirectory)).toMatchObject({ reachable: true, covered: true });
   });
 
   it('restricts a non-recursive search to direct children', async () => {

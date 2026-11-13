@@ -5,9 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 
 import { ApiError } from '@/lib/api';
+import { reloadOnStaleBuild } from '@/lib/stale-build';
 import { router } from '@/router';
 import { SessionProvider } from '@/features/session/session';
 import './styles/app.css';
+
+reloadOnStaleBuild();
 
 const queryClient = new QueryClient({
   defaultOptions: {

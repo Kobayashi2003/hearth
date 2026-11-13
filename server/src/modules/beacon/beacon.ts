@@ -5,39 +5,42 @@ import type { AppConfig } from '../../config/index.js';
 import type { RuntimeState } from '../../config/runtime-state.js';
 import { paginate } from '../../lib/listing.js';
 import type { Vault } from '../../lib/vault.js';
-import { EverythingProvider } from './everything.provider.js';
+import { EverythingProvider, unreachable, type CoverageProbe } from './everything.provider.js';
 import { WalkProvider } from './walk.provider.js';
 import type { SearchPage, SearchProvider, SearchQuery } from './provider.js';
 
-interface ProbeRecord {
-  reachable: boolean;
+interface ProbeRecord extends CoverageProbe {
   at: number;
-  latencyMs: number | null;
-  note: string | null;
 }
 
 /**
- * Provider selection and health. Search never hard-fails because Everything is
- * down: it degrades to the walk provider and reports that via the status endpoint.
+ * Provider selection and health. A search goes to the Everything that answers
+ * for its folder (this machine's, or one on the machine that holds the files),
+ * and to the filesystem walk when that one is down or has not indexed the root:
+ * a reachable Everything that does not know a folder would otherwise answer
+ * every search there with nothing.
  */
 export class Beacon {
-  private readonly everything: EverythingProvider;
+  private readonly sources: EverythingProvider[];
   private readonly walk: WalkProvider;
-  private lastProbe: ProbeRecord | null = null;
-  private probeInFlight: Promise<ProbeRecord> | null = null;
+  /** By source and probed folder. */
+  private readonly probes = new Map<string, ProbeRecord>();
+  private readonly probesInFlight = new Map<string, Promise<ProbeRecord>>();
 
   constructor(
     private readonly config: AppConfig,
     runtime: RuntimeState,
-    vault: Vault,
+    private readonly vault: Vault,
     private readonly logger: Logger,
   ) {
-    this.everything = new EverythingProvider(config, runtime, vault);
+    this.sources = config.search.everythingSources.map(
+      source => new EverythingProvider(source, runtime, vault),
+    );
     this.walk = new WalkProvider(runtime, vault);
 
-    // A new root may be on a volume Everything does not index.
+    // A new root may be on a volume an Everything does not index.
     runtime.onChange(change => {
-      if (change === 'activeRootId') this.lastProbe = null;
+      if (change === 'activeRootId') this.probes.clear();
     });
   }
 
@@ -73,42 +76,45 @@ export class Beacon {
   }
 
   private async searchWithProvider(query: SearchQuery, signal?: AbortSignal): Promise<SearchPage> {
-    const provider = await this.selectProvider(signal);
-    if (provider.name === 'walk') return provider.search(query, signal);
+    const scope = this.vault.resolve(query.scope);
+    const provider = await this.selectProvider(scope, signal);
+    if (!(provider instanceof EverythingProvider)) return provider.search(query, signal);
 
     try {
-      return await this.everything.search(query, signal);
+      return await provider.search(query, signal);
     } catch (error) {
-      this.lastProbe = {
-        reachable: false,
+      const directory = provider.probeDirectory(scope, this.vault.rootPath);
+      this.probes.set(this.probeKey(provider, directory), {
+        ...unreachable(error),
+        covered: false,
         at: Date.now(),
-        latencyMs: null,
-        note: error instanceof Error ? error.message : String(error),
-      };
+      });
       this.logger.warn(
-        { err: error },
+        { err: error, everything: provider.source.name },
         'Everything search failed — falling back to filesystem walk',
       );
       return this.walk.search(query, signal);
     }
   }
 
-  /** The provider that would answer a search now. */
+  /** The provider that would answer a search of the whole root now. */
   async providerName(): Promise<SearchProviderName> {
-    return (await this.selectProvider()).name;
+    return (await this.selectProvider(this.vault.rootPath)).name;
   }
 
   async status(): Promise<SearchHealth> {
-    const probe = this.config.search.provider === 'walk' ? null : await this.probeEverything();
-    const provider = await this.selectProvider();
+    const source = this.sourceFor(this.vault.rootPath);
+    const probe =
+      this.config.search.provider === 'walk' ? null : await this.probe(source, this.vault.rootPath);
+    const provider = await this.selectProvider(this.vault.rootPath);
 
     return {
       provider: provider.name,
       healthy: true,
-      note: provider.name === 'walk' && probe?.reachable === false ? probe.note : null,
+      note: provider.name === 'walk' ? (probe?.note ?? null) : null,
       everything: {
         reachable: probe?.reachable ?? false,
-        url: this.config.search.everythingUrl,
+        url: source.source.url,
         version: null,
         lastProbeAt: probe ? new Date(probe.at).toISOString() : null,
         lastLatencyMs: probe?.latencyMs ?? null,
@@ -117,47 +123,75 @@ export class Beacon {
     };
   }
 
-  private async selectProvider(signal?: AbortSignal): Promise<SearchProvider> {
+  private async selectProvider(directory: string, signal?: AbortSignal): Promise<SearchProvider> {
+    const source = this.sourceFor(directory);
     switch (this.config.search.provider) {
       case 'walk':
         return this.walk;
       case 'everything':
-        return this.everything;
+        return source;
       case 'auto': {
-        const probe = await this.probeEverything(signal);
-        return probe.reachable ? this.everything : this.walk;
+        const probe = await this.probe(source, directory, signal);
+        return probe.reachable && probe.covered ? source : this.walk;
       }
     }
   }
 
-  /** Cached for the cooldown and de-duplicated, so a burst of searches costs one failed connection. */
-  private async probeEverything(signal?: AbortSignal): Promise<ProbeRecord> {
-    const cooldown = this.config.search.probeCooldownMs;
-    if (this.lastProbe && Date.now() - this.lastProbe.at < cooldown) return this.lastProbe;
-    if (this.probeInFlight) return this.probeInFlight;
+  /** The Everything on the machine that holds `directory`: the most specific mapping, else this machine's. */
+  private sourceFor(directory: string): EverythingProvider {
+    let best = this.sources[0]!;
+    let depth = 0;
+    for (const source of this.sources) {
+      const specificity = source.specificity(directory);
+      if (specificity > depth) {
+        best = source;
+        depth = specificity;
+      }
+    }
+    return best;
+  }
 
-    this.probeInFlight = this.everything
-      .health(signal)
-      .then(health => {
-        const record: ProbeRecord = {
-          reachable: health.reachable,
-          at: Date.now(),
-          latencyMs: health.latencyMs,
-          note: health.note,
-        };
-        if (this.lastProbe?.reachable !== record.reachable) {
+  private probeKey(source: EverythingProvider, directory: string): string {
+    return `${source.source.name}\0${directory}`;
+  }
+
+  /** Cached for the cooldown and de-duplicated, so a burst of searches costs one query. */
+  private async probe(
+    source: EverythingProvider,
+    searched: string,
+    signal?: AbortSignal,
+  ): Promise<ProbeRecord> {
+    const directory = source.probeDirectory(searched, this.vault.rootPath);
+    const key = this.probeKey(source, directory);
+
+    const last = this.probes.get(key);
+    if (last && Date.now() - last.at < this.config.search.probeCooldownMs) return last;
+    const inFlight = this.probesInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    const pending = source
+      .coverage(directory, signal)
+      .then(result => {
+        const record: ProbeRecord = { ...result, at: Date.now() };
+        if (last?.reachable !== record.reachable || last.covered !== record.covered) {
           this.logger.info(
-            { reachable: record.reachable, note: record.note },
+            {
+              everything: source.source.name,
+              directory,
+              reachable: record.reachable,
+              covered: record.covered,
+              note: record.note,
+            },
             'Everything availability changed',
           );
         }
-        this.lastProbe = record;
+        this.probes.set(key, record);
         return record;
       })
       .finally(() => {
-        this.probeInFlight = null;
+        this.probesInFlight.delete(key);
       });
-
-    return this.probeInFlight;
+    this.probesInFlight.set(key, pending);
+    return pending;
   }
 }

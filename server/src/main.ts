@@ -3,6 +3,7 @@ import { ConfigError, consumeLegacyEnvNames, loadEnvFiles } from './config/env.j
 import { loadConfig } from './config/index.js';
 import { rootAvailable } from './config/roots.js';
 import { createLogger } from './lib/logger.js';
+import { containedIn } from './lib/vault.js';
 
 /** `pnpm dev` passes --development; it layers .env.development, which lifts every limit. */
 const development =
@@ -25,12 +26,28 @@ async function main(): Promise<void> {
     );
   }
 
-  // Everything's HTTP server serves any indexed file without auth; off loopback it is a second door in.
-  if (!isLoopbackUrl(config.search.everythingUrl)) {
+  // Everything's HTTP server serves any indexed file; reachable from the network it is a second door in.
+  const [localEverything, ...remoteEverythings] = config.search.everythingSources;
+  if (localEverything && !isLoopbackUrl(localEverything.url)) {
     logger.warn(
-      { url: config.search.everythingUrl },
+      { url: localEverything.url },
       'Everything is configured on a non-loopback address — it serves file contents without authentication',
     );
+  }
+  for (const remote of remoteEverythings) {
+    if (remote.username === undefined) {
+      logger.warn(
+        { everything: remote.name, url: remote.url },
+        'A remote Everything has no username — anyone who can reach it can read the files it indexes',
+      );
+    }
+    for (const { local } of remote.maps ?? []) {
+      if (config.storage.roots.some(root => overlaps(root.absolutePath, local))) continue;
+      logger.warn(
+        { everything: remote.name, local },
+        'A remote Everything maps a folder that is in no root, so it is never asked — write it in PATHS as the root is written',
+      );
+    }
   }
 
   // Not fatal: a drive mounted after Hearth starts is served as soon as it is there.
@@ -63,6 +80,10 @@ async function main(): Promise<void> {
     },
     'Hearth is ready',
   );
+}
+
+function overlaps(a: string, b: string): boolean {
+  return containedIn(a, b) || containedIn(b, a);
 }
 
 function isLoopbackUrl(rawUrl: string): boolean {

@@ -131,6 +131,23 @@ export function envPath(name: string, fallback: string): string {
   return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(projectRoot, raw);
 }
 
+/**
+ * The `<key>`s of every `<prefix><key><suffix>` variable that is set, for a
+ * family of variables named by the user (`EVERYTHING_REMOTE_NAS_URL`), sorted.
+ */
+export function envKeys(prefix: string, suffix: string): string[] {
+  const keys = new Set<string>();
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined || value === '') continue;
+    const bare = name.startsWith(ENV_PREFIX) ? name.slice(ENV_PREFIX.length) : name;
+    if (bare.length <= prefix.length + suffix.length) continue;
+    if (bare.startsWith(prefix) && bare.endsWith(suffix)) {
+      keys.add(bare.slice(prefix.length, bare.length - suffix.length));
+    }
+  }
+  return [...keys].sort();
+}
+
 export function envList(name: string, fallback: string[] = []): string[] {
   const raw = readRaw(name);
   if (raw === undefined) return fallback;

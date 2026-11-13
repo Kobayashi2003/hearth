@@ -14,7 +14,7 @@ export type SafePath = string & { readonly [safePathBrand]: true };
 
 const CASE_INSENSITIVE = process.platform === 'win32';
 
-function containedIn(candidate: string, root: string): boolean {
+export function containedIn(candidate: string, root: string): boolean {
   const prefix = root.endsWith(path.sep) ? root : root + path.sep;
   if (CASE_INSENSITIVE) {
     const lower = candidate.toLowerCase();
